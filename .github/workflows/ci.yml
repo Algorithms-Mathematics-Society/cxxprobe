@@ -6,15 +6,19 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        compiler: [g++, clang++]
+        cxx: [g++, clang++]
         build_type: [Debug, Release]
         include:
-          - compiler: clang++
+          - cxx: g++
+            cc: gcc
+          - cxx: clang++
+            cc: clang
+          - cxx: clang++
             build_type: Debug
             asan: ON
     env:
-      CC: ${{ matrix.compiler }}
-      CXX: ${{ matrix.compiler }}
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -38,5 +42,5 @@ jobs:
     - name: Cppcheck
       run: cmake --build build --target cppcheck
     - name: Clang-tidy (only clang)
-      if: matrix.compiler == 'clang++'
-      run: cmake --build build --target cxxprobe  # triggers clang-tidy on the library
+      if: matrix.cxx == 'clang++'
+      run: cmake --build build --target cxxprobe
