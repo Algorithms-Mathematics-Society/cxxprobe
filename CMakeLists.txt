@@ -6,7 +6,7 @@ project(
 
 option(CXXPROBE_BUILD_TESTS "Build tests" ON)
 option(CXXPROBE_BUILD_CLI "Build CLI tool" ON)
-option(CXXPROBE_ASAN "Enable AddressSanitizer" OFF)
+option(CXXPROBE_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(CXXPROBE_ENABLE_COVERAGE "Enable Code Coverage" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
