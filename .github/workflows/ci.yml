@@ -1,0 +1,42 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+        build_type: [Debug, Release]
+        include:
+          - compiler: clang++
+            build_type: Debug
+            asan: ON
+    env:
+      CC: ${{ matrix.compiler }}
+      CXX: ${{ matrix.compiler }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with: { python-version: '3.11' }
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y cppcheck clang-tidy
+    - name: Install Python tools
+      run: pip install conan pre-commit cmake-format
+    - name: Setup Conan
+      run: |
+        conan profile detect --force
+        conan install . -s build_type=${{ matrix.build_type }} --build=missing
+    - name: Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCXXPROBE_ENABLE_ASAN=${{ matrix.asan || 'OFF' }} -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
+    - name: Build
+      run: cmake --build build --parallel
+    - name: Run tests
+      run: ctest --test-dir build --output-on-failure
+    - name: Pre-commit checks
+      run: pre-commit run --all-files
+    - name: Cppcheck
+      run: cmake --build build --target cppcheck
+    - name: Clang-tidy (only clang)
+      if: matrix.compiler == 'clang++'
+      run: cmake --build build --target cxxprobe  # triggers clang-tidy on the library
