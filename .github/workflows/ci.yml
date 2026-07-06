@@ -26,7 +26,7 @@ jobs:
     - name: Setup Conan
       run: |
         conan profile detect --force
-        conan install . -s build_type=${{ matrix.build_type }} --build=missing
+        conan install . -s build_type=${{ matrix.build_type }} -s compiler.cppstd=23 --build=missing
     - name: Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCXXPROBE_ENABLE_ASAN=${{ matrix.asan || 'OFF' }} -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
     - name: Build
