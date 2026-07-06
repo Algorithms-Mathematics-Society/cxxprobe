@@ -5,6 +5,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         cxx: [g++, clang++]
         build_type: [Debug, Release]
@@ -30,9 +31,9 @@ jobs:
     - name: Setup Conan
       run: |
         conan profile detect --force
-        conan install . -s build_type=${{ matrix.build_type }} -s compiler.cppstd=23 --build=missing
+        conan install . -s build_type=${{ matrix.build_type }} -s compiler.cppstd=23 --output-folder=build --build=missing
     - name: Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCXXPROBE_ENABLE_ASAN=${{ matrix.asan || 'OFF' }} -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCXXPROBE_ENABLE_ASAN=${{ matrix.asan || 'OFF' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
     - name: Build
       run: cmake --build build --parallel
     - name: Run tests
