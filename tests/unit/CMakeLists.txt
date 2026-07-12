@@ -7,5 +7,9 @@ target_link_libraries(cxxprobe-unit-tests PRIVATE cxxprobe GTest::gtest_main)
 target_include_directories(cxxprobe-unit-tests
                            PRIVATE ${PROJECT_SOURCE_DIR}/src/sandbox)
 
+if(CXXPROBE_ENABLE_ASAN)
+  enable_sanitizers(cxxprobe-unit-tests)
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(cxxprobe-unit-tests)

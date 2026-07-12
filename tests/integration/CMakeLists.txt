@@ -9,5 +9,9 @@ target_compile_definitions(
   PRIVATE CXXPROBE_MEMHOG_PATH="$<TARGET_FILE:cxxprobe-memhog>"
           CXXPROBE_BIGWRITER_PATH="$<TARGET_FILE:cxxprobe-bigwriter>")
 
+if(CXXPROBE_ENABLE_ASAN)
+  enable_sanitizers(cxxprobe-integration-tests)
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(cxxprobe-integration-tests)

@@ -119,6 +119,26 @@ int clone_entry(void* arg) {
     std::unreachable();
 }
 
+// ── ChildGuard ───────────────────────────────────────────────────────────────
+// Kills and reaps the cloned child on destruction unless mark_reaped() was
+// called (used after wait_for_child already called waitpid).
+struct ChildGuard {
+    pid_t pid{-1};
+    bool reaped_{false};
+
+    explicit ChildGuard(pid_t p) noexcept : pid{p} {}
+    ~ChildGuard() {
+        if (!reaped_ && pid > 0) {
+            ::kill(pid, SIGKILL);
+            int st = 0;
+            ::waitpid(pid, &st, 0);
+        }
+    }
+    ChildGuard(const ChildGuard&) = delete;
+    ChildGuard& operator=(const ChildGuard&) = delete;
+    void mark_reaped() noexcept { reaped_ = true; }
+};
+
 // ── Epoll wait loop ──────────────────────────────────────────────────────────
 
 struct WaitResult {
@@ -188,6 +208,14 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     auto stdout_pipe = make_pipe();
     auto stderr_pipe = make_pipe();
 
+    // ── cgroup ────────────────────────────────────────────────────────────
+    // Created BEFORE clone() so that permission failures (e.g. EACCES on the
+    // cgroup root) throw here — before any child process exists — rather than
+    // orphaning a cloned child that blocks forever on recv(ExecNow).
+    // 100 % of one core per 100 ms period; total-time cap via wall timeout.
+    constexpr std::size_t kCpuPeriodUs = 100'000;
+    detail::CgroupLeaf cgroup{limits.memory_bytes, kCpuPeriodUs, kCpuPeriodUs, limits.max_pids};
+
     // ── sync channel + child args ─────────────────────────────────────────
     // split() before clone(): both SyncEnds are pre-built. The child's SyncEnd
     // goes into child_args; the parent's is held on the stack. SOCK_CLOEXEC
@@ -221,6 +249,9 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         throw std::runtime_error{std::format("clone: {}", std::strerror(errno))};
     }
 
+    // Kill and reap the child if anything throws before wait_for_child().
+    ChildGuard child_guard{child_pid};
+
     // parent_sync_pre was built before clone() via split() — valid immediately.
     detail::SyncEnd& parent_sync = parent_sync_pre;
 
@@ -230,11 +261,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     parent_sync.send(detail::SyncMsg::MapsWritten);
     (void)parent_sync.recv();  // MapsAck
 
-    // ── cgroup ────────────────────────────────────────────────────────────
-    // 100 % of one core per 100 ms period — total-time cap enforced by wall
-    // timeout + cgroup.kill rather than by cpu.max quota arithmetic.
-    constexpr std::size_t kCpuPeriodUs = 100'000;
-    detail::CgroupLeaf cgroup{limits.memory_bytes, kCpuPeriodUs, kCpuPeriodUs, limits.max_pids};
+    // ── add child to cgroup ───────────────────────────────────────────────
     cgroup.add_pid(child_pid);
 
     parent_sync.send(detail::SyncMsg::ExecNow);
@@ -277,6 +304,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     }
 
     WaitResult wr = wait_for_child(child_pid, pidfd, tfd, cgroup);
+    child_guard.mark_reaped();  // waitpid already called inside wait_for_child
 
     t_stdin.join();
     t_stdout.join();

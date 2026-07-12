@@ -13,3 +13,7 @@ target_include_directories(cxxprobe-cli SYSTEM PRIVATE ${_cli11_inc})
 get_target_property(_yamlcpp_inc yaml-cpp::yaml-cpp
                     INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(cxxprobe-cli SYSTEM PRIVATE ${_yamlcpp_inc})
+
+if(CXXPROBE_ENABLE_ASAN)
+  enable_sanitizers(cxxprobe-cli)
+endif()
