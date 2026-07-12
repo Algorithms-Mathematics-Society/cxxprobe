@@ -135,7 +135,9 @@ struct ChildGuard {
         }
     }
     ChildGuard(const ChildGuard&) = delete;
+    ChildGuard(ChildGuard&&) = delete;
     ChildGuard& operator=(const ChildGuard&) = delete;
+    ChildGuard& operator=(ChildGuard&&) = delete;
     void mark_reaped() noexcept { reaped_ = true; }
 };
 
