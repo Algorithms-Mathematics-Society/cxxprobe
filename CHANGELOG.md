@@ -1,3 +1,10 @@
+## [0.3.5](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.4...v0.3.5) (2026-07-12)
+
+
+### Bug Fixes
+
+* **sandbox:** RLIMIT_AS fallback when cgroup migration blocked by nsdelegate ([4d0253f](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/4d0253f489d18718b1853b15c740d8c17fd229db))
+
 ## [0.3.4](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.3...v0.3.4) (2026-07-12)
 
 
