@@ -36,17 +36,6 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCXXPROBE_ENABLE_ASAN=${{ matrix.asan || 'OFF' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
     - name: Build
       run: cmake --build build --parallel
-    - name: Set up cgroup for sandbox tests
-      run: |
-        # Enable controllers at the root cgroup level (root cgroup has no
-        # processes on systemd runners, so subtree_control is writable).
-        echo "+memory +cpu +pids" | sudo tee /sys/fs/cgroup/cgroup.subtree_control
-        # Create our root cgroup and recursively chown interface files.
-        # Chowning the files (not just the directory) triggers the kernel
-        # delegation rule: child cgroups created by runner will also have
-        # runner-owned interface files.
-        sudo mkdir -p /sys/fs/cgroup/cxxprobe
-        sudo chown -R runner:runner /sys/fs/cgroup/cxxprobe
     - name: Run tests
       run: ctest --test-dir build --output-on-failure --timeout 60
     - name: Pre-commit checks

@@ -269,6 +269,16 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     parent_sync.send(detail::SyncMsg::ExecNow);
     auto wall_start = std::chrono::steady_clock::now();
 
+    // Close the child-bound pipe ends in the parent now that the child has
+    // them. The parent released these into child_args.fds (plain ints, no
+    // RAII) so they are still open in the parent's fd table after clone().
+    // Keeping them open prevents the I/O drain threads from ever seeing EOF
+    // (a pipe read end sees EOF only when ALL write ends are closed — if the
+    // parent holds one, the thread blocks forever even after the child exits).
+    ::close(child_args.fds.stdin_read);
+    ::close(child_args.fds.stdout_write);
+    ::close(child_args.fds.stderr_write);
+
     // ── I/O threads ───────────────────────────────────────────────────────
     std::string stdout_data;
     std::string stderr_data;
