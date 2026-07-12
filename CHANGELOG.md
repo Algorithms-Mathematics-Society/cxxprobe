@@ -1,3 +1,11 @@
+# [0.3.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.2.0...v0.3.0) (2026-07-12)
+
+
+### Features
+
+* **cli:** complete CLI with judging, batch mode, colors, and duration units ([9d8c3f4](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/9d8c3f498ca03122dbb442fe8042bad5f5722975))
+* **sandbox:** expose wall_time and wall_timed_out in Result ([1998e5e](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/1998e5e2b10e8092ebf03276580911f4ce4acc16))
+
 # [0.1.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.0.0...v0.1.0) (2026-07-06)
 
 
