@@ -1,3 +1,10 @@
+## [0.3.2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.1...v0.3.2) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** propagate sanitizers to executables; prevent orphaned child on cgroup failure ([09f3c06](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/09f3c06cdab35701eeee5af479b30feaa9663e98))
+
 ## [0.3.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.0...v0.3.1) (2026-07-12)
 
 

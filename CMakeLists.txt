@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(
   cxxprobe
-  VERSION 0.3.1
+  VERSION 0.3.2
   LANGUAGES CXX)
 
 option(CXXPROBE_BUILD_TESTS "Build tests" ON)
