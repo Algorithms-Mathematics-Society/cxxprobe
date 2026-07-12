@@ -36,6 +36,11 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCXXPROBE_ENABLE_ASAN=${{ matrix.asan || 'OFF' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
     - name: Build
       run: cmake --build build --parallel
+    - name: Set up cgroup for sandbox tests
+      run: |
+        sudo mkdir -p /sys/fs/cgroup/cxxprobe
+        sudo chown runner:runner /sys/fs/cgroup/cxxprobe
+        sudo sh -c 'echo "+memory +cpu +pids" >> /sys/fs/cgroup/cgroup.subtree_control' || true
     - name: Run tests
       run: ctest --test-dir build --output-on-failure --timeout 60
     - name: Pre-commit checks
