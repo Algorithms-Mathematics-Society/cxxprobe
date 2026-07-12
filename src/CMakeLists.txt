@@ -1,4 +1,7 @@
-add_library(cxxprobe STATIC dummy.cpp)
+add_library(
+  cxxprobe STATIC
+  sandbox/sandbox.cpp sandbox/detail/uidmap.cpp sandbox/detail/pipe_sync.cpp
+  sandbox/detail/cgroup.cpp sandbox/detail/child.cpp)
 
 add_library(cxxprobe::cxxprobe ALIAS cxxprobe)
 

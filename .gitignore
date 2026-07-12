@@ -107,3 +107,6 @@ environment_run.sh.env
 build/
 build-asan/
 build-*/
+
+# Claude Code project memory
+.claude/
