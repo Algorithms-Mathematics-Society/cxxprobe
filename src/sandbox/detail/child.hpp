@@ -19,7 +19,9 @@ struct ChildFds {
 struct ChildArgs {
     std::vector<std::string> argv;
     ChildFds fds;
-    SyncEnd sync;  // child's half of the sync channel
+    SyncEnd sync;                       // child's half of the sync channel
+    std::string cgroup_procs_path;      // absolute path to leaf's cgroup.procs
+    std::size_t memory_limit_bytes{0};  // fallback RLIMIT_AS when cgroup migration is blocked
 };
 
 // Entry point executed inside the cloned process (user + mount namespace).

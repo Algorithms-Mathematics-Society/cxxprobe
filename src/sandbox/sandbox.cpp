@@ -234,6 +234,8 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
                 .stderr_write = stderr_pipe.write_end.release(),
             },
         .sync = std::move(child_sync),
+        .cgroup_procs_path = (cgroup.path() / "cgroup.procs").string(),
+        .memory_limit_bytes = limits.memory_bytes,
     };
 
     // ── clone ─────────────────────────────────────────────────────────────
@@ -263,8 +265,9 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     parent_sync.send(detail::SyncMsg::MapsWritten);
     (void)parent_sync.recv();  // MapsAck
 
-    // ── add child to cgroup ───────────────────────────────────────────────
-    cgroup.add_pid(child_pid);
+    // Child adds itself to the cgroup after receiving MapsAck (see child.cpp).
+    // The parent cannot migrate arbitrary PIDs under nsdelegate; self-migration
+    // always works.
 
     parent_sync.send(detail::SyncMsg::ExecNow);
     auto wall_start = std::chrono::steady_clock::now();

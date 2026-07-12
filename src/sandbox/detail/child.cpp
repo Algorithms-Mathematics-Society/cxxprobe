@@ -3,10 +3,12 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/mount.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #include <array>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -61,7 +63,39 @@ void remount_proc() noexcept {
     }
     args.sync.send(SyncMsg::MapsAck);
 
-    // ── 2. Wait for parent to finish cgroup setup and signal exec ─────────
+    // ── 1b. Add self to cgroup ────────────────────────────────────────────
+    // With nsdelegate the parent cannot migrate us: the kernel requires the
+    // writing process to be in an ancestor cgroup of the target.  Self-migration
+    // (child writing its own PID) only works when the child's current cgroup is
+    // also an ancestor of the target, which is NOT guaranteed on systems where
+    // the test binary itself is in a sibling subtree (e.g. /2 vs /cxxprobe/).
+    // When the write fails we fall back to RLIMIT_AS set below.
+    bool cgroup_joined = false;
+    if (!args.cgroup_procs_path.empty()) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+        int fd = ::open(args.cgroup_procs_path.c_str(), O_WRONLY | O_CLOEXEC);
+        if (fd >= 0) {
+            std::array<char, 32> buf{};
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+            int len = ::snprintf(buf.data(), buf.size(), "%d", static_cast<int>(::getpid()));
+            ssize_t w = ::write(fd, buf.data(), static_cast<std::size_t>(len));
+            cgroup_joined = (w > 0);
+            ::close(fd);
+        }
+    }
+
+    // ── 1c. RLIMIT_AS fallback ────────────────────────────────────────────
+    // If cgroup membership failed (nsdelegate blocks migration when the process
+    // is not in an ancestor cgroup) enforce the memory cap via RLIMIT_AS so
+    // that malloc/mmap for over-limit allocations returns ENOMEM.
+    if (!cgroup_joined && args.memory_limit_bytes > 0) {
+        struct rlimit rl {};
+        rl.rlim_cur = static_cast<rlim_t>(args.memory_limit_bytes);
+        rl.rlim_max = static_cast<rlim_t>(args.memory_limit_bytes);
+        ::setrlimit(RLIMIT_AS, &rl);
+    }
+
+    // ── 2. Wait for parent to signal exec ─────────────────────────────────
     msg = args.sync.recv();
     if (msg != SyncMsg::ExecNow) {
         ::_exit(1);
