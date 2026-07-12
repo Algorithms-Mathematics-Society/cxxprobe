@@ -98,7 +98,7 @@ TEST(SyncChannel, ErrorPayloadThrowsOnRecv) {
     int ws = with_child(ch, [](SyncEnd& child) { child.send(SyncMsg::Error, ENOMEM); });
 
     SyncEnd parent = ch.parent_end();
-    EXPECT_THROW(parent.recv(), std::runtime_error);
+    EXPECT_THROW((void)parent.recv(), std::runtime_error);
 
     // Verify child exited cleanly (error was communicated via message, not crash).
     EXPECT_TRUE(WIFEXITED(ws));
@@ -111,7 +111,7 @@ TEST(SyncChannel, ErrorPayloadMessageContainsErrno) {
 
     SyncEnd parent = ch.parent_end();
     try {
-        parent.recv();
+        (void)parent.recv();
         FAIL() << "expected runtime_error";
     } catch (const std::runtime_error& ex) {
         // The error message should contain the strerror for EACCES.
@@ -141,7 +141,7 @@ TEST(SyncChannel, PeerClosedThrowsOnRecv) {
     SyncEnd parent = ch.parent_end();
 
     // Both copies of child's fd are closed → recv sees EOF → throws.
-    EXPECT_THROW(parent.recv(), std::runtime_error);
+    EXPECT_THROW((void)parent.recv(), std::runtime_error);
 }
 
 // ── SyncEnd move ──────────────────────────────────────────────────────────────
