@@ -1,3 +1,10 @@
+## [0.3.4](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.3...v0.3.4) (2026-07-12)
+
+
+### Bug Fixes
+
+* **sandbox:** close child-bound pipe ends in parent after clone ([c552f39](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/c552f39b574b8831a17e3d4f25eccfe583211154))
+
 ## [0.3.3](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.2...v0.3.3) (2026-07-12)
 
 
