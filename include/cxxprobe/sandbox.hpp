@@ -18,6 +18,8 @@ struct Result {
     int exit_code{-1};
     std::size_t peak_memory_bytes{0};
     std::chrono::milliseconds cpu_time{0};
+    std::chrono::milliseconds wall_time{0};
+    bool wall_timed_out{false};
     std::string stdout_data;
     std::string stderr_data;
 };

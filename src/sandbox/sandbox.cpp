@@ -213,9 +213,10 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     char* stack_top = child_stack.data() + kStackSize;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
     pid_t child_pid =
         ::clone(clone_entry, stack_top, CLONE_NEWUSER | CLONE_NEWNS | SIGCHLD, &child_args);
+    // NOLINTEND(cppcoreguidelines-pro-type-vararg)
     if (child_pid < 0) {
         throw std::runtime_error{std::format("clone: {}", std::strerror(errno))};
     }
@@ -237,6 +238,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     cgroup.add_pid(child_pid);
 
     parent_sync.send(detail::SyncMsg::ExecNow);
+    auto wall_start = std::chrono::steady_clock::now();
 
     // ── I/O threads ───────────────────────────────────────────────────────
     std::string stdout_data;
@@ -279,6 +281,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     t_stdin.join();
     t_stdout.join();
     t_stderr.join();
+    auto wall_end = std::chrono::steady_clock::now();
 
     // ── result ────────────────────────────────────────────────────────────
     detail::CgroupStats stats = cgroup.read_stats();
@@ -294,6 +297,8 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     }
     result.peak_memory_bytes = stats.peak_memory_bytes;
     result.cpu_time = std::chrono::duration_cast<std::chrono::milliseconds>(stats.cpu_usage);
+    result.wall_time = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
+    result.wall_timed_out = wr.timed_out;
     result.stdout_data = std::move(stdout_data);
     result.stderr_data = std::move(stderr_data);
     return result;
