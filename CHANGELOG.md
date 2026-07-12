@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.0...v0.3.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** add ctest timeout and silence nodiscard warnings in tests ([8728e0f](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/8728e0f0594293d27e75820b1e069ee58a8e2a40))
+
 # [0.3.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.2.0...v0.3.0) (2026-07-12)
 
 
