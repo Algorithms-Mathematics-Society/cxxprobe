@@ -1,0 +1,79 @@
+---
+title: Introduction
+description: A professional C++ evaluation framework for coding contests and interviews.
+---
+
+import { Cards, Callout } from 'nextra/components'
+
+# cxxprobe
+
+**cxxprobe** is a sandboxed evaluation engine for competitive programming and
+technical interviews. It runs an untrusted binary inside a locked-down Linux
+sandbox (cgroup v2 + a user namespace), enforces memory, CPU, wall-clock and
+process-count limits, captures stdout/stderr, and — optionally — judges the
+result against expected output.
+
+It ships as a single static-ish CLI, `cxxprobe`, plus a small C++ library
+(`libcxxprobe`) that the CLI is built on, so you can embed sandboxed execution
+directly into your own judge or contest platform.
+
+```bash
+cxxprobe -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
+```
+
+```text
+15
+[exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB | AC]
+```
+
+<Callout type="info">
+  cxxprobe requires **Linux with cgroup v2**. It runs fine as an unprivileged
+  user once a delegated cgroup subtree is set up — see [Getting
+  Started](/getting-started).
+</Callout>
+
+## Where to go next
+
+<Cards num={2}>
+  <Cards.Card
+    title="Getting Started"
+    href="/getting-started"
+    arrow
+  />
+  <Cards.Card
+    title="CLI Reference"
+    href="/cli-reference"
+    arrow
+  />
+  <Cards.Card
+    title="Contest Workflows"
+    href="/guides/contest-workflows"
+    arrow
+  />
+  <Cards.Card
+    title="Sandbox Internals"
+    href="/architecture/sandbox-internals"
+    arrow
+  />
+</Cards>
+
+## Why cxxprobe
+
+- **Real resource isolation.** Memory, swap, CPU time, wall-clock time and PID
+  count are enforced by the kernel via cgroup v2 — not by best-effort polling.
+- **No root required.** Sandboxing uses `CLONE_NEWUSER | CLONE_NEWNS`, so it
+  works under an unprivileged user once cgroup delegation is configured once.
+- **Judge built in.** Token-based diffing out of the box, or bring your own
+  [testlib-ABI checker](/guides/custom-checker) for floating point / multiple
+  valid answers / interactive problems.
+- **Contest-shaped batch mode.** Point `--cases` at a directory of `.in`/`.ans`
+  pairs or a YAML/JSON manifest and get per-case verdicts plus a pass/fail
+  summary in one invocation.
+- **Machine-readable output.** `--json` emits exit code, resource usage,
+  verdict and captured output as JSON for grading pipelines and CI.
+
+## Project layout at a glance
+
+cxxprobe is a small, focused C++23 codebase: a sandbox library, a CLI built on
+top of it, and a test suite that exercises both in isolation and end-to-end.
+See [Folder Structure](/architecture/folder-structure) for the full breakdown.

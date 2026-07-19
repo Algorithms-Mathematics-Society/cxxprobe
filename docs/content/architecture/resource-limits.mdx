@@ -1,0 +1,85 @@
+---
+title: Resource Limits
+description: What each cxxprobe limit actually enforces, and how it maps to a verdict.
+---
+
+import { Callout } from 'nextra/components'
+
+# Resource Limits
+
+| Resource | Flag | Default | Mechanism |
+|---|---|---|---|
+| Memory | `-m` / `--memory-mb` | 256 MiB | `memory.max` (cgroup v2) |
+| Swap | (always 0) | 0 | `memory.swap.max=0` |
+| CPU time | `-t` / `--cpu` | 5 s | `cpu.stat usage_usec`, checked post-run |
+| Wall clock | `-w` / `--wall` | 10 s | `timerfd` + `epoll` + `cgroup.kill` |
+| PIDs | `-p` / `--pids` | 64 | `pids.max` (cgroup v2) |
+| Stdout | (fixed) | 4 MiB | Drain thread discards past the cap |
+| Stderr | (fixed) | 4 MiB | Drain thread discards past the cap |
+| Stdin | (fixed) | 4 MiB | Capped when loading with `-i -` |
+
+## Memory
+
+`-m`/`--memory-mb` sets `memory.max` on the run's cgroup leaf. Swap is always
+disabled (`memory.swap.max=0`) so a process can't dodge the limit by paging
+out — hitting the limit triggers the kernel OOM killer scoped to the cgroup,
+which shows up as the process being killed (typically SIGKILL) and, with
+judging active, an `MLE` verdict once `peak_memory_bytes` (read from
+`memory.peak`) is compared against the limit.
+
+## CPU time
+
+`-t`/`--cpu` is checked **after** the process exits, against
+`cpu.stat`'s `usage_usec`. It does not interrupt a running process by
+itself — see [why wall-clock is the primary kill
+mechanism](/architecture/sandbox-internals#why-wall-clock-is-the-primary-kill-not-cpu-time).
+A process that spins for exactly its CPU budget but returns before the
+wall-clock deadline still gets a `TLE` verdict once compared post-hoc.
+
+## Wall clock
+
+`-w`/`--wall` is the mechanism that actually **stops** a runaway process. A
+`timerfd` is armed for the deadline; when it fires, cxxprobe writes to
+`cgroup.kill` (kills every process in the cgroup atomically, Linux 5.14+) and
+sends `SIGKILL` directly as a fallback. This is what protects the grading
+host from infinite loops, blocked reads, or `sleep()` calls.
+
+<Callout type="info">
+  Set wall-clock with headroom over CPU time — e.g. `-t 1s -w 2s` — so a
+  process that's legitimately CPU-bound but briefly descheduled (multi-core
+  contention, I/O) doesn't get killed by wall-clock before its CPU budget is
+  even exhausted.
+</Callout>
+
+## PIDs
+
+`-p`/`--pids` sets `pids.max` on the cgroup, capping the number of
+simultaneously live processes/threads the sandboxed program (and anything it
+forks) can create. This is what contains fork bombs — once the cap is hit,
+further `fork()`/`clone()` calls in the sandbox fail with `EAGAIN` rather than
+exhausting the host's process table. Lower it (e.g. `-p 8`) for known
+single-threaded submissions to catch accidental or malicious forking early.
+
+## Output caps
+
+Stdout and stderr are each capped at a fixed **4 MiB** — not configurable via
+a flag. A dedicated drain thread keeps reading each pipe past the cap and
+discards the excess, specifically so a chatty program can't deadlock the
+sandbox by filling its pipe buffer while the sandbox has stopped servicing it.
+When the stdout cap is hit and judging is active, the verdict is `OLE`
+regardless of what the checker would have said — `stdout_data.size()` reads
+back as exactly `4194304`.
+
+## Stdin
+
+Stdin loaded via `-i -` (piped) is bounded at 4 MiB when read into memory
+before being handed to the sandboxed process; `-i <file>` reads the file
+directly without that in-memory cap concern since it's streamed from disk.
+
+## How limits become a verdict
+
+When judging is active, [`compute_verdict`](/cli-reference#verdicts) checks
+conditions in priority order — **TLE > MLE > OLE > RE > WA/AC** — so if a
+process both exceeds its time limit *and* produces wrong output, it's
+reported as `TLE`, not `WA`. See the [CLI Reference](/cli-reference#verdicts)
+for the full table.

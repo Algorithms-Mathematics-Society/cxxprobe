@@ -1,0 +1,137 @@
+---
+title: Contributing
+description: Environment setup, code style, and the PR process for cxxprobe.
+---
+
+import { Steps, Callout, Tabs } from 'nextra/components'
+
+# Contributing
+
+## Environment setup
+
+<Steps>
+
+### Clone and install tooling
+
+```bash
+git clone https://github.com/Algorithms-Mathematics-Society/cxxprobe.git
+cd cxxprobe
+pip install conan pre-commit cmake-format
+pre-commit install --hook-type pre-commit --hook-type commit-msg
+```
+
+### Install dependencies and build
+
+```bash
+conan install . -s build_type=Debug --build=missing
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
+cmake --build build -j$(nproc)
+```
+
+<Callout type="info">
+  See [Getting Started](/getting-started) for the exact commands this
+  repository's own CI uses (`--output-folder=build`), plus one-time cgroup
+  delegation for running the sandbox tests locally.
+</Callout>
+
+### Run the test suite
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+</Steps>
+
+## Code style
+
+- **C++**: Google style, 4-space indentation — enforced by `.clang-format`
+  via pre-commit.
+- **CMake**: formatted with `cmake-format`.
+- **Commits**: [Conventional Commits](https://www.conventionalcommits.org/),
+  enforced by pre-commit's `commitizen` hook.
+
+Allowed commit types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`,
+`chore`, `perf`, `ci`.
+
+```text
+type(scope): description
+```
+
+```text
+feat(sandbox): add cgroup v2 resource limits
+```
+
+## Testing guidelines
+
+- Every new module requires unit tests.
+- Integration tests for sandbox behavior must cover exact resource limits
+  (time, memory, file descriptors).
+- Use AddressSanitizer and ThreadSanitizer during development
+  (`cmake --preset asan`).
+- Code coverage target: **≥90%** on `libcxxprobe`.
+
+## CI overview
+
+| Trigger | Job |
+|---|---|
+| `push`, `pull_request` | Matrix build: GCC + Clang × Debug + Release |
+| | Sanitizer build (Clang + ASan) |
+| | `cppcheck` |
+| | `clang-tidy` (Clang only) |
+| | Pre-commit checks |
+| | Unit + integration tests |
+
+All status checks are required before merging to `main`.
+
+## Pull request process
+
+<Steps>
+
+### Fork and branch
+
+Create a feature branch from `main`.
+
+### Implement and test
+
+Make your changes, add tests, and run `pre-commit run --all-files` before
+pushing.
+
+### Open the PR
+
+Open a PR against `main`. At least one maintainer approval is required.
+
+### Squash-merge
+
+The release workflow handles versioning automatically on merge — see below.
+
+</Steps>
+
+## Release workflow
+
+Triggered on every push to `main`. Uses
+[semantic-release](https://semantic-release.gitbook.io/) to analyze commit
+messages, bump the version in `CMakeLists.txt` and `CHANGELOG.md`, create a
+git tag, and publish a GitHub Release. Requires a `GITHUB_TOKEN` with write
+permissions — no manual version bumps.
+
+<Callout type="warning">
+  Because the release workflow parses commit messages, an incorrectly typed
+  commit (missing `type(scope):` prefix) won't just fail the commit-msg hook
+  locally — if it somehow lands on `main`, it's simply excluded from the
+  changelog rather than breaking the release.
+</Callout>
+
+## Building these docs locally
+
+This site lives in `docs/` as its own Next.js + Nextra project, independent of
+the C++ build:
+
+```bash
+cd docs
+npm install
+npm run dev
+```
+
+See [.github/workflows/docs.yml](https://github.com/Algorithms-Mathematics-Society/cxxprobe/blob/main/.github/workflows/docs.yml)
+for how it's built and deployed to GitHub Pages on every push to `main` that
+touches `docs/`.

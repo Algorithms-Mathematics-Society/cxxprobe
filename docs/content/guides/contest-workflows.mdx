@@ -1,0 +1,115 @@
+---
+title: Contest Workflows
+description: How to structure a problem set, validate solutions, and grade submissions with cxxprobe.
+---
+
+import { Steps, Callout } from 'nextra/components'
+
+# Contest Workflows
+
+This page walks through using cxxprobe as the evaluation engine for an actual
+contest or problem set — from setting a problem's tests to grading a batch of
+contestant submissions. For the on-disk layout referenced below (`tests/`,
+`solution.cpp`, `checker.cpp`, `gen.cpp`), see [Folder
+Structure](/architecture/folder-structure).
+
+## Setting a problem
+
+<Steps>
+
+### Write the reference solution and tests
+
+Hand-write small tests (edge cases, examples from the statement) as
+`1.in`/`1.ans`, `2.in`/`2.ans`, etc.
+
+### Validate the reference solution against every test
+
+```bash
+cxxprobe -m 256 -w 2s --cases problemA/tests/ ./problemA/solution
+```
+
+If every case comes back `AC`, the reference solution and test data agree.
+
+### Stress-test with a generator (optional but recommended)
+
+Add randomized large cases with a generator, then re-validate — see [Stress
+Testing & Debugging](/guides/stress-testing) for a full generate-and-compare
+loop against a slower brute-force solution.
+
+### Fix the limits for the problem
+
+Once you know the reference solution's typical resource usage, set
+`-m`/`-w`/`-t` with headroom (2-3× the reference solution's time is a common
+rule of thumb) and record those flags alongside the problem — you'll reuse
+them for every submission.
+
+</Steps>
+
+## Grading a single submission
+
+```bash
+cxxprobe \
+  -m 256 -w 2s -t 1500ms \
+  --cases problemA/tests/ \
+  --checker ./problemA/checker \
+  --json \
+  ./contestant_submission \
+  > result.json
+
+jq '.summary' result.json
+```
+
+```json
+{ "passed": 8, "total": 10 }
+```
+
+Per-case detail (which case failed, with what verdict) is in `.results[]` —
+see [JSON Output](/guides/json-output).
+
+## Grading many submissions
+
+A simple grading loop over a directory of contestant binaries:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+for sub in submissions/*/solution; do
+    team=$(basename "$(dirname "$sub")")
+    result=$(cxxprobe -m 256 -w 2s --cases problemA/tests/ \
+                       --checker ./problemA/checker --json "$sub")
+    passed=$(jq '.summary.passed' <<< "$result")
+    total=$(jq '.summary.total' <<< "$result")
+    echo "$team: $passed/$total"
+    echo "$result" > "results/$team.json"
+done
+```
+
+Each `cxxprobe` invocation is fully isolated (its own cgroup leaf, its own
+namespace), so submissions can't interfere with each other even if run
+concurrently — parallelize the loop with `xargs -P` or GNU `parallel` if you
+have many submissions and need throughput.
+
+<Callout type="info">
+  Because every run is sandboxed independently, a misbehaving or malicious
+  submission (fork bombs, huge allocations, infinite loops) is contained by
+  the `-p`/`-m`/`-w` limits — it can't affect the grading host or other
+  submissions running alongside it.
+</Callout>
+
+## Regression-testing your own judge
+
+If you're building a platform around cxxprobe, treat the reference solution as
+a regression test: re-run `--cases` against it in CI whenever test data or the
+checker changes, and fail the build if it stops being all-`AC`. This catches
+broken test data before contestants do.
+
+## Related guides
+
+- [Batch Mode](/guides/batch-mode) — directory and manifest formats in detail
+- [Custom Checkers](/guides/custom-checker) — testlib-ABI checkers for
+  floating point / multiple-answer problems
+- [Stress Testing & Debugging](/guides/stress-testing) — generator +
+  brute-force comparison loops
+- [Resource Limits](/architecture/resource-limits) — what each limit actually
+  enforces

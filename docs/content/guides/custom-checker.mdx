@@ -1,0 +1,83 @@
+---
+title: Custom Checkers
+description: Judge floating-point, multi-answer, or interactive problems with a testlib-ABI checker.
+---
+
+import { Callout } from 'nextra/components'
+
+# Custom Checkers
+
+The default checker does exact token comparison, which fails for problems
+where output isn't a single fixed string: floating point with tolerance,
+multiple valid answers, or "print any of N correct outputs" problems.
+
+## The testlib ABI
+
+`--checker` expects a binary called as:
+
+```text
+checker <input_file> <output_file> <answer_file>
+exit 0     → AC
+exit non-zero → WA
+```
+
+- **stderr** from the checker is passed through to your terminal — useful for
+  "wrong answer on 3rd integer" style diagnostics.
+- **stdout** from the checker is discarded.
+
+[testlib.h](https://github.com/MikeMirzayanov/testlib) checkers (the
+Codeforces/Polygon format) work out of the box — no adaptation needed.
+
+```bash
+cxxprobe -i 1.in -e 1.ans --checker ./checker ./solution
+```
+
+<Callout type="warning">
+  The checker path must be **absolute or relative to the current working
+  directory** — it is not resolved via `$PATH`. Use `./checker`, not
+  `checker`.
+</Callout>
+
+<Callout type="error">
+  `--checker` must be combined with `--expected` (single-run) or `--cases`
+  (batch mode). Supplying `--checker` alone is a usage error (exit code `2`).
+</Callout>
+
+## Writing a minimal checker
+
+A checker doesn't need testlib at all — any binary that follows the ABI above
+works. A bare-bones floating-point checker:
+
+```cpp filename="checker.cpp"
+#include <cmath>
+#include <fstream>
+#include <iostream>
+
+int main(int argc, char** argv) {
+    if (argc != 4) return 2;
+    std::ifstream out(argv[2]);
+    std::ifstream ans(argv[3]);
+    double got, want;
+    if (!(out >> got) || !(ans >> want)) {
+        std::cerr << "missing numeric output\n";
+        return 1;
+    }
+    if (std::abs(got - want) > 1e-6) {
+        std::cerr << "expected " << want << ", got " << got << "\n";
+        return 1;
+    }
+    return 0;
+}
+```
+
+Compile it once and point `--checker` at the binary — cxxprobe re-execs it for
+every case.
+
+## Batch mode
+
+```bash
+cxxprobe --cases tests/ --checker ./checker ./solution
+```
+
+The checker is invoked once per case that has expected output; cases without
+an `.ans`/`.out` file (or `answer`/`answer_data` in a manifest) run unjudged.

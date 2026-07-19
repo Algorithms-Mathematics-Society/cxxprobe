@@ -1,0 +1,106 @@
+---
+title: FAQ
+description: Common questions and troubleshooting for cxxprobe.
+---
+
+import { Callout } from 'nextra/components'
+
+# FAQ
+
+### `sandbox error: create cgroup root /sys/fs/cgroup/cxxprobe: Permission denied`
+
+Your user hasn't been delegated a writable cgroup subtree yet. Run the
+one-time setup from [Getting
+Started](/getting-started#one-time-cgroup-delegation):
+
+```bash
+echo "+memory +cpu +pids" | sudo tee /sys/fs/cgroup/cgroup.subtree_control
+sudo mkdir -p /sys/fs/cgroup/cxxprobe
+sudo chown -R "$(whoami):$(whoami)" /sys/fs/cgroup/cxxprobe
+```
+
+This resets on every reboot (`/sys/fs/cgroup` is a virtual filesystem) —
+re-run it, or wire it into a startup script.
+
+### Do I need to run cxxprobe as root?
+
+No. Root works (and is what CI uses, since it already owns all of
+`/sys/fs/cgroup`), but an unprivileged user works equally well once the
+one-time cgroup delegation above has been done. Sandboxing itself uses a user
+namespace (`CLONE_NEWUSER`), which is specifically designed to not require
+host privilege.
+
+### Does cxxprobe work on WSL2?
+
+Yes — WSL2 mounts cgroup v2 by default with the `nsdelegate` option, and
+delegation works the same as native Linux. One internal test
+(`CgroupTest.AddPidCgroupProcsContainsPid`) self-skips under `nsdelegate`
+because direct `cgroup.procs` migration from outside the ancestor chain is
+blocked by the kernel — this is expected and doesn't affect actual sandboxed
+runs, which have an `RLIMIT_AS` fallback for exactly this case.
+
+### Does cxxprobe work on macOS or Windows (natively)?
+
+No. cxxprobe is Linux-only — it depends directly on cgroup v2 and Linux user
+namespaces, neither of which exist on macOS or native Windows. Use WSL2 on
+Windows.
+
+### Is the sandbox a real security boundary?
+
+It's resource and process-tree isolation — memory/CPU/wall-clock/PID limits
+are enforced by the kernel, and the sandboxed process can't see the host
+process tree. It is **not** a full container runtime: there's no seccomp
+filter, no network namespace, and no filesystem overlay, so it's appropriate
+for trusted-but-buggy or resource-abusive code (contest submissions, student
+code), not as a boundary against a determined adversary with local filesystem
+access. See [Sandbox Internals](/architecture/sandbox-internals#process-tree-isolation)
+for the full picture.
+
+### Why did I get `TLE` when the program clearly finished fast?
+
+Two different things can trigger `TLE`: the **wall-clock** timer killing the
+process, or the **CPU time** check after it exits. If your process legitimately
+used more CPU than `-t` allows — even briefly, even if it returned before the
+`-w` wall-clock deadline — it's still `TLE`. See [Resource
+Limits](/architecture/resource-limits#cpu-time).
+
+### What does exit code `137` mean?
+
+`137 = 128 + 9`, i.e. the process was killed by signal 9 (`SIGKILL`) — usually
+because it hit the wall-clock or memory limit. See [Exit
+Codes](/cli-reference#exit-codes) for the full `128 + signal` convention.
+
+### My checker isn't being found
+
+`--checker` resolves the path **as given** — absolute or relative to the
+current working directory, never via `$PATH`. Use `./checker`, not `checker`.
+Also remember `--checker` must be combined with `--expected` or `--cases`; it
+errors out (exit `2`) on its own. See [Custom
+Checkers](/guides/custom-checker).
+
+### Can output limits (4 MiB) be configured?
+
+No — the 4 MiB stdout/stderr/stdin caps are fixed, not exposed as flags. See
+[Resource Limits](/architecture/resource-limits#output-caps).
+
+### What's the difference between `--expected` and `--cases`?
+
+`-e`/`--expected` judges a **single** run against one expected-output file.
+`--cases` runs the **same binary** against many test cases (a directory or a
+YAML/JSON manifest) in one invocation, printing a per-case verdict and a
+summary. See [Single-Run Judging](/guides/single-run-judging) vs. [Batch
+Mode](/guides/batch-mode).
+
+### Can I use cxxprobe as a library instead of the CLI?
+
+Yes — `libcxxprobe` exposes a single function,
+[`cxxprobe::sandbox::run()`](https://github.com/Algorithms-Mathematics-Society/cxxprobe/blob/main/include/cxxprobe/sandbox.hpp),
+taking an argv, stdin bytes, and a `Limits` struct, and returning exit status,
+resource usage, and captured output. Everything the CLI does on top (judging,
+batch mode, JSON formatting) is orchestration you can reimplement or reuse as
+needed.
+
+<Callout type="info">
+  Didn't find your question here? Open an issue on
+  [GitHub](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues).
+</Callout>

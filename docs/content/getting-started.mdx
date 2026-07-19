@@ -1,0 +1,133 @@
+---
+title: Getting Started
+description: Build cxxprobe from source, set up cgroup v2 delegation, and run your first sandboxed program.
+---
+
+import { Steps, Callout, Tabs } from 'nextra/components'
+
+# Getting Started
+
+cxxprobe is distributed as source — there's no package manager release yet, so
+you build the CLI with CMake + Conan. The whole process takes a few minutes.
+
+## Requirements
+
+- **Linux with cgroup v2** mounted (check with `mount | grep cgroup2`). This
+  includes recent Ubuntu, Fedora, Arch, and WSL2.
+- A **C++23 compiler** — GCC ≥ 13 or Clang ≥ 17.
+- **CMake ≥ 3.20** and **Conan 2.x**.
+- Root, `sudo`, or write access to `/sys/fs/cgroup` — see [cgroup
+  delegation](#one-time-cgroup-delegation) below.
+
+## Build from source
+
+<Steps>
+
+### Clone and install dependencies
+
+cxxprobe pulls GoogleTest, yaml-cpp, Google Benchmark and CLI11 through Conan.
+
+```bash
+git clone https://github.com/Algorithms-Mathematics-Society/cxxprobe.git
+cd cxxprobe
+pip install conan
+conan profile detect --force   # first time only
+conan install . -s build_type=Debug -s compiler.cppstd=23 \
+  --output-folder=build --build=missing
+```
+
+### Configure and build
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+cmake --build build -j$(nproc)
+```
+
+This produces `build/cli/cxxprobe-cli`, the static library `build/src/libcxxprobe.a`,
+and the unit/integration test binaries.
+
+### Run the test suite
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+Everything except the sandbox/cgroup tests will pass immediately. Those need
+one more step.
+
+</Steps>
+
+## One-time cgroup delegation
+
+cxxprobe creates a cgroup leaf per run under `/sys/fs/cgroup/cxxprobe/<uuid>/`.
+That directory is root-owned by default, so an unprivileged user needs a
+one-time delegation:
+
+```bash
+echo "+memory +cpu +pids" | sudo tee /sys/fs/cgroup/cgroup.subtree_control
+sudo mkdir -p /sys/fs/cgroup/cxxprobe
+sudo chown -R "$(whoami):$(whoami)" /sys/fs/cgroup/cxxprobe
+```
+
+<Callout type="warning">
+  Chown the **directory recursively**, not just the top-level folder. Linux
+  cgroup v2 delegation only propagates to child cgroups when the parent's
+  interface files (`cgroup.procs`, `cgroup.subtree_control`, …) are also owned
+  by the delegating user — `chown` without `-R` looks like it worked but leaves
+  child cgroups root-owned.
+</Callout>
+
+This is **not persistent across reboots** — `/sys/fs/cgroup` is a virtual
+filesystem reset at boot. Re-run the three commands (or wire them into a
+systemd unit / tmpfiles.d rule) after restarting.
+
+Once delegated, re-run the full suite:
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+<Callout type="info">
+  Running as **root** (as CI does) skips this step entirely — the sandbox
+  already has write access to all of `/sys/fs/cgroup`.
+</Callout>
+
+## Your first sandboxed run
+
+```bash
+./build/cli/cxxprobe-cli /bin/echo hello
+```
+
+```text
+hello
+[exit:0 | cpu:0ms | wall:1ms | mem:--]
+```
+
+The metadata line goes to **stderr**; stdout passes through unmodified. Now
+try it with actual limits and a judged test case — see the [CLI
+Reference](/cli-reference) for every flag, or jump straight into [Single-Run
+Judging](/guides/single-run-judging).
+
+## Environment notes
+
+<Tabs items={['CI (root)', 'Local dev (unprivileged)', 'WSL2']}>
+  <Tabs.Tab>
+    GitHub Actions runners (`ubuntu-24.04`) have root, so the CI workflow
+    enables controllers and creates `/sys/fs/cgroup/cxxprobe` directly — see
+    `.github/workflows/ci.yml`.
+  </Tabs.Tab>
+  <Tabs.Tab>
+    Follow the [delegation steps](#one-time-cgroup-delegation) above once per
+    boot. If delegation isn't possible on your machine, you can still build and
+    run the non-sandbox unit tests; sandbox/cgroup tests will report
+    `Skipped`, not failed.
+  </Tabs.Tab>
+  <Tabs.Tab>
+    WSL2 ships cgroup v2 mounted by default (`nsdelegate` option enabled).
+    Delegation works the same as native Linux. One cgroup test
+    (`CgroupTest.AddPidCgroupProcsContainsPid`) self-skips under `nsdelegate`
+    because direct `cgroup.procs` migration from outside the ancestor chain is
+    blocked by the kernel — this is expected and already handled by an
+    `RLIMIT_AS` fallback in the sandbox code.
+  </Tabs.Tab>
+</Tabs>

@@ -1,0 +1,107 @@
+---
+title: Sandbox Internals
+description: How cxxprobe isolates and limits an untrusted program, mechanism by mechanism.
+---
+
+import { Steps, Callout } from 'nextra/components'
+
+# Sandbox Internals
+
+cxxprobe isolates each run with **Linux user namespaces**
+(`CLONE_NEWUSER | CLONE_NEWNS`) combined with **cgroup v2** for resource
+accounting and enforcement. This combination works without root or systemd,
+subject only to the kernel allowing unprivileged user namespaces and the
+process having a delegated cgroup subtree (see [Getting
+Started](/getting-started#one-time-cgroup-delegation)).
+
+## Lifecycle of a single run
+
+<Steps>
+
+### Create a cgroup leaf
+
+A fresh cgroup is created at `/sys/fs/cgroup/cxxprobe/<uuid>/` for this run
+only. One leaf per run keeps resource accounting (`memory.peak`, `cpu.stat`)
+and killing (`cgroup.kill`) scoped to exactly one process tree.
+
+### Clone into a new namespace
+
+The child is created with `CLONE_NEWUSER | CLONE_NEWNS` — a new user namespace
+and mount namespace, not a new process (PID) namespace.
+
+### Map uid/gid
+
+The parent writes `uid_map` / `gid_map` for the child so that it sees itself
+as **uid 0 (root) inside its own namespace**, while remaining an unprivileged
+user on the host. This is what lets the sandbox work without host root.
+
+### Move the child into the cgroup
+
+The child's PID is written to `cgroup.procs` in the leaf created in step 1,
+which is what makes `memory.max`, `cpu.max`, and `pids.max` actually apply to
+it — see [Resource Limits](/architecture/resource-limits) for what each
+controller enforces.
+
+### Signal the child to exec
+
+Parent and child hand off through a small synchronous pipe protocol
+(`SyncChannel`) so the parent can finish cgroup and namespace setup *before*
+the child calls `exec` — avoiding a race where the target program starts
+running before its limits are actually in place.
+
+### Wait without polling
+
+The parent waits on `epoll(pidfd, timerfd)` — a `pidfd` for child exit and a
+`timerfd` for the wall-clock deadline — so there's no busy-loop and no
+sleep-and-check overhead while the child runs.
+
+### On timeout: kill, belt and suspenders
+
+If the wall-clock timer fires first, cxxprobe writes to `cgroup.kill` (Linux
+5.14+, kills every process in the cgroup atomically) and follows up with
+`SIGKILL` directly to the child PID as a fallback for older kernels or edge
+cases where `cgroup.kill` doesn't apply cleanly.
+
+### Read back accounting, then tear down
+
+After the child exits (or is killed), cxxprobe reads `memory.peak` and
+`cpu.stat` from the cgroup for the final `Result`, then removes the cgroup
+directory. Cgroup cleanup is RAII — it happens even if an exception unwinds
+through the run.
+
+</Steps>
+
+## Process tree isolation
+
+The child remounts `/proc` inside its own mount namespace before `exec`, so
+the sandboxed program cannot enumerate or inspect the host's process tree
+through `/proc/<pid>` — it only sees processes inside its own namespace.
+
+<Callout type="warning">
+  This is **namespace + cgroup isolation**, not a full container runtime.
+  There's no seccomp filter, no network namespace, and no filesystem overlay —
+  the sandboxed program shares the host filesystem (read/write, subject to
+  normal file permissions) and network stack. Treat it as resource and
+  process-tree isolation for **trusted-but-buggy** or **resource-abusive**
+  code (contest submissions, student code), not as a security boundary against
+  a determined adversary with local filesystem access.
+</Callout>
+
+## Why wall-clock is the primary kill, not CPU time
+
+CPU time (`cpu.stat usage_usec`) is only checked **after** the process exits
+or is killed — it can't interrupt execution by itself, since reading cgroup
+stats requires the process to still exist. Wall-clock, enforced via
+`timerfd`, is what actually stops a runaway process (infinite loop,
+`sleep()`, a blocked read). CPU time is then compared against the `-t` limit
+post-hoc to decide whether the verdict should be `TLE` even if the process
+exited within the wall-clock budget but burned excessive CPU (relevant on
+multi-core machines where wall-clock and CPU time can diverge).
+
+## Output capture
+
+Stdout and stderr are each read by a dedicated drain thread through a pipe,
+capped at 4 MiB. The sandbox keeps reading (and discarding) past the cap
+rather than stopping, so a chatty program can't deadlock the sandbox by
+filling its pipe buffer and blocking on a write the sandbox has stopped
+servicing.

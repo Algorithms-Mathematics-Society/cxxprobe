@@ -1,0 +1,90 @@
+---
+title: JSON Output
+description: Machine-readable results for grading pipelines and CI.
+---
+
+# JSON Output
+
+Add `--json` to any invocation to get a structured result instead of the
+human-readable format.
+
+## Single run
+
+```bash
+cxxprobe --json -i 1.in ./solution
+```
+
+```json
+{
+  "exit_code": 0,
+  "peak_memory_bytes": 3354624,
+  "cpu_time_ms": 42,
+  "wall_time_ms": 47,
+  "stdout": "15\n",
+  "stderr": ""
+}
+```
+
+When judging is active (`-e` or `--cases`), a `"verdict"` field is added:
+
+```json
+{
+  "exit_code": 0,
+  "peak_memory_bytes": 3354624,
+  "cpu_time_ms": 42,
+  "wall_time_ms": 47,
+  "verdict": "AC",
+  "stdout": "15\n",
+  "stderr": ""
+}
+```
+
+## Batch mode
+
+```bash
+cxxprobe --json --cases tests/ ./solution
+```
+
+```json
+{
+  "results": [
+    {"index": 1, "label": "1", "verdict": "AC", "exit_code": 0,
+     "cpu_time_ms": 42, "wall_time_ms": 47, "peak_memory_bytes": 3354624},
+    {"index": 2, "label": "2", "verdict": "WA", "exit_code": 0,
+     "cpu_time_ms": 38, "wall_time_ms": 43, "peak_memory_bytes": 3041280},
+    {"index": 3, "label": "10", "verdict": "TLE", "exit_code": -9,
+     "cpu_time_ms": 5000, "wall_time_ms": 5001, "peak_memory_bytes": 14680064}
+  ],
+  "summary": {"passed": 1, "total": 3}
+}
+```
+
+A negative `exit_code` means the process was killed by a signal (e.g. `-9` =
+SIGKILL from a TLE/MLE kill).
+
+## Piping into grading scripts
+
+```bash
+cxxprobe \
+  -m 256 -w 2s -t 1500ms \
+  -i contestant_input.txt \
+  -e expected.ans \
+  --json \
+  ./contestant_solution \
+  > result.json
+
+# Exit 0 = AC, 1 = non-AC
+jq '.verdict' result.json
+```
+
+```bash
+# Extract memory/CPU stats for reporting
+cxxprobe --json -i big_input.txt ./solution \
+  | jq '{"mem_mib": (.peak_memory_bytes/1048576|.*10|round/10), "cpu_ms": .cpu_time_ms}'
+```
+
+## Encoding notes
+
+Stdout and stderr are JSON-escaped strings. Control characters below `0x20`
+are encoded as `\uXXXX`. Both streams are captured up to the 4 MiB cap — see
+[Resource Limits](/architecture/resource-limits).

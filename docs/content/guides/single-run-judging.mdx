@@ -1,0 +1,93 @@
+---
+title: Single-Run Judging
+description: Run one program against one test case and get a pass/fail verdict.
+---
+
+import { Callout } from 'nextra/components'
+
+# Single-Run Judging
+
+## Basic sandboxed run
+
+Run a program, capture its output, see resource usage — no judging yet:
+
+```bash
+cxxprobe ./solution
+```
+
+```text
+<stdout of solution>
+[exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB]
+```
+
+### Provide stdin from a file
+
+```bash
+cxxprobe -i tests/1.in ./solution
+```
+
+### Pipe stdin directly
+
+```bash
+echo "5" | cxxprobe -i - ./solution
+```
+
+The `-i -` form reads up to 4 MiB from real stdin into memory, then feeds it to
+the sandboxed program.
+
+### Custom limits
+
+```bash
+# 128 MiB RAM, 2 second wall clock, 1 second CPU
+cxxprobe -m 128 -w 2s -t 1s ./solution
+
+# Very tight: 32 MiB, 500 ms, 8 PIDs (single-threaded program)
+cxxprobe -m 32 -w 500ms -t 500ms -p 8 ./solution
+```
+
+### Pass arguments to the program
+
+```bash
+cxxprobe ./checker input.txt output.txt answer.txt
+```
+
+Everything after the program path is forwarded as that program's `argv`.
+
+## Judging with `-e` / `--expected`
+
+Add `-e`/`--expected` to compare stdout against an expected output file:
+
+```bash
+cxxprobe -i 1.in -e 1.ans ./solution
+```
+
+```text
+15
+[exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB | AC]
+```
+
+### Default checker: token equality
+
+Without `--checker`, cxxprobe compares output **token by token**, ignoring all
+whitespace differences:
+
+- `"1 2 3\n"` matches `"1  2   3"` ✓
+- `"42\n"` matches `"42"` ✓
+- `"1.0"` does **not** match `"1"` ✗ (tokens compare as strings, not numbers)
+
+<Callout type="warning">
+  Token equality is exact-string, not numeric. Floating-point or
+  multiple-valid-answer problems need a [custom checker](/guides/custom-checker).
+</Callout>
+
+## Capturing output without judging
+
+```bash
+cxxprobe -i input.txt -q ./solution > output.txt
+```
+
+`-q` suppresses the metadata line; a normal shell redirect captures stdout —
+there's no dedicated `--output-file` flag.
+
+See [JSON Output](/guides/json-output) for machine-readable results, or
+[Custom Checkers](/guides/custom-checker) for testlib-ABI checkers.

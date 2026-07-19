@@ -1,0 +1,115 @@
+---
+title: Batch Mode
+description: Run one binary against many test cases with a single invocation.
+---
+
+import { FileTree, Callout } from 'nextra/components'
+
+# Batch Mode
+
+`--cases` runs the same binary against every test case in a directory or
+manifest, in one invocation, and prints a per-case verdict plus a summary.
+
+## Directory format
+
+<FileTree>
+  <FileTree.Folder name="tests" defaultOpen>
+    <FileTree.File name="1.in" />
+    <FileTree.File name="1.ans" />
+    <FileTree.File name="2.in" />
+    <FileTree.File name="2.ans" />
+    <FileTree.File name="10.in" />
+    <FileTree.File name="10.ans" />
+  </FileTree.Folder>
+</FileTree>
+
+```bash
+cxxprobe --cases tests/ ./solution
+```
+
+Files are sorted **numerically** (`10.in` comes after `2.in`, not before it as
+plain string sort would). Both `.ans` and `.out` extensions are recognized for
+expected output. Cases without a matching `.ans`/`.out` still run, just
+unjudged.
+
+```text
+     1: AC    cpu:    42ms    wall:    47ms    mem:    3.2MiB
+     2: WA    cpu:    38ms    wall:    43ms    mem:    2.9MiB
+    10: TLE   cpu:  5000ms    wall:  5001ms    mem:   14.0MiB
+---
+1/3 passed
+```
+
+## YAML/JSON manifest
+
+For more control — custom labels, inline data — use a `.yaml`, `.yml`, or
+`.json` manifest. Paths are resolved **relative to the manifest file**.
+
+```yaml filename="cases.yaml"
+- input: "tests/1.in"
+  answer: "tests/1.ans"
+
+- input: "tests/2.in"
+  answer: "tests/2.ans"
+  label: "edge-empty" # optional custom label
+
+- input_data: "3\n1 2 3\n" # inline input
+  answer_data: "6\n" # inline expected output
+```
+
+```bash
+cxxprobe --cases cases.yaml ./solution
+```
+
+JSON manifests work identically — YAML is a superset of JSON:
+
+```json filename="cases.json"
+[
+  { "input": "tests/1.in", "answer": "tests/1.ans" },
+  { "input_data": "3\n1 2 3\n", "answer_data": "6\n", "label": "inline-3" }
+]
+```
+
+<Callout type="info">
+  `label` is optional — cases default to a 1-based index if omitted.
+</Callout>
+
+## With a custom checker
+
+```bash
+cxxprobe --cases tests/ --checker ./checker ./solution
+```
+
+The checker runs for every case that has expected output. See [Custom
+Checkers](/guides/custom-checker).
+
+## JSON output
+
+```bash
+cxxprobe --json --cases tests/ ./solution
+```
+
+See the full shape in [JSON Output](/guides/json-output#batch-mode).
+
+## Exit codes
+
+- `0` — all judged cases passed (or nothing was judged)
+- `1` — at least one non-AC verdict
+- `2` — at least one sandbox error
+
+## Problemsetting workflows
+
+Validate a solution against a full test set before publishing a problem:
+
+```bash
+cxxprobe -m 256 -w 2s --cases tests/ ./solution
+```
+
+Validate with a checker (geometry / floating point problems):
+
+```bash
+cxxprobe -m 256 -w 2s --cases tests/ --checker ./checker ./solution
+```
+
+For generator-driven stress testing across many random seeds, see [Stress
+Testing & Debugging](/guides/stress-testing).

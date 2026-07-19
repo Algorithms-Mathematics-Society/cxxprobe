@@ -1,0 +1,131 @@
+---
+title: CLI Reference
+description: Every cxxprobe flag, the duration format, verdicts, and exit codes.
+---
+
+import { Callout } from 'nextra/components'
+
+# CLI Reference
+
+```text
+cxxprobe [OPTIONS] program [args...]
+```
+
+Everything after `program` is passed through as that program's `argv` — put
+cxxprobe's own flags first.
+
+## Flags
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--memory-mb N` | `-m` | `256` | Memory limit in MiB |
+| `--cpu DURATION` | `-t` | `5000ms` | CPU time limit |
+| `--wall DURATION` | `-w` | `10000ms` | Wall-clock limit |
+| `--pids N` | `-p` | `64` | Max process count |
+| `--input FILE` | `-i` | (empty) | Stdin file; `-` reads from a pipe |
+| `--expected FILE` | `-e` | (none) | Expected output — enables verdict judging |
+| `--checker PATH` | | (none) | Custom checker binary (testlib ABI) |
+| `--cases PATH` | | (none) | Batch mode: directory or manifest |
+| `--json` | | off | Emit result as JSON |
+| `--quiet` | `-q` | off | Suppress the metadata line (human mode) |
+| `--no-color` | | off | Disable ANSI colors |
+| `--version` | `-V` | | Print version and exit |
+
+## Duration format
+
+`--cpu` / `-t` and `--wall` / `-w` accept three forms:
+
+```bash
+--wall 2s       # 2 seconds
+--wall 500ms    # 500 milliseconds
+--wall 2000     # raw milliseconds (backward-compatible)
+```
+
+Only pure digit strings (optionally suffixed with `s` or `ms`) are accepted —
+decimals, negative numbers, and other suffixes raise an error.
+
+## Output
+
+### Human mode (default)
+
+The sandboxed program's **stdout** is written to cxxprobe's stdout, unmodified.
+Its **stderr** is written to cxxprobe's stderr, unmodified. A metadata line is
+appended to stderr (suppress with `-q`):
+
+```text
+[exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB | AC]
+```
+
+The trailing verdict segment (` | AC`) only appears when judging is active
+(`-e` or `--cases`).
+
+### JSON mode (`--json`)
+
+```json
+{
+  "exit_code": 0,
+  "peak_memory_bytes": 3354624,
+  "cpu_time_ms": 42,
+  "wall_time_ms": 47,
+  "verdict": "AC",
+  "stdout": "15\n",
+  "stderr": ""
+}
+```
+
+The `verdict` key is only present when judging is active. Control characters
+below `0x20` in `stdout`/`stderr` are escaped as `\uXXXX`.
+
+## Verdicts
+
+| Verdict | Meaning |
+|---|---|
+| `AC` | Accepted — output matches expected |
+| `WA` | Wrong Answer |
+| `TLE` | Time Limit Exceeded (wall or CPU) |
+| `MLE` | Memory Limit Exceeded |
+| `OLE` | Output Limit Exceeded (stdout ≥ 4 MiB) |
+| `RE` | Runtime Error (non-zero exit) |
+
+Priority when multiple conditions trigger simultaneously:
+**TLE > MLE > OLE > RE > WA/AC**.
+
+## Exit codes
+
+<Callout type="info">
+  Exit codes differ depending on whether judging (`-e` / `--cases`) is active.
+</Callout>
+
+**Single run, judging active:**
+- `0` — AC
+- `1` — any non-AC verdict (WA, TLE, MLE, OLE, RE)
+- `2` — sandbox error (permission denied, binary not found, etc.)
+
+**Single run, no judging:**
+- Child's exit code, passed through (capped at 125)
+- If killed by a signal: `128 + signal_number` (e.g. SIGKILL → `137`)
+- `2` — sandbox error
+
+**Batch mode (`--cases`):**
+- `0` — all judged cases passed (or nothing was judged)
+- `1` — at least one non-AC verdict
+- `2` — at least one sandbox error
+
+## Resource limits reference
+
+| Resource | Flag | Default | Enforcement mechanism |
+|---|---|---|---|
+| Memory | `-m` / `--memory-mb` | 256 MiB | `memory.max` (cgroup v2) |
+| Swap | (always 0) | 0 | `memory.swap.max=0` |
+| CPU time | `-t` / `--cpu` | 5 s | `cpu.stat usage_usec`, checked post-run |
+| Wall clock | `-w` / `--wall` | 10 s | `timerfd` + `epoll` + `cgroup.kill` |
+| PIDs | `-p` / `--pids` | 64 | `pids.max` (cgroup v2) |
+| Stdout | (fixed) | 4 MiB | Drain thread discards past the cap |
+| Stderr | (fixed) | 4 MiB | Drain thread discards past the cap |
+| Stdin | (fixed) | 4 MiB | Capped when loading with `-i -` |
+
+Wall clock is the primary kill mechanism: when the timer fires, `cgroup.kill`
+(Linux 5.14+) is written and SIGKILL is sent as a fallback. CPU time is
+checked **after** the run against `cpu.stat` to compute the TLE verdict — it
+doesn't interrupt execution on its own. See [Sandbox
+Internals](/architecture/sandbox-internals) for the full mechanism.
