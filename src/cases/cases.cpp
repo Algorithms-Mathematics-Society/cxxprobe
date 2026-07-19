@@ -160,14 +160,14 @@ bool token_equal(std::string_view a, std::string_view b) {
         std::vector<std::string_view> toks;
         std::size_t i = 0;
         while (i < s.size()) {
-            while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) {
+            while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i])) != 0) {
                 ++i;
             }
             if (i >= s.size()) {
                 break;
             }
             std::size_t j = i;
-            while (j < s.size() && !std::isspace(static_cast<unsigned char>(s[j]))) {
+            while (j < s.size() && std::isspace(static_cast<unsigned char>(s[j])) == 0) {
                 ++j;
             }
             toks.push_back(s.substr(i, j - i));
