@@ -236,6 +236,9 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         .sync = std::move(child_sync),
         .cgroup_procs_path = (cgroup.path() / "cgroup.procs").string(),
         .memory_limit_bytes = limits.memory_bytes,
+        .cpu_limit_seconds = limits.cpu.count() > 0
+                                 ? static_cast<unsigned long>((limits.cpu.count() + 999) / 1000)
+                                 : 0UL,
     };
 
     // ── clone ─────────────────────────────────────────────────────────────

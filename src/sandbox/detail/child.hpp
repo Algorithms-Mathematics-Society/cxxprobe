@@ -22,6 +22,7 @@ struct ChildArgs {
     SyncEnd sync;                       // child's half of the sync channel
     std::string cgroup_procs_path;      // absolute path to leaf's cgroup.procs
     std::size_t memory_limit_bytes{0};  // fallback RLIMIT_AS when cgroup migration is blocked
+    unsigned long cpu_limit_seconds{0}; // RLIMIT_CPU; 0 = no enforcement
 };
 
 // Entry point executed inside the cloned process (user + mount namespace).

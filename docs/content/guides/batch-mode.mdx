@@ -24,7 +24,7 @@ manifest, in one invocation, and prints a per-case verdict plus a summary.
 </FileTree>
 
 ```bash
-cxxprobe --cases tests/ ./solution
+cxxprobe run --cases tests/ ./solution
 ```
 
 Files are sorted **numerically** (`10.in` comes after `2.in`, not before it as
@@ -58,7 +58,7 @@ For more control — custom labels, inline data — use a `.yaml`, `.yml`, or
 ```
 
 ```bash
-cxxprobe --cases cases.yaml ./solution
+cxxprobe run --cases cases.yaml ./solution
 ```
 
 JSON manifests work identically — YAML is a superset of JSON:
@@ -77,7 +77,7 @@ JSON manifests work identically — YAML is a superset of JSON:
 ## With a custom checker
 
 ```bash
-cxxprobe --cases tests/ --checker ./checker ./solution
+cxxprobe run --cases tests/ --checker ./checker ./solution
 ```
 
 The checker runs for every case that has expected output. See [Custom
@@ -86,7 +86,7 @@ Checkers](/guides/custom-checker).
 ## JSON output
 
 ```bash
-cxxprobe --json --cases tests/ ./solution
+cxxprobe run --json --cases tests/ ./solution
 ```
 
 See the full shape in [JSON Output](/guides/json-output#batch-mode).
@@ -102,13 +102,13 @@ See the full shape in [JSON Output](/guides/json-output#batch-mode).
 Validate a solution against a full test set before publishing a problem:
 
 ```bash
-cxxprobe -m 256 -w 2s --cases tests/ ./solution
+cxxprobe run -m 256 -w 2s --cases tests/ ./solution
 ```
 
 Validate with a checker (geometry / floating point problems):
 
 ```bash
-cxxprobe -m 256 -w 2s --cases tests/ --checker ./checker ./solution
+cxxprobe run -m 256 -w 2s --cases tests/ --checker ./checker ./solution
 ```
 
 For generator-driven stress testing across many random seeds, see [Stress

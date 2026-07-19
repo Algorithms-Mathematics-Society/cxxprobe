@@ -11,7 +11,7 @@ human-readable format.
 ## Single run
 
 ```bash
-cxxprobe --json -i 1.in ./solution
+cxxprobe run --json -i 1.in ./solution
 ```
 
 ```json
@@ -42,7 +42,7 @@ When judging is active (`-e` or `--cases`), a `"verdict"` field is added:
 ## Batch mode
 
 ```bash
-cxxprobe --json --cases tests/ ./solution
+cxxprobe run --json --cases tests/ ./solution
 ```
 
 ```json
@@ -65,7 +65,7 @@ SIGKILL from a TLE/MLE kill).
 ## Piping into grading scripts
 
 ```bash
-cxxprobe \
+cxxprobe run \
   -m 256 -w 2s -t 1500ms \
   -i contestant_input.txt \
   -e expected.ans \
@@ -79,7 +79,7 @@ jq '.verdict' result.json
 
 ```bash
 # Extract memory/CPU stats for reporting
-cxxprobe --json -i big_input.txt ./solution \
+cxxprobe run --json -i big_input.txt ./solution \
   | jq '{"mem_mib": (.peak_memory_bytes/1048576|.*10|round/10), "cpu_ms": .cpu_time_ms}'
 ```
 

@@ -1,21 +1,90 @@
 ---
 title: Folder Structure
-description: How to lay out a problem's test data, checkers, and generators so cxxprobe can grade it.
+description: What `cxxprobe new` scaffolds, and how a contest/problem directory is laid out.
 ---
 
 import { FileTree, Callout } from 'nextra/components'
 
 # Folder Structure
 
-cxxprobe doesn't impose a rigid project layout — `--cases` just needs a folder
-of paired files or a manifest, and everything else (checker, generator,
-solutions) is a plain path you pass on the command line. This page documents
-the conventions that work well in practice, used throughout the
-[guides](/guides/contest-workflows).
+`cxxprobe new contest` and `cxxprobe new problem` generate this structure —
+it's not just a convention, `cxxprobe test problem` expects it. The
+lower-level `cxxprobe run --cases` (see [Batch Mode](/guides/batch-mode))
+still works against any ad hoc directory of `.in`/`.ans` files if you're not
+using the scaffolding at all.
 
-## A single problem
+## A contest
 
-The minimum cxxprobe needs is a directory of paired `.in`/`.ans` files:
+```bash
+cxxprobe new contest "AMS Ascent"
+```
+
+<FileTree>
+  <FileTree.Folder name="ams-ascent" defaultOpen>
+    <FileTree.File name="contest.yaml" />
+  </FileTree.Folder>
+</FileTree>
+
+`contest.yaml` is a small marker file (`version`, `name`, `description`) —
+`cxxprobe new problem` and `cxxprobe test problem` walk up from the current
+directory looking for it to find the contest root (or pass `-C/--dir`
+explicitly). Problem directories sit flat as direct children — there's no
+extra `problems/` nesting level and no tool-enforced ordering; if you want
+letter/number ordering visible in the problem list, put it in the title you
+pass to `new problem` (e.g. `"A: FileReader RAII"`) — cxxprobe never
+interprets that prefix, it just becomes part of the slug.
+
+## A problem
+
+```bash
+cd ams-ascent
+cxxprobe new problem "A: FileReader RAII"
+```
+
+<FileTree>
+  <FileTree.Folder name="a-filereader-raii" defaultOpen>
+    <FileTree.File name="problem.yaml" />
+    <FileTree.File name="problem.md" />
+    <FileTree.File name="solution_template.cpp" />
+    <FileTree.File name="checker_gtest.cpp" />
+    <FileTree.Folder name="tests" />
+  </FileTree.Folder>
+</FileTree>
+
+| File / folder | Purpose |
+|---|---|
+| `problem.yaml` | Config: compiler/limits overrides, and the 3 consolidated test type settings — see [CLI Reference](/cli-reference#test-problem) |
+| `problem.md` | Human-readable statement — not read by cxxprobe |
+| `solution_template.cpp` | Copy to `solution.cpp` and fill in — the reference solution |
+| `checker_gtest.cpp` | GTest `TEST()` cases exercising the submission directly (consolidated type 3) |
+| `tests/` | `.in`/`.ans` pairs (consolidated type 1) — empty until you add cases |
+
+The directory name (`a-filereader-raii`) is a mechanical slug of the title
+you passed — lowercase, non-alphanumeric runs collapsed to `-`. It's what
+you pass to `cxxprobe test problem`, though the exact `problem.yaml` `name:`
+also resolves (so both `cxxprobe test problem a-filereader-raii` and
+`cxxprobe test problem "A: FileReader RAII"` work).
+
+A freshly scaffolded, unfilled problem is a clean baseline `PASS` — manual
+tests and symbolic checks are inferred **disabled** until you actually add
+`tests/*.in` files or `symbolic.must_include`/`must_not_include` entries;
+the placeholder `TEST()` in `checker_gtest.cpp` passes trivially, so the
+pipeline itself is verified working before you've written a line of the
+actual solution.
+
+<Callout type="warning">
+  `checker_gtest.cpp` includes the submission via the `CXXPROBE_SOLUTION_FILE`
+  macro cxxprobe defines at compile time — don't replace that with a
+  hardcoded `#include "solution.cpp"`, or [`--submission`
+  grading](/guides/contest-workflows#grading-a-submission) will silently test
+  the wrong file. The submission's own `main()` is renamed out of the way
+  (`#define main solution_main`) so it doesn't collide with GTest's `main()`.
+</Callout>
+
+## Manual tests: directory or manifest
+
+`tests/` holds `<label>.in` / `<label>.ans` pairs (`.out` also accepted for
+the answer):
 
 <FileTree>
   <FileTree.Folder name="tests" defaultOpen>
@@ -28,97 +97,33 @@ The minimum cxxprobe needs is a directory of paired `.in`/`.ans` files:
   </FileTree.Folder>
 </FileTree>
 
-- Each case is a `<label>.in` / `<label>.ans` pair sharing a stem. `.out` is
-  also accepted as the answer extension.
-- Labels are sorted **numerically**, not lexicographically — `10.in` sorts
-  after `2.in`.
-- A case without a matching answer file still runs, just unjudged.
-
-```bash
-cxxprobe --cases tests/ ./solution
-```
-
-A fuller problem directory, once you add a reference solution, checker, and
-generator, looks like:
-
-<FileTree>
-  <FileTree.Folder name="problemA" defaultOpen>
-    <FileTree.File name="statement.md" />
-    <FileTree.Folder name="tests" defaultOpen>
-      <FileTree.File name="1.in" />
-      <FileTree.File name="1.ans" />
-      <FileTree.File name="2.in" />
-      <FileTree.File name="2.ans" />
-    </FileTree.Folder>
-    <FileTree.File name="solution.cpp" />
-    <FileTree.File name="checker.cpp" />
-    <FileTree.File name="gen.cpp" />
-  </FileTree.Folder>
-</FileTree>
-
-| File / folder | Purpose | Used with |
-|---|---|---|
-| `tests/` | Test data (`.in`/`.ans` pairs) | `--cases problemA/tests/` |
-| `solution.cpp` | Reference solution, compiled before grading | passed as `program` |
-| `checker.cpp` | Optional testlib-ABI checker, compiled once | `--checker ./checker` |
-| `gen.cpp` | Optional test-case generator | driving a [stress-test loop](/guides/stress-testing) |
-| `statement.md` | Human-readable problem statement | not read by cxxprobe |
-
-None of these names are enforced by the tool — `solution`, `checker` and `gen`
-are conventional filenames, compiled to plain binaries and referenced by
-whatever path you give the CLI.
-
-## A manifest instead of a directory
-
-If cases don't map cleanly to files on disk (inline data, custom per-case
-labels, cases assembled by another tool), replace `tests/` with a manifest:
-
-<FileTree>
-  <FileTree.Folder name="problemA" defaultOpen>
-    <FileTree.File name="cases.yaml" />
-    <FileTree.File name="solution.cpp" />
-  </FileTree.Folder>
-</FileTree>
-
-```yaml filename="cases.yaml"
-- input: "tests/1.in"
-  answer: "tests/1.ans"
-- input_data: "3\n1 2 3\n"
-  answer_data: "6\n"
-  label: "inline-3"
-```
-
-Paths inside the manifest are resolved relative to the manifest file, so a
-manifest and a `tests/` directory can coexist — see [Batch
-Mode](/guides/batch-mode#yamljson-manifest) for the full schema.
+Labels sort **numerically** (`10.in` after `2.in`, not before it as plain
+string sort would); a case without a matching answer file still runs, just
+unjudged. If cases don't map cleanly to files on disk, point `problem.yaml`'s
+`tests.manifest` at a YAML/JSON manifest instead of `tests.dir` — see [Batch
+Mode](/guides/batch-mode#yamljson-manifest) for the manifest schema (the
+mechanism is identical, just addressed from `problem.yaml` instead of
+`--cases`).
 
 ## A multi-problem contest
 
-Nothing changes at contest scale — it's just one problem directory per
-problem, each self-contained and independently gradable:
-
 <FileTree>
-  <FileTree.Folder name="contest" defaultOpen>
-    <FileTree.Folder name="problemA" defaultOpen>
-      <FileTree.File name="tests/" />
-      <FileTree.File name="solution.cpp" />
-      <FileTree.File name="checker.cpp" />
-    </FileTree.Folder>
-    <FileTree.Folder name="problemB">
-      <FileTree.File name="tests/" />
+  <FileTree.Folder name="ams-ascent" defaultOpen>
+    <FileTree.File name="contest.yaml" />
+    <FileTree.Folder name="a-filereader-raii" defaultOpen>
+      <FileTree.File name="problem.yaml" />
       <FileTree.File name="solution.cpp" />
     </FileTree.Folder>
-    <FileTree.Folder name="problemC">
-      <FileTree.File name="…" />
+    <FileTree.Folder name="b-graph-diameter">
+      <FileTree.File name="problem.yaml" />
+      <FileTree.File name="solution.cpp" />
     </FileTree.Folder>
   </FileTree.Folder>
 </FileTree>
 
-A grading script just iterates the problem directories and, for each,
-resolves that problem's own `tests/` and `checker` — there's no shared global
-config to keep in sync. See [Contest
-Workflows](/guides/contest-workflows#grading-many-submissions) for a working
-grading-loop example.
+Each problem is self-contained and independently gradable — `cxxprobe test
+problem` resolves one problem directory at a time. There's no shared global
+config to keep in sync.
 
 <Callout type="info">
   Per-problem isolation matches how cxxprobe itself runs each case: every
@@ -128,25 +133,30 @@ grading-loop example.
 
 ## Contestant submissions
 
-Grading scripts commonly expect one binary (or one source file to compile)
-per contestant, named consistently so a loop can glob over them:
+`cxxprobe test problem --submission <path>` grades an arbitrary source file
+through all 3 consolidated checks in place of the problem's own
+`solution.cpp` — see [Contest
+Workflows](/guides/contest-workflows#grading-a-submission) for the full
+grading-loop pattern over many contestants:
 
 <FileTree>
   <FileTree.Folder name="submissions" defaultOpen>
     <FileTree.Folder name="team-01">
-      <FileTree.File name="solution" />
+      <FileTree.File name="solution.cpp" />
     </FileTree.Folder>
     <FileTree.Folder name="team-02">
-      <FileTree.File name="solution" />
+      <FileTree.File name="solution.cpp" />
     </FileTree.Folder>
   </FileTree.Folder>
 </FileTree>
 
 ```bash
-for sub in submissions/*/solution; do
-    cxxprobe --cases problemA/tests/ --checker ./problemA/checker --json "$sub"
+for sub in submissions/*/solution.cpp; do
+    cxxprobe test problem a-filereader-raii --submission "$sub" --json
 done
 ```
 
-This is exactly the layout used in the [grading-many-submissions
-example](/guides/contest-workflows#grading-many-submissions).
+If you're not using the scaffolded checks at all and just want raw
+`.in`/`.ans` judging against a pre-built binary per contestant, the
+lower-level `cxxprobe run --cases` loop from [Batch
+Mode](/guides/batch-mode) still works identically.

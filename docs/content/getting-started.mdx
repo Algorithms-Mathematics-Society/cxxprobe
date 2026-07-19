@@ -25,7 +25,7 @@ you build the CLI with CMake + Conan. The whole process takes a few minutes.
 
 ### Clone and install dependencies
 
-cxxprobe pulls GoogleTest, yaml-cpp, Google Benchmark and CLI11 through Conan.
+cxxprobe pulls GoogleTest, yaml-cpp, CLI11, and nlohmann/json through Conan.
 
 ```bash
 git clone https://github.com/Algorithms-Mathematics-Society/cxxprobe.git
@@ -95,7 +95,7 @@ ctest --test-dir build --output-on-failure
 ## Your first sandboxed run
 
 ```bash
-./build/cli/cxxprobe-cli /bin/echo hello
+./build/cli/cxxprobe-cli run /bin/echo hello
 ```
 
 ```text
@@ -107,6 +107,24 @@ The metadata line goes to **stderr**; stdout passes through unmodified. Now
 try it with actual limits and a judged test case — see the [CLI
 Reference](/cli-reference) for every flag, or jump straight into [Single-Run
 Judging](/guides/single-run-judging).
+
+## Your first contest
+
+`run` is the low-level primitive above; `new` and `test problem` build a
+whole contest/problem workflow on top of it:
+
+```bash
+./build/cli/cxxprobe-cli new contest "My Contest"
+cd my-contest
+../build/cli/cxxprobe-cli new problem "A: Warmup"
+cd a-warmup
+cp solution_template.cpp solution.cpp   # fill it in
+../../build/cli/cxxprobe-cli test problem a-warmup
+```
+
+See [Contest Workflows](/guides/contest-workflows) for the full authoring
+and grading flow, and [Folder Structure](/architecture/folder-structure) for
+exactly what gets scaffolded.
 
 ## Environment notes
 

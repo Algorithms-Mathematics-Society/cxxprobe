@@ -18,7 +18,7 @@ It ships as a single static-ish CLI, `cxxprobe`, plus a small C++ library
 directly into your own judge or contest platform.
 
 ```bash
-cxxprobe -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
+cxxprobe run -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
 ```
 
 ```text
@@ -66,14 +66,23 @@ cxxprobe -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
 - **Judge built in.** Token-based diffing out of the box, or bring your own
   [testlib-ABI checker](/guides/custom-checker) for floating point / multiple
   valid answers / interactive problems.
-- **Contest-shaped batch mode.** Point `--cases` at a directory of `.in`/`.ans`
-  pairs or a YAML/JSON manifest and get per-case verdicts plus a pass/fail
-  summary in one invocation.
+- **Three ways to judge a submission, run together.** Manual `.in`/`.out`
+  cases, comment/string-aware source checks (`must_include`/
+  `must_not_include` — "did they actually use `std::bit_cast`, not
+  `memcpy`?"), and a GTest-linked behavior checker that tests the
+  submission's actual implementation, not just its stdin/stdout. `cxxprobe
+  test problem` runs all three and reports one aggregate verdict.
+- **Contest scaffolding.** `cxxprobe new contest` / `cxxprobe new problem`
+  generate the whole directory structure — `problem.yaml`, a statement
+  template, a solution template, a checker template — so there's nothing to
+  hand-roll.
 - **Machine-readable output.** `--json` emits exit code, resource usage,
   verdict and captured output as JSON for grading pipelines and CI.
 
-## Project layout at a glance
+## Where a contest lives
 
-cxxprobe is a small, focused C++23 codebase: a sandbox library, a CLI built on
-top of it, and a test suite that exercises both in isolation and end-to-end.
-See [Folder Structure](/architecture/folder-structure) for the full breakdown.
+`cxxprobe new contest "Name"` and `cxxprobe new problem "Name"` scaffold a
+contest directory and its problems — see [Folder
+Structure](/architecture/folder-structure) for exactly what gets generated,
+and [Contest Workflows](/guides/contest-workflows) for the end-to-end
+authoring and grading flow.

@@ -59,10 +59,12 @@ for the full picture.
 ### Why did I get `TLE` when the program clearly finished fast?
 
 Two different things can trigger `TLE`: the **wall-clock** timer killing the
-process, or the **CPU time** check after it exits. If your process legitimately
-used more CPU than `-t` allows — even briefly, even if it returned before the
-`-w` wall-clock deadline — it's still `TLE`. See [Resource
-Limits](/architecture/resource-limits#cpu-time).
+process, or **CPU time** exceeding `-t` — enforced live via `RLIMIT_CPU`
+(usually the faster of the two for a CPU-bound runaway) and always double
+-checked post-hoc against `cpu.stat` for the exact verdict. If your process
+legitimately used more CPU than `-t` allows — even briefly, even if it
+returned before the `-w` wall-clock deadline — it's still `TLE`. See
+[Resource Limits](/architecture/resource-limits#cpu-time).
 
 ### What does exit code `137` mean?
 
@@ -72,11 +74,13 @@ Codes](/cli-reference#exit-codes) for the full `128 + signal` convention.
 
 ### My checker isn't being found
 
-`--checker` resolves the path **as given** — absolute or relative to the
-current working directory, never via `$PATH`. Use `./checker`, not `checker`.
-Also remember `--checker` must be combined with `--expected` or `--cases`; it
-errors out (exit `2`) on its own. See [Custom
-Checkers](/guides/custom-checker).
+`--checker` (under `run`) resolves the path **as given** — absolute or
+relative to the current working directory, never via `$PATH`. Use
+`./checker`, not `checker`. Also remember `--checker` must be combined with
+`--expected` or `--cases`; it errors out (exit `2`) on its own. See [Custom
+Checkers](/guides/custom-checker). Under `test problem`, the equivalent is
+`problem.yaml`'s `tests.checker`, resolved relative to the problem
+directory.
 
 ### Can output limits (4 MiB) be configured?
 
@@ -85,20 +89,60 @@ No — the 4 MiB stdout/stderr/stdin caps are fixed, not exposed as flags. See
 
 ### What's the difference between `--expected` and `--cases`?
 
-`-e`/`--expected` judges a **single** run against one expected-output file.
-`--cases` runs the **same binary** against many test cases (a directory or a
-YAML/JSON manifest) in one invocation, printing a per-case verdict and a
-summary. See [Single-Run Judging](/guides/single-run-judging) vs. [Batch
-Mode](/guides/batch-mode).
+Both are `run` flags. `-e`/`--expected` judges a **single** run against one
+expected-output file. `--cases` runs the **same binary** against many test
+cases (a directory or a YAML/JSON manifest) in one invocation, printing a
+per-case verdict and a summary. See [Single-Run
+Judging](/guides/single-run-judging) vs. [Batch Mode](/guides/batch-mode).
+`test problem`'s manual-tests section is `--cases`-equivalent judging driven
+from `problem.yaml` instead of flags.
+
+### What does `cxxprobe new problem` actually scaffold, and why is nothing enabled by default?
+
+`problem.yaml`, `problem.md`, `solution_template.cpp`, `checker_gtest.cpp`,
+and an empty `tests/` — see [Folder
+Structure](/architecture/folder-structure#a-problem) for the full list.
+Manual tests and symbolic checks start **disabled by inference**: `tests/`
+has no `.in` files yet, and `symbolic.must_include`/`must_not_include` are
+empty lists. Only the behavior checker starts active, because its
+placeholder `TEST()` passes trivially — so a freshly scaffolded, completely
+unfilled-in problem is a clean baseline `PASS`, proving the pipeline itself
+works before you've written any real content. Add `tests/*.in` files or
+`symbolic:` entries to activate those sections.
+
+### How is `checker_gtest.cpp` compiled against my solution?
+
+cxxprobe compiles `checker_gtest.cpp` as a single translation unit — it
+`#include`s the submission itself via `CXXPROBE_SOLUTION_FILE` (a macro
+cxxprobe defines at compile time pointing at whichever file is actually
+being graded — `solution.cpp` by default, or whatever `--submission` was
+passed). The submission's own `main()` is renamed out of the way with
+`#define main solution_main` so it doesn't collide with GTest's own `main()`
+(linked in via `-lgtest_main`). One compiler invocation, sandboxed like any
+other run — see [Contest Workflows](/guides/contest-workflows#setting-a-problem).
+
+### Why regex-based symbolic checks and not a real AST/libclang?
+
+Comment/string-aware regex is enough to answer "was this identifier/pattern
+used or not" without pulling in libclang, which isn't cleanly
+Conan-installable and would be a much larger dependency for what's usually a
+simple keyword-usage question. It's not a full parse — it can't tell you
+whether `std::bit_cast` was used *correctly*, only whether the text is
+present outside a comment or string literal. If that precision ever proves
+insufficient in practice, an AST-based backend is on the project's backlog
+(see `PLAN.md`), not ruled out — just not built yet.
 
 ### Can I use cxxprobe as a library instead of the CLI?
 
-Yes — `libcxxprobe` exposes a single function,
-[`cxxprobe::sandbox::run()`](https://github.com/Algorithms-Mathematics-Society/cxxprobe/blob/main/include/cxxprobe/sandbox.hpp),
-taking an argv, stdin bytes, and a `Limits` struct, and returning exit status,
-resource usage, and captured output. Everything the CLI does on top (judging,
-batch mode, JSON formatting) is orchestration you can reimplement or reuse as
-needed.
+Yes. Beyond the original
+[`cxxprobe::sandbox::run()`](https://github.com/Algorithms-Mathematics-Society/cxxprobe/blob/main/include/cxxprobe/sandbox.hpp)
+(argv + stdin + `Limits` → exit status/resource usage/captured output),
+`libcxxprobe` also exposes the whole contest/problem pipeline as library
+calls: `cxxprobe::problem::load_from_dir()` parses `problem.yaml`, and
+`cxxprobe::judge::run_problem()` runs all 3 consolidated checks and returns
+a `JudgeReport` struct — the same thing `cxxprobe test problem --json`
+prints, but as native C++ types your own judge platform can call directly
+instead of shelling out to the CLI and re-parsing its stdout.
 
 <Callout type="info">
   Didn't find your question here? Open an issue on

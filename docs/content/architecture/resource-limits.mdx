@@ -11,7 +11,7 @@ import { Callout } from 'nextra/components'
 |---|---|---|---|
 | Memory | `-m` / `--memory-mb` | 256 MiB | `memory.max` (cgroup v2) |
 | Swap | (always 0) | 0 | `memory.swap.max=0` |
-| CPU time | `-t` / `--cpu` | 5 s | `cpu.stat usage_usec`, checked post-run |
+| CPU time | `-t` / `--cpu` | 5 s | `RLIMIT_CPU` (kernel-level kill) + `cpu.stat` (exact post-hoc verdict) |
 | Wall clock | `-w` / `--wall` | 10 s | `timerfd` + `epoll` + `cgroup.kill` |
 | PIDs | `-p` / `--pids` | 64 | `pids.max` (cgroup v2) |
 | Stdout | (fixed) | 4 MiB | Drain thread discards past the cap |
@@ -29,20 +29,28 @@ judging active, an `MLE` verdict once `peak_memory_bytes` (read from
 
 ## CPU time
 
-`-t`/`--cpu` is checked **after** the process exits, against
-`cpu.stat`'s `usage_usec`. It does not interrupt a running process by
-itself — see [why wall-clock is the primary kill
-mechanism](/architecture/sandbox-internals#why-wall-clock-is-the-primary-kill-not-cpu-time).
-A process that spins for exactly its CPU budget but returns before the
-wall-clock deadline still gets a `TLE` verdict once compared post-hoc.
+`-t`/`--cpu` is enforced two ways. First, as a **kernel-level backstop**:
+before the sandboxed program execs, cxxprobe calls `setrlimit(RLIMIT_CPU,
+...)` (rounding the configured limit up to the next whole second — that's a
+kernel/POSIX granularity constraint on `RLIMIT_CPU`, not a precision
+guarantee), so the kernel delivers an uncatchable `SIGKILL` as soon as
+cumulative CPU time crosses the threshold — independent of and typically
+faster than the wall-clock timer. Second, **post-hoc** against `cpu.stat`'s
+`usage_usec`, which remains the source of truth for the exact `TLE` verdict
+regardless of which mechanism actually killed the process (or if the process
+exited cleanly within budget). See [Sandbox
+Internals](/architecture/sandbox-internals#cpu-time-enforcement) for the full
+mechanism, including why both a kernel-level kill *and* the post-hoc check
+exist rather than just one.
 
 ## Wall clock
 
-`-w`/`--wall` is the mechanism that actually **stops** a runaway process. A
-`timerfd` is armed for the deadline; when it fires, cxxprobe writes to
-`cgroup.kill` (kills every process in the cgroup atomically, Linux 5.14+) and
-sends `SIGKILL` directly as a fallback. This is what protects the grading
-host from infinite loops, blocked reads, or `sleep()` calls.
+`-w`/`--wall` is the mechanism that catches everything RLIMIT_CPU can't — a
+process blocked in I/O, a `sleep()` call, or anything else not actively
+burning CPU. A `timerfd` is armed for the deadline; when it fires, cxxprobe
+writes to `cgroup.kill` (kills every process in the cgroup atomically, Linux
+5.14+) and sends `SIGKILL` directly as a fallback. This is what ultimately
+protects the grading host from any runaway process, CPU-bound or not.
 
 <Callout type="info">
   Set wall-clock with headroom over CPU time — e.g. `-t 1s -w 2s` — so a

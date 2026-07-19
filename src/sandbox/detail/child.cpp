@@ -95,6 +95,22 @@ void remount_proc() noexcept {
         ::setrlimit(RLIMIT_AS, &rl);
     }
 
+    // ── 1d. RLIMIT_CPU enforcement ────────────────────────────────────────
+    // rlim_cur == rlim_max: the kernel delivers an uncatchable SIGKILL as
+    // soon as the limit is crossed (soft==hard skips the catchable SIGXCPU
+    // grace period) — same belt-and-suspenders philosophy as wall-clock's
+    // cgroup.kill + explicit SIGKILL. This is a fast kernel-level backstop;
+    // whole-second granularity means it's not a precision guarantee (the
+    // post-hoc cpu.stat comparison remains the source of truth for exact
+    // TLE classification), but it stops a CPU-bound runaway well before the
+    // (typically much larger) wall-clock limit would.
+    if (args.cpu_limit_seconds > 0) {
+        struct rlimit rl {};
+        rl.rlim_cur = static_cast<rlim_t>(args.cpu_limit_seconds);
+        rl.rlim_max = static_cast<rlim_t>(args.cpu_limit_seconds);
+        ::setrlimit(RLIMIT_CPU, &rl);
+    }
+
     // ── 2. Wait for parent to signal exec ─────────────────────────────────
     msg = args.sync.recv();
     if (msg != SyncMsg::ExecNow) {

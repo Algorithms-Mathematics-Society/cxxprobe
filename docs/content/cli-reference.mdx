@@ -1,6 +1,6 @@
 ---
 title: CLI Reference
-description: Every cxxprobe flag, the duration format, verdicts, and exit codes.
+description: Every cxxprobe subcommand, flag, the duration format, verdicts, and exit codes.
 ---
 
 import { Callout } from 'nextra/components'
@@ -8,13 +8,23 @@ import { Callout } from 'nextra/components'
 # CLI Reference
 
 ```text
-cxxprobe [OPTIONS] program [args...]
+cxxprobe <subcommand> [OPTIONS] ...
 ```
 
-Everything after `program` is passed through as that program's `argv` — put
-cxxprobe's own flags first.
+cxxprobe has four subcommands: [`run`](#run) (sandbox a program directly),
+[`new contest`](#new-contest--new-problem) / [`new problem`](#new-contest--new-problem)
+(scaffolding), and [`test problem`](#test-problem) (judging). `-V`/`--version`
+works at the top level without a subcommand.
 
-## Flags
+## `run`
+
+The original single-binary sandbox runner — everything cxxprobe did before it
+grew contest/problem scaffolding. Everything after `program` is passed
+through as that program's `argv` — put cxxprobe's own flags first.
+
+```text
+cxxprobe run [OPTIONS] program [args...]
+```
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
@@ -29,9 +39,8 @@ cxxprobe's own flags first.
 | `--json` | | off | Emit result as JSON |
 | `--quiet` | `-q` | off | Suppress the metadata line (human mode) |
 | `--no-color` | | off | Disable ANSI colors |
-| `--version` | `-V` | | Print version and exit |
 
-## Duration format
+### Duration format
 
 `--cpu` / `-t` and `--wall` / `-w` accept three forms:
 
@@ -44,13 +53,12 @@ cxxprobe's own flags first.
 Only pure digit strings (optionally suffixed with `s` or `ms`) are accepted —
 decimals, negative numbers, and other suffixes raise an error.
 
-## Output
+### Output
 
-### Human mode (default)
-
-The sandboxed program's **stdout** is written to cxxprobe's stdout, unmodified.
-Its **stderr** is written to cxxprobe's stderr, unmodified. A metadata line is
-appended to stderr (suppress with `-q`):
+**Human mode (default)**: the sandboxed program's **stdout** is written to
+cxxprobe's stdout, unmodified. Its **stderr** is written to cxxprobe's
+stderr, unmodified. A metadata line is appended to stderr (suppress with
+`-q`):
 
 ```text
 [exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB | AC]
@@ -59,7 +67,7 @@ appended to stderr (suppress with `-q`):
 The trailing verdict segment (` | AC`) only appears when judging is active
 (`-e` or `--cases`).
 
-### JSON mode (`--json`)
+**JSON mode (`--json`)**:
 
 ```json
 {
@@ -76,7 +84,7 @@ The trailing verdict segment (` | AC`) only appears when judging is active
 The `verdict` key is only present when judging is active. Control characters
 below `0x20` in `stdout`/`stderr` are escaped as `\uXXXX`.
 
-## Verdicts
+### Verdicts
 
 | Verdict | Meaning |
 |---|---|
@@ -90,7 +98,7 @@ below `0x20` in `stdout`/`stderr` are escaped as `\uXXXX`.
 Priority when multiple conditions trigger simultaneously:
 **TLE > MLE > OLE > RE > WA/AC**.
 
-## Exit codes
+### Exit codes
 
 <Callout type="info">
   Exit codes differ depending on whether judging (`-e` / `--cases`) is active.
@@ -111,21 +119,95 @@ Priority when multiple conditions trigger simultaneously:
 - `1` — at least one non-AC verdict
 - `2` — at least one sandbox error
 
-## Resource limits reference
+### Resource limits reference
 
 | Resource | Flag | Default | Enforcement mechanism |
 |---|---|---|---|
 | Memory | `-m` / `--memory-mb` | 256 MiB | `memory.max` (cgroup v2) |
 | Swap | (always 0) | 0 | `memory.swap.max=0` |
-| CPU time | `-t` / `--cpu` | 5 s | `cpu.stat usage_usec`, checked post-run |
+| CPU time | `-t` / `--cpu` | 5 s | `RLIMIT_CPU` (kernel-level kill) + `cpu.stat` (exact post-hoc verdict) |
 | Wall clock | `-w` / `--wall` | 10 s | `timerfd` + `epoll` + `cgroup.kill` |
 | PIDs | `-p` / `--pids` | 64 | `pids.max` (cgroup v2) |
 | Stdout | (fixed) | 4 MiB | Drain thread discards past the cap |
 | Stderr | (fixed) | 4 MiB | Drain thread discards past the cap |
 | Stdin | (fixed) | 4 MiB | Capped when loading with `-i -` |
 
-Wall clock is the primary kill mechanism: when the timer fires, `cgroup.kill`
-(Linux 5.14+) is written and SIGKILL is sent as a fallback. CPU time is
-checked **after** the run against `cpu.stat` to compute the TLE verdict — it
-doesn't interrupt execution on its own. See [Sandbox
-Internals](/architecture/sandbox-internals) for the full mechanism.
+Both `RLIMIT_CPU` and the wall-clock timer are real kill mechanisms —
+`RLIMIT_CPU` is a fast kernel-level backstop for CPU-bound runaways,
+`timerfd`/`cgroup.kill` also catches non-CPU-bound cases (blocked I/O,
+`sleep()`). `cpu.stat` remains the source of truth for the exact `TLE`
+verdict regardless of which mechanism actually killed the process. See
+[Sandbox Internals](/architecture/sandbox-internals) for the full mechanism.
+
+---
+
+## `new contest` / `new problem`
+
+Scaffolds a contest or problem directory. Run from anywhere for `new
+contest`; run from inside (or under) a contest directory for `new problem`.
+
+```text
+cxxprobe new contest "Name"
+cxxprobe new problem "Name" [-C/--dir CONTEST_DIR]
+```
+
+| Flag | Description |
+|---|---|
+| `-C, --dir PATH` | Contest directory override (default: auto-detected by walking up from cwd looking for `contest.yaml`) |
+
+See [Folder Structure](/architecture/folder-structure) for exactly what gets
+generated and why, and [Contest Workflows](/guides/contest-workflows) for the
+end-to-end authoring flow.
+
+---
+
+## `test problem`
+
+Runs all three consolidated test types (manual `.in`/`.out`, symbolic source
+checks, GTest-linked behavior checker) for one problem and reports an
+aggregate verdict.
+
+```text
+cxxprobe test problem "Name" [-C/--dir CONTEST_DIR] [--submission PATH]
+                              [--json] [-q/--quiet] [--no-color]
+```
+
+| Flag | Description |
+|---|---|
+| `-C, --dir PATH` | Contest directory override (same auto-detection as `new problem`) |
+| `--submission PATH` | Grade an arbitrary source file instead of the problem's own `solution.cpp` — see [Contest Workflows](/guides/contest-workflows#grading-a-submission) |
+| `--json` | Emit the full report as JSON |
+| `-q, --quiet` | Suppress per-case/per-check detail (human mode) |
+| `--no-color` | Disable ANSI colors |
+
+`"Name"` resolves either as the problem's slug (its directory name) or its
+exact `problem.yaml` `name:` field.
+
+### Output shape
+
+Each of the three sections gets an independent `status`:
+`PASS | FAIL | SKIPPED | ERROR` — `SKIPPED` means that section is disabled in
+`problem.yaml` (nothing to check); `ERROR` means an infra failure (e.g. a
+compile error) as opposed to a genuine test failure.
+
+```json
+{
+  "problem": "A: FileReader RAII",
+  "slug": "a-filereader-raii",
+  "submission": "solution.cpp",
+  "overall": "FAIL",
+  "tests": {
+    "manual": {"status": "PASS", "passed": 8, "total": 8, "cases": ["..."]},
+    "symbolic": {"status": "FAIL", "checks": ["..."]},
+    "behavior": {"status": "PASS", "passed": 5, "total": 5, "cases": ["..."]}
+  },
+  "compile": {"solution": {"ok": true}, "behavior_binary": {"ok": true}}
+}
+```
+
+### Exit codes
+
+- `0` — overall `PASS` (or every enabled-and-relevant section trivially
+  passed/was skipped)
+- `1` — overall `FAIL` (at least one enabled section failed)
+- `2` — overall `ERROR` (compile failure, missing problem, config error)

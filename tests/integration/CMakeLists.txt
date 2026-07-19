@@ -1,4 +1,5 @@
-add_executable(cxxprobe-integration-tests sandbox_run_test.cpp)
+add_executable(cxxprobe-integration-tests sandbox_run_test.cpp
+                                          rlimit_cpu_test.cpp)
 
 target_link_libraries(cxxprobe-integration-tests PRIVATE cxxprobe
                                                          GTest::gtest_main)
@@ -7,7 +8,19 @@ target_link_libraries(cxxprobe-integration-tests PRIVATE cxxprobe
 target_compile_definitions(
   cxxprobe-integration-tests
   PRIVATE CXXPROBE_MEMHOG_PATH="$<TARGET_FILE:cxxprobe-memhog>"
-          CXXPROBE_BIGWRITER_PATH="$<TARGET_FILE:cxxprobe-bigwriter>")
+          CXXPROBE_BIGWRITER_PATH="$<TARGET_FILE:cxxprobe-bigwriter>"
+          CXXPROBE_SPINNER_PATH="$<TARGET_FILE:cxxprobe-spinner>")
+
+# problem_pipeline_test.cpp shells out to the real cxxprobe-cli binary for a
+# black-box scaffold -> author -> judge round trip, so it only makes sense
+# to build when the CLI itself is being built (CXXPROBE_BUILD_CLI).
+if(TARGET cxxprobe-cli)
+  target_sources(cxxprobe-integration-tests PRIVATE problem_pipeline_test.cpp)
+  target_compile_definitions(
+    cxxprobe-integration-tests
+    PRIVATE CXXPROBE_CLI_PATH="$<TARGET_FILE:cxxprobe-cli>")
+  add_dependencies(cxxprobe-integration-tests cxxprobe-cli)
+endif()
 
 if(CXXPROBE_ENABLE_ASAN)
   enable_sanitizers(cxxprobe-integration-tests)

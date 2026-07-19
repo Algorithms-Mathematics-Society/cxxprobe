@@ -19,7 +19,7 @@ since it's cheap to invoke thousands of times and keeps every run isolated.
 for i in $(seq 1 100); do
     ./gen "$i" > tmp.in
     ./brute < tmp.in > tmp.ans
-    result=$(cxxprobe -i tmp.in -e tmp.ans --checker ./checker --json ./solution)
+    result=$(cxxprobe run -i tmp.in -e tmp.ans --checker ./checker --json ./solution)
     verdict=$(jq -r '.verdict' <<< "$result")
     if [ "$verdict" != "AC" ]; then
         echo "FAIL on seed $i: $verdict"
@@ -41,8 +41,8 @@ raw output:
 ```bash
 for i in $(seq 1 1000); do
     ./gen "$i" > tmp.in
-    out_a=$(cxxprobe -i tmp.in -q ./sol_a)
-    out_b=$(cxxprobe -i tmp.in -q ./sol_b)
+    out_a=$(cxxprobe run -i tmp.in -q ./sol_a)
+    out_b=$(cxxprobe run -i tmp.in -q ./sol_b)
     if [ "$out_a" != "$out_b" ]; then
         echo "Mismatch on seed $i"
         cat tmp.in
@@ -68,7 +68,7 @@ and drop `--checker`/`-e` to see raw output for manual inspection:
 
 ```bash
 ./gen 42 > tmp.in
-cxxprobe -i tmp.in ./solution
+cxxprobe run -i tmp.in ./solution
 ```
 
 ```text
@@ -83,7 +83,7 @@ See [Exit Codes](/cli-reference#exit-codes).
 ## Checking memory usage in isolation
 
 ```bash
-cxxprobe --json -i big_input.txt ./solution \
+cxxprobe run --json -i big_input.txt ./solution \
   | jq '{"mem_mib": (.peak_memory_bytes/1048576|.*10|round/10), "cpu_ms": .cpu_time_ms}'
 ```
 

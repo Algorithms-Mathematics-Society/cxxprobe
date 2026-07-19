@@ -4,70 +4,13 @@
 #include <stdexcept>
 #include <string>
 
-// Pull in the functions under test by compiling main.cpp into a helper
-// translation unit — instead, we duplicate the small pure functions here so
-// we don't link against the CLI entry point.  If the implementations in
-// cli/main.cpp change, these tests must stay in sync.
+#include "cxxprobe/cases.hpp"
+
+#include "../../cli/common/text_utils.hpp"
 
 using ms = std::chrono::milliseconds;
-
-// ─── parse_duration (duplicated from cli/main.cpp) ───────────────────────────
-
-static ms parse_duration(const std::string& raw) {
-    std::string_view sv{raw};
-    std::string_view num;
-    bool as_seconds = false;
-
-    if (sv.size() >= 3 && sv.ends_with("ms")) {
-        num = sv.substr(0, sv.size() - 2);
-    } else if (sv.size() >= 2 && sv.back() == 's') {
-        num = sv.substr(0, sv.size() - 1);
-        as_seconds = true;
-    } else {
-        num = sv;
-    }
-
-    // Reject empty, leading minus, decimal points — only pure digit strings.
-    auto all_digits = [](std::string_view s) {
-        return !s.empty() && std::all_of(s.begin(), s.end(),
-                                         [](unsigned char c) { return std::isdigit(c) != 0; });
-    };
-    if (!all_digits(num)) {
-        throw std::invalid_argument{
-            std::format("invalid duration '{}' — use e.g. 2s, 500ms, 2000", raw)};
-    }
-
-    unsigned long val = std::stoul(std::string{num});
-    if (as_seconds) {
-        return std::chrono::duration_cast<ms>(std::chrono::seconds{val});
-    }
-    return ms{val};
-}
-
-// ─── token_equal (duplicated from cli/main.cpp) ──────────────────────────────
-
-static bool token_equal(std::string_view a, std::string_view b) {
-    auto tokenize = [](std::string_view s) {
-        std::vector<std::string_view> toks;
-        std::size_t i = 0;
-        while (i < s.size()) {
-            while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) {
-                ++i;
-            }
-            if (i >= s.size()) {
-                break;
-            }
-            std::size_t j = i;
-            while (j < s.size() && !std::isspace(static_cast<unsigned char>(s[j]))) {
-                ++j;
-            }
-            toks.push_back(s.substr(i, j - i));
-            i = j;
-        }
-        return toks;
-    };
-    return tokenize(a) == tokenize(b);
-}
+using cxxprobe::cases::token_equal;
+using cxxprobe::cli::parse_duration;
 
 // ─── parse_duration tests ─────────────────────────────────────────────────────
 

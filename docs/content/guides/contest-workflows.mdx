@@ -1,6 +1,6 @@
 ---
 title: Contest Workflows
-description: How to structure a problem set, validate solutions, and grade submissions with cxxprobe.
+description: Scaffold a contest, author a problem, and grade submissions with cxxprobe.
 ---
 
 import { Steps, Callout } from 'nextra/components'
@@ -8,107 +8,207 @@ import { Steps, Callout } from 'nextra/components'
 # Contest Workflows
 
 This page walks through using cxxprobe as the evaluation engine for an actual
-contest or problem set — from setting a problem's tests to grading a batch of
-contestant submissions. For the on-disk layout referenced below (`tests/`,
-`solution.cpp`, `checker.cpp`, `gen.cpp`), see [Folder
+contest or problem set — from scaffolding to grading a batch of contestant
+submissions. For the on-disk layout referenced below, see [Folder
 Structure](/architecture/folder-structure).
+
+## Scaffold the contest and a problem
+
+<Steps>
+
+### Create the contest
+
+```bash
+cxxprobe new contest "AMS Ascent"
+cd ams-ascent
+```
+
+### Create a problem
+
+```bash
+cxxprobe new problem "A: FileReader RAII"
+cd a-filereader-raii
+```
+
+This generates `problem.yaml`, `problem.md`, `solution_template.cpp`,
+`checker_gtest.cpp`, and an empty `tests/`.
+
+</Steps>
 
 ## Setting a problem
 
 <Steps>
 
-### Write the reference solution and tests
-
-Hand-write small tests (edge cases, examples from the statement) as
-`1.in`/`1.ans`, `2.in`/`2.ans`, etc.
-
-### Validate the reference solution against every test
+### Write the reference solution
 
 ```bash
-cxxprobe -m 256 -w 2s --cases problemA/tests/ ./problemA/solution
+cp solution_template.cpp solution.cpp
 ```
 
-If every case comes back `AC`, the reference solution and test data agree.
+Fill it in.
+
+### Add manual test cases (consolidated type 1)
+
+Hand-write small tests (edge cases, examples from the statement) as
+`tests/1.in`/`tests/1.ans`, `tests/2.in`/`tests/2.ans`, etc. — same
+`.in`/`.ans` format as [Batch Mode](/guides/batch-mode). No `problem.yaml`
+change needed; `tests.enabled` is inferred true once `tests/` has data.
+
+### Add symbolic requirements, if the problem needs them (consolidated type 2)
+
+For problems that are really testing whether a specific technique was used
+— "must use `std::bit_cast`, not `memcpy`" — add requirements to
+`problem.yaml`:
+
+```yaml filename="problem.yaml"
+symbolic:
+  must_include: ["std::bit_cast"]
+  must_not_include:
+    - pattern: "\\bmemcpy\\s*\\("
+      regex: true
+      message: "memcpy for type punning is UB — use std::bit_cast"
+```
+
+The scan strips comments and string/char literals first, so a pattern
+appearing only in a comment or a string doesn't false-positive. Most
+problems leave this section empty — it's for the subset where "did they use
+the right tool" matters and can't be observed from stdin/stdout alone. See
+[FAQ](/faq#why-regex-based-symbolic-checks-and-not-a-real-astlibclang) for
+why this is regex-based rather than a full AST parse.
+
+### Add behavior tests, if stdin/stdout isn't enough (consolidated type 3)
+
+For problems where the interesting behavior isn't visible through a
+`main()` reading stdin — RAII cleanup timing, move-only types, exception
+safety — write real `TEST()` cases in `checker_gtest.cpp` against the
+submission's actual interface:
+
+```cpp filename="checker_gtest.cpp"
+#include <gtest/gtest.h>
+
+#define main solution_main
+#include CXXPROBE_SOLUTION_FILE
+#undef main
+
+TEST(FileReader, ClosesOnDestruction) {
+    // exercise the submission's classes/functions directly
+}
+```
+
+### Validate the reference solution
+
+```bash
+cxxprobe test problem a-filereader-raii
+```
+
+```text
+Problem: A: FileReader RAII (a-filereader-raii)
+
+Manual tests    PASS (3/3)
+Symbolic checks PASS
+Behavior tests  PASS (2/2)
+
+---
+Overall: PASS
+```
+
+If it's not a clean `PASS`, either the solution or the test data is wrong —
+fix it before publishing the problem.
 
 ### Stress-test with a generator (optional but recommended)
 
-Add randomized large cases with a generator, then re-validate — see [Stress
-Testing & Debugging](/guides/stress-testing) for a full generate-and-compare
-loop against a slower brute-force solution.
+Add randomized large cases with a generator and re-validate against a
+brute-force solution — see [Stress Testing &
+Debugging](/guides/stress-testing).
 
 ### Fix the limits for the problem
 
-Once you know the reference solution's typical resource usage, set
-`-m`/`-w`/`-t` with headroom (2-3× the reference solution's time is a common
-rule of thumb) and record those flags alongside the problem — you'll reuse
-them for every submission.
+Once you know the reference solution's typical resource usage, override
+`problem.yaml`'s `limits:` with headroom (2-3× the reference solution's time
+is a common rule of thumb) — this is what every submission gets graded
+under, including via `--submission`.
 
 </Steps>
 
-## Grading a single submission
+## Grading a submission
+
+`--submission` runs the exact same three consolidated checks against an
+arbitrary source file instead of the problem's own `solution.cpp` — this is
+how you actually grade a contestant, not just validate your own reference
+solution:
 
 ```bash
-cxxprobe \
-  -m 256 -w 2s -t 1500ms \
-  --cases problemA/tests/ \
-  --checker ./problemA/checker \
-  --json \
-  ./contestant_submission \
-  > result.json
-
-jq '.summary' result.json
+cxxprobe test problem a-filereader-raii --submission contestant.cpp --json > result.json
+jq '.overall, .tests.manual.passed, .tests.manual.total' result.json
 ```
 
 ```json
-{ "passed": 8, "total": 10 }
+"FAIL"
+6
+8
 ```
 
-Per-case detail (which case failed, with what verdict) is in `.results[]` —
-see [JSON Output](/guides/json-output).
+Per-section, per-case detail (which manual case failed with what verdict,
+which symbolic check was unmet, which named `TEST()` failed) is in
+`.tests.manual.cases[]` / `.tests.symbolic.checks[]` /
+`.tests.behavior.cases[]` — see [CLI Reference](/cli-reference#test-problem)
+for the full JSON shape.
 
 ## Grading many submissions
-
-A simple grading loop over a directory of contestant binaries:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-for sub in submissions/*/solution; do
+for sub in submissions/*/solution.cpp; do
     team=$(basename "$(dirname "$sub")")
-    result=$(cxxprobe -m 256 -w 2s --cases problemA/tests/ \
-                       --checker ./problemA/checker --json "$sub")
-    passed=$(jq '.summary.passed' <<< "$result")
-    total=$(jq '.summary.total' <<< "$result")
-    echo "$team: $passed/$total"
+    result=$(cxxprobe test problem a-filereader-raii --submission "$sub" --json)
+    overall=$(jq -r '.overall' <<< "$result")
+    echo "$team: $overall"
     echo "$result" > "results/$team.json"
 done
 ```
 
-Each `cxxprobe` invocation is fully isolated (its own cgroup leaf, its own
-namespace), so submissions can't interfere with each other even if run
+Each `cxxprobe` invocation — compile, manual tests, symbolic scan, behavior
+checker — is fully isolated (its own cgroup leaf, its own namespace) per
+submission, so submissions can't interfere with each other even if run
 concurrently — parallelize the loop with `xargs -P` or GNU `parallel` if you
 have many submissions and need throughput.
 
 <Callout type="info">
-  Because every run is sandboxed independently, a misbehaving or malicious
-  submission (fork bombs, huge allocations, infinite loops) is contained by
-  the `-p`/`-m`/`-w` limits — it can't affect the grading host or other
-  submissions running alongside it.
+  Because every run is sandboxed independently — including the **compile
+  step** (a compile-time bomb like runaway template recursion is bounded by
+  its own generous default limits) — a misbehaving or malicious submission
+  can't affect the grading host or other submissions running alongside it.
 </Callout>
 
 ## Regression-testing your own judge
 
-If you're building a platform around cxxprobe, treat the reference solution as
-a regression test: re-run `--cases` against it in CI whenever test data or the
-checker changes, and fail the build if it stops being all-`AC`. This catches
-broken test data before contestants do.
+If you're building a platform around cxxprobe, treat the reference solution
+as a regression test: re-run `cxxprobe test problem` against it (no
+`--submission`) in CI whenever test data, symbolic requirements, or the
+behavior checker changes, and fail the build if it stops being an overall
+`PASS`. This catches a broken problem before contestants do.
+
+## When you don't need the scaffolding at all
+
+Everything above builds on the lower-level `cxxprobe run` primitive — a
+directory of `.in`/`.ans` files and a pre-built binary, no `problem.yaml`
+required. If you already have your own contest tooling and just want
+sandboxed judging, use `run --cases` directly:
+
+```bash
+cxxprobe run -m 256 -w 2s --cases tests/ ./solution
+```
+
+See [Batch Mode](/guides/batch-mode) for that path in full.
 
 ## Related guides
 
-- [Batch Mode](/guides/batch-mode) — directory and manifest formats in detail
+- [Batch Mode](/guides/batch-mode) — the `run --cases` directory/manifest
+  format that `tests.dir`/`tests.manifest` in `problem.yaml` also use
 - [Custom Checkers](/guides/custom-checker) — testlib-ABI checkers for
-  floating point / multiple-answer problems
+  floating point / multiple-answer problems (`tests.checker` in `problem.yaml`)
 - [Stress Testing & Debugging](/guides/stress-testing) — generator +
   brute-force comparison loops
 - [Resource Limits](/architecture/resource-limits) — what each limit actually

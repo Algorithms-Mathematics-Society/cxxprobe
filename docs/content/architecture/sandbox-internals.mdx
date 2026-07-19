@@ -42,6 +42,13 @@ which is what makes `memory.max`, `cpu.max`, and `pids.max` actually apply to
 it — see [Resource Limits](/architecture/resource-limits) for what each
 controller enforces.
 
+### Set RLIMIT_CPU
+
+Still before `exec`, the child calls `setrlimit(RLIMIT_CPU, ...)` with the
+configured CPU limit (rounded up to whole seconds). This is a second,
+independent enforcement path alongside the cgroup controllers — see [CPU
+time enforcement](#cpu-time-enforcement) below for why both exist.
+
 ### Signal the child to exec
 
 Parent and child hand off through a small synchronous pipe protocol
@@ -87,16 +94,30 @@ through `/proc/<pid>` — it only sees processes inside its own namespace.
   a determined adversary with local filesystem access.
 </Callout>
 
-## Why wall-clock is the primary kill, not CPU time
+## CPU time enforcement
 
-CPU time (`cpu.stat usage_usec`) is only checked **after** the process exits
-or is killed — it can't interrupt execution by itself, since reading cgroup
-stats requires the process to still exist. Wall-clock, enforced via
-`timerfd`, is what actually stops a runaway process (infinite loop,
-`sleep()`, a blocked read). CPU time is then compared against the `-t` limit
-post-hoc to decide whether the verdict should be `TLE` even if the process
-exited within the wall-clock budget but burned excessive CPU (relevant on
-multi-core machines where wall-clock and CPU time can diverge).
+CPU time is enforced by **two independent mechanisms**, not one:
+
+1. **`RLIMIT_CPU`** (kernel-level, live) — set on the child before `exec`.
+   The kernel tracks the process's cumulative CPU time itself and delivers
+   `SIGKILL` the instant it crosses the threshold (`rlim_cur == rlim_max`
+   skips the catchable `SIGXCPU` grace period a process could otherwise
+   ignore). This is fast — typically much faster than the wall-clock
+   timeout — but only precise to whole seconds (a POSIX/kernel constraint on
+   `RLIMIT_CPU`, not a design choice).
+2. **`cpu.stat usage_usec`** (post-hoc, exact) — read from the cgroup after
+   the process exits or is killed, regardless of *why* it stopped. This
+   remains the source of truth for the exact `TLE` verdict, since it isn't
+   limited by `RLIMIT_CPU`'s whole-second granularity.
+
+Wall-clock, enforced via `timerfd`, is still necessary alongside both of
+these: `RLIMIT_CPU` only fires for CPU-bound work, so a process blocked in
+I/O, a `sleep()` call, or anything else not actively burning CPU would
+otherwise run forever. Wall-clock is what bounds *that* case — it's the
+backstop of last resort, not the primary mechanism for CPU-bound runaways
+anymore. A process that legitimately burns its full CPU budget but exits
+before the wall-clock deadline still gets a `TLE` verdict from the post-hoc
+`cpu.stat` comparison, whichever mechanism (if either) actually killed it.
 
 ## Output capture
 
