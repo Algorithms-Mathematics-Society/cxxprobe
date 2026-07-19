@@ -1,3 +1,10 @@
+## [0.4.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.4.0...v0.4.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **ci:** resolve clang-tidy failures in new contest/problem modules ([6d2be7a](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/6d2be7a39dd1bf3470403f98d5d412e6fb5defa1))
+
 # [0.4.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.5...v0.4.0) (2026-07-19)
 
 
