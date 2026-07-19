@@ -1,3 +1,10 @@
+## [0.4.2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.4.1...v0.4.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* **ci:** fix remaining implicit-bool-conversion in cases.cpp token_equal ([f397b4b](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/f397b4bf62343fc9ccb4a3ec029bbe9f98cc0d7c))
+
 ## [0.4.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.4.0...v0.4.1) (2026-07-19)
 
 
