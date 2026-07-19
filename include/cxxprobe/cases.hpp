@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -16,7 +17,7 @@ struct TestCase {
     std::optional<std::string> answer_data;
 };
 
-enum class Verdict { AC, WA, TLE, MLE, OLE, RE };
+enum class Verdict : std::uint8_t { AC, WA, TLE, MLE, OLE, RE };
 
 const char* verdict_str(Verdict v);
 

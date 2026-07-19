@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -12,7 +13,7 @@
 
 namespace cxxprobe::judge {
 
-enum class Status { Pass, Fail, Skipped, Error };
+enum class Status : std::uint8_t { Pass, Fail, Skipped, Error };
 
 const char* status_str(Status s);
 

@@ -32,7 +32,7 @@ std::chrono::milliseconds parse_duration_ms(const std::string& raw) {
 
     auto all_digits = [](std::string_view s) {
         return !s.empty() &&
-               std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+               std::ranges::all_of(s, [](unsigned char c) { return std::isdigit(c) != 0; });
     };
     if (!all_digits(num)) {
         throw std::runtime_error{std::format("invalid duration '{}' — use e.g. 2s, 500ms, 2000", raw)};
@@ -73,12 +73,156 @@ bool dir_has_case_files(const std::filesystem::path& dir) {
     if (!std::filesystem::is_directory(dir)) {
         return false;
     }
-    for (const auto& entry : std::filesystem::directory_iterator{dir}) {
-        if (entry.path().extension() == ".in") {
-            return true;
+    std::filesystem::directory_iterator entries{dir};
+    return std::ranges::any_of(entries, [](const auto& entry) { return entry.path().extension() == ".in"; });
+}
+
+CompilerConfig parse_compiler_section(const YAML::Node& doc) {
+    CompilerConfig compiler;
+    YAML::Node c = doc["compiler"];
+    if (!c) {
+        return compiler;
+    }
+    if (c["cxx"] && !c["cxx"].IsNull()) {
+        compiler.cxx = c["cxx"].as<std::string>();
+    }
+    if (c["std"] && !c["std"].IsNull()) {
+        compiler.std_flag = c["std"].as<std::string>();
+    }
+    if (c["flags"] && !c["flags"].IsNull()) {
+        std::vector<std::string> flags;
+        for (const auto& f : c["flags"]) {
+            flags.push_back(f.as<std::string>());
+        }
+        compiler.flags = std::move(flags);
+    }
+    if (c["extra_sources"]) {
+        for (const auto& s : c["extra_sources"]) {
+            compiler.extra_sources.push_back(s.as<std::string>());
         }
     }
-    return false;
+    return compiler;
+}
+
+LimitsOverride parse_limits_section(const YAML::Node& doc) {
+    LimitsOverride limits;
+    YAML::Node l = doc["limits"];
+    if (!l) {
+        return limits;
+    }
+    if (l["memory_mb"] && !l["memory_mb"].IsNull()) {
+        limits.memory_mb = l["memory_mb"].as<std::size_t>();
+    }
+    if (l["cpu"] && !l["cpu"].IsNull()) {
+        limits.cpu = l["cpu"].as<std::string>();
+    }
+    if (l["wall"] && !l["wall"].IsNull()) {
+        limits.wall = l["wall"].as<std::string>();
+    }
+    if (l["pids"] && !l["pids"].IsNull()) {
+        limits.pids = l["pids"].as<unsigned>();
+    }
+    return limits;
+}
+
+// Throws if tests.dir and tests.manifest are both explicitly set, or if
+// tests.enabled is explicitly true but no case data is actually present.
+ManualTestsConfig parse_tests_section(const YAML::Node& doc, const std::filesystem::path& problem_dir) {
+    ManualTestsConfig tests;
+    std::optional<bool> enabled_explicit;
+    YAML::Node t = doc["tests"];
+    if (t) {
+        if (t["enabled"]) {
+            enabled_explicit = t["enabled"].as<bool>();
+        }
+        if (t["dir"]) {
+            tests.dir = t["dir"].as<std::string>();
+        }
+        if (t["manifest"] && !t["manifest"].IsNull()) {
+            tests.manifest = t["manifest"].as<std::string>();
+        }
+        if (t["checker"] && !t["checker"].IsNull()) {
+            tests.checker = t["checker"].as<std::string>();
+        }
+        if (t["dir"] && t["manifest"] && !t["manifest"].IsNull()) {
+            throw std::runtime_error{"problem.yaml: tests.dir and tests.manifest are mutually exclusive"};
+        }
+    }
+
+    bool resource_present = tests.manifest ? std::filesystem::exists(problem_dir / *tests.manifest)
+                                            : dir_has_case_files(problem_dir / tests.dir);
+    if (enabled_explicit) {
+        if (*enabled_explicit && !resource_present) {
+            throw std::runtime_error{std::format(
+                "problem.yaml: tests.enabled is true but no test cases found under '{}'",
+                (tests.manifest ? *tests.manifest : tests.dir))};
+        }
+        tests.enabled = *enabled_explicit;
+    } else {
+        tests.enabled = resource_present;
+    }
+    return tests;
+}
+
+// Throws if symbolic.enabled is explicitly true but neither must_include nor
+// must_not_include has any entries.
+SymbolicConfig parse_symbolic_section(const YAML::Node& doc) {
+    SymbolicConfig symbolic;
+    std::optional<bool> enabled_explicit;
+    YAML::Node s = doc["symbolic"];
+    if (s) {
+        if (s["enabled"]) {
+            enabled_explicit = s["enabled"].as<bool>();
+        }
+        symbolic.must_include = parse_symbolic_list(s["must_include"]);
+        symbolic.must_not_include = parse_symbolic_list(s["must_not_include"]);
+    }
+
+    bool has_checks = !symbolic.must_include.empty() || !symbolic.must_not_include.empty();
+    if (enabled_explicit) {
+        if (*enabled_explicit && !has_checks) {
+            throw std::runtime_error{
+                "problem.yaml: symbolic.enabled is true but must_include/must_not_include are both empty"};
+        }
+        symbolic.enabled = *enabled_explicit;
+    } else {
+        symbolic.enabled = has_checks;
+    }
+    return symbolic;
+}
+
+// Throws if behavior.enabled is explicitly true but checker_file doesn't
+// exist on disk.
+BehaviorConfig parse_behavior_section(const YAML::Node& doc, const std::filesystem::path& problem_dir) {
+    BehaviorConfig behavior;
+    std::optional<bool> enabled_explicit;
+    YAML::Node b = doc["behavior"];
+    if (b) {
+        if (b["enabled"]) {
+            enabled_explicit = b["enabled"].as<bool>();
+        }
+        if (b["checker_file"]) {
+            behavior.checker_file = b["checker_file"].as<std::string>();
+        }
+        if (b["extra_flags"]) {
+            for (const auto& f : b["extra_flags"]) {
+                behavior.extra_flags.push_back(f.as<std::string>());
+            }
+        }
+    }
+
+    bool checker_present = std::filesystem::exists(problem_dir / behavior.checker_file);
+    if (enabled_explicit) {
+        if (*enabled_explicit && !checker_present) {
+            throw std::runtime_error{std::format(
+                "problem.yaml: behavior.enabled is true but checker_file '{}' does not exist",
+                behavior.checker_file)};
+        }
+        behavior.enabled = *enabled_explicit;
+    } else {
+        behavior.enabled = checker_present;
+    }
+    return behavior;
 }
 
 }  // namespace
@@ -117,14 +261,13 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
         throw std::runtime_error{
             std::format("unsupported problem.yaml version {} (expected 1)", version)};
     }
+    if (!doc["name"]) {
+        throw std::runtime_error{"problem.yaml missing required 'name'"};
+    }
 
     ProblemConfig cfg;
     cfg.problem_dir = std::filesystem::absolute(problem_yaml_path.parent_path());
     cfg.slug = cfg.problem_dir.filename().string();
-
-    if (!doc["name"]) {
-        throw std::runtime_error{"problem.yaml missing required 'name'"};
-    }
     cfg.name = doc["name"].as<std::string>();
 
     if (doc["statement"]) {
@@ -134,124 +277,11 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
         cfg.solution_file = doc["solution"]["file"].as<std::string>();
     }
 
-    // ── compiler ─────────────────────────────────────────────────────────
-    if (YAML::Node c = doc["compiler"]) {
-        if (c["cxx"] && !c["cxx"].IsNull()) {
-            cfg.compiler.cxx = c["cxx"].as<std::string>();
-        }
-        if (c["std"] && !c["std"].IsNull()) {
-            cfg.compiler.std_flag = c["std"].as<std::string>();
-        }
-        if (c["flags"] && !c["flags"].IsNull()) {
-            std::vector<std::string> flags;
-            for (const auto& f : c["flags"]) {
-                flags.push_back(f.as<std::string>());
-            }
-            cfg.compiler.flags = std::move(flags);
-        }
-        if (c["extra_sources"]) {
-            for (const auto& s : c["extra_sources"]) {
-                cfg.compiler.extra_sources.push_back(s.as<std::string>());
-            }
-        }
-    }
-
-    // ── limits ───────────────────────────────────────────────────────────
-    if (YAML::Node l = doc["limits"]) {
-        if (l["memory_mb"] && !l["memory_mb"].IsNull()) {
-            cfg.limits.memory_mb = l["memory_mb"].as<std::size_t>();
-        }
-        if (l["cpu"] && !l["cpu"].IsNull()) {
-            cfg.limits.cpu = l["cpu"].as<std::string>();
-        }
-        if (l["wall"] && !l["wall"].IsNull()) {
-            cfg.limits.wall = l["wall"].as<std::string>();
-        }
-        if (l["pids"] && !l["pids"].IsNull()) {
-            cfg.limits.pids = l["pids"].as<unsigned>();
-        }
-    }
-
-    // ── tests (consolidated type 1) ─────────────────────────────────────
-    std::optional<bool> tests_enabled_explicit;
-    if (YAML::Node t = doc["tests"]) {
-        if (t["enabled"]) {
-            tests_enabled_explicit = t["enabled"].as<bool>();
-        }
-        if (t["dir"]) {
-            cfg.tests.dir = t["dir"].as<std::string>();
-        }
-        if (t["manifest"] && !t["manifest"].IsNull()) {
-            cfg.tests.manifest = t["manifest"].as<std::string>();
-        }
-        if (t["checker"] && !t["checker"].IsNull()) {
-            cfg.tests.checker = t["checker"].as<std::string>();
-        }
-    }
-    if (doc["tests"] && doc["tests"]["dir"] && doc["tests"]["manifest"] &&
-        !doc["tests"]["manifest"].IsNull()) {
-        throw std::runtime_error{"problem.yaml: tests.dir and tests.manifest are mutually exclusive"};
-    }
-    bool manual_resource_present =
-        cfg.tests.manifest ? std::filesystem::exists(cfg.problem_dir / *cfg.tests.manifest)
-                            : dir_has_case_files(cfg.problem_dir / cfg.tests.dir);
-    if (tests_enabled_explicit) {
-        if (*tests_enabled_explicit && !manual_resource_present) {
-            throw std::runtime_error{std::format(
-                "problem.yaml: tests.enabled is true but no test cases found under '{}'",
-                (cfg.tests.manifest ? *cfg.tests.manifest : cfg.tests.dir))};
-        }
-        cfg.tests.enabled = *tests_enabled_explicit;
-    } else {
-        cfg.tests.enabled = manual_resource_present;
-    }
-
-    // ── symbolic (consolidated type 2) ──────────────────────────────────
-    std::optional<bool> symbolic_enabled_explicit;
-    if (YAML::Node s = doc["symbolic"]) {
-        if (s["enabled"]) {
-            symbolic_enabled_explicit = s["enabled"].as<bool>();
-        }
-        cfg.symbolic.must_include = parse_symbolic_list(s["must_include"]);
-        cfg.symbolic.must_not_include = parse_symbolic_list(s["must_not_include"]);
-    }
-    bool has_symbolic_checks = !cfg.symbolic.must_include.empty() || !cfg.symbolic.must_not_include.empty();
-    if (symbolic_enabled_explicit) {
-        if (*symbolic_enabled_explicit && !has_symbolic_checks) {
-            throw std::runtime_error{
-                "problem.yaml: symbolic.enabled is true but must_include/must_not_include are both empty"};
-        }
-        cfg.symbolic.enabled = *symbolic_enabled_explicit;
-    } else {
-        cfg.symbolic.enabled = has_symbolic_checks;
-    }
-
-    // ── behavior (consolidated type 3) ──────────────────────────────────
-    std::optional<bool> behavior_enabled_explicit;
-    if (YAML::Node b = doc["behavior"]) {
-        if (b["enabled"]) {
-            behavior_enabled_explicit = b["enabled"].as<bool>();
-        }
-        if (b["checker_file"]) {
-            cfg.behavior.checker_file = b["checker_file"].as<std::string>();
-        }
-        if (b["extra_flags"]) {
-            for (const auto& f : b["extra_flags"]) {
-                cfg.behavior.extra_flags.push_back(f.as<std::string>());
-            }
-        }
-    }
-    bool checker_file_present = std::filesystem::exists(cfg.problem_dir / cfg.behavior.checker_file);
-    if (behavior_enabled_explicit) {
-        if (*behavior_enabled_explicit && !checker_file_present) {
-            throw std::runtime_error{std::format(
-                "problem.yaml: behavior.enabled is true but checker_file '{}' does not exist",
-                cfg.behavior.checker_file)};
-        }
-        cfg.behavior.enabled = *behavior_enabled_explicit;
-    } else {
-        cfg.behavior.enabled = checker_file_present;
-    }
+    cfg.compiler = parse_compiler_section(doc);
+    cfg.limits = parse_limits_section(doc);
+    cfg.tests = parse_tests_section(doc, cfg.problem_dir);
+    cfg.symbolic = parse_symbolic_section(doc);
+    cfg.behavior = parse_behavior_section(doc, cfg.problem_dir);
 
     return cfg;
 }

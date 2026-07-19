@@ -35,14 +35,14 @@ bool natural_less(const std::string& a, const std::string& b) {
         if (da && db) {
             std::size_t ea = ia;
             std::size_t eb = ib;
-            while (ea < a.size() && std::isdigit(static_cast<unsigned char>(a[ea]))) {
+            while (ea < a.size() && std::isdigit(static_cast<unsigned char>(a[ea])) != 0) {
                 ++ea;
             }
-            while (eb < b.size() && std::isdigit(static_cast<unsigned char>(b[eb]))) {
+            while (eb < b.size() && std::isdigit(static_cast<unsigned char>(b[eb])) != 0) {
                 ++eb;
             }
-            std::string_view na{a.data() + ia, ea - ia};
-            std::string_view nb{b.data() + ib, eb - ib};
+            std::string_view na = std::string_view{a}.substr(ia, ea - ia);
+            std::string_view nb = std::string_view{b}.substr(ib, eb - ib);
             if (na.size() != nb.size()) {
                 return na.size() < nb.size();
             }
@@ -76,10 +76,12 @@ struct TempFile {
     explicit TempFile(std::string_view content = {}) {
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         char tmpl[] = "/tmp/cxxprobe-XXXXXX";
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
         int fd = ::mkstemp(tmpl);
         if (fd < 0) {
             throw std::runtime_error{std::format("mkstemp: {}", std::strerror(errno))};
         }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
         path = tmpl;
         if (!content.empty()) {
             ssize_t written = ::write(fd, content.data(), content.size());
@@ -111,6 +113,7 @@ bool run_checker(const std::string& checker_bin, const std::string& input_path,
         throw std::runtime_error{std::format("fork: {}", std::strerror(errno))};
     }
     if (pid == 0) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
         int devnull = ::open("/dev/null", O_WRONLY);
         if (devnull >= 0) {
             ::dup2(devnull, STDOUT_FILENO);
@@ -185,8 +188,8 @@ std::vector<TestCase> load_cases_dir(const fs::path& dir) {
             in_files.emplace_back(entry.path().stem().string(), entry.path());
         }
     }
-    std::sort(in_files.begin(), in_files.end(),
-              [](const auto& x, const auto& y) { return natural_less(x.first, y.first); });
+    std::ranges::sort(in_files,
+                      [](const auto& x, const auto& y) { return natural_less(x.first, y.first); });
 
     std::vector<TestCase> result;
     result.reserve(in_files.size());

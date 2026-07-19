@@ -43,7 +43,7 @@ Result compile(const Request& req, const cxxprobe::sandbox::Limits& compile_limi
     for (const auto& s : req.sources) {
         argv.push_back(resolve(req, s).string());
     }
-    argv.push_back("-o");
+    argv.emplace_back("-o");
     argv.push_back(resolve(req, req.output_binary).string());
 
     Result result;
