@@ -25,8 +25,8 @@ std::chrono::milliseconds parse_duration(const std::string& raw) {
     }
 
     auto all_digits = [](std::string_view s) {
-        return !s.empty() &&
-               std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+        return !s.empty() && std::all_of(s.begin(), s.end(),
+                                         [](unsigned char c) { return std::isdigit(c) != 0; });
     };
     if (!all_digits(num)) {
         throw std::invalid_argument{

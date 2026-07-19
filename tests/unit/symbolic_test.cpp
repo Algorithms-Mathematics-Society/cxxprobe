@@ -1,10 +1,10 @@
+#include "cxxprobe/symbolic.hpp"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
-
-#include "cxxprobe/symbolic.hpp"
 
 using cxxprobe::problem::SymbolicCheck;
 using cxxprobe::problem::SymbolicConfig;
@@ -69,14 +69,15 @@ TEST(StripCommentsAndLiterals, DigitSeparatorNotTreatedAsCharLiteral) {
 }
 
 TEST(StripCommentsAndLiterals, RawStringLiteralBlanked) {
-    std::string out = strip_comments_and_literals(R"CODE(auto s = R"(memcpy inside raw)"; int x;)CODE");
+    std::string out =
+        strip_comments_and_literals(R"CODE(auto s = R"(memcpy inside raw)"; int x;)CODE");
     EXPECT_EQ(out.find("memcpy"), std::string::npos);
     EXPECT_NE(out.find("int x;"), std::string::npos);
 }
 
 TEST(StripCommentsAndLiterals, RawStringLiteralCustomDelimiter) {
-    std::string out =
-        strip_comments_and_literals(R"CODE(auto s = R"DELIM(memcpy )" still raw)DELIM"; int x;)CODE");
+    std::string out = strip_comments_and_literals(
+        R"CODE(auto s = R"DELIM(memcpy )" still raw)DELIM"; int x;)CODE");
     EXPECT_EQ(out.find("memcpy"), std::string::npos);
     EXPECT_EQ(out.find("still raw"), std::string::npos);
     EXPECT_NE(out.find("int x;"), std::string::npos);
@@ -138,7 +139,8 @@ TEST(SymbolicEvaluate, InvalidRegexThrows) {
 // ─── run (full file-based flow) ────────────────────────────────────────────
 
 TEST(SymbolicRun, AggregatesAllChecks) {
-    std::filesystem::path tmp = std::filesystem::temp_directory_path() / "cxxprobe-symbolic-test.cpp";
+    std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "cxxprobe-symbolic-test.cpp";
     {
         std::ofstream ofs{tmp};
         ofs << "int main() { int x = 1; return x; }\n";
@@ -146,7 +148,8 @@ TEST(SymbolicRun, AggregatesAllChecks) {
 
     SymbolicConfig config;
     config.must_include.push_back({.pattern = "return x", .regex = false, .message = ""});
-    config.must_include.push_back({.pattern = "std::bit_cast", .regex = false, .message = "missing"});
+    config.must_include.push_back(
+        {.pattern = "std::bit_cast", .regex = false, .message = "missing"});
     config.must_not_include.push_back({.pattern = "memcpy", .regex = false, .message = ""});
 
     auto report = cxxprobe::symbolic::run(config, tmp);
@@ -162,5 +165,6 @@ TEST(SymbolicRun, AggregatesAllChecks) {
 TEST(SymbolicRun, MissingFileThrows) {
     SymbolicConfig config;
     config.must_include.push_back({.pattern = "x", .regex = false, .message = ""});
-    EXPECT_THROW(cxxprobe::symbolic::run(config, "/nonexistent/path/solution.cpp"), std::runtime_error);
+    EXPECT_THROW(cxxprobe::symbolic::run(config, "/nonexistent/path/solution.cpp"),
+                 std::runtime_error);
 }

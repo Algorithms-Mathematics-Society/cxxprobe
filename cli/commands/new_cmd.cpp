@@ -92,38 +92,51 @@ constexpr std::string_view kProblemMdTemplate = R"MD(# {}
 ## Examples
 )MD";
 
-constexpr std::string_view kSolutionTemplate = R"CPP(// Fill this in to implement the solution described in problem.md.
-// Symbolic requirements for this problem are enforced from problem.yaml —
-// see the `symbolic:` section (must_include / must_not_include).
+constexpr std::string_view kSolutionTemplate = R"CPP(// Fill this in to implement the solution
+                                                     // described in problem.md.
+                                                     // Symbolic requirements for this problem are
+                                                     // enforced from problem.yaml — see the
+                                                     // `symbolic:` section (must_include /
+                                                     // must_not_include).
 
-int main() {
-    return 0;
-}
+                                                     int main() { return 0; }
 )CPP";
 
 constexpr std::string_view kCheckerGtestTemplate = R"CPP(#include <gtest/gtest.h>
 
-// This file is compiled together with the submission into one binary (see
-// problem.yaml's `behavior:` section) and run sandboxed; cxxprobe parses
-// named pass/fail results from GTest's own --gtest_output=json. Write
-// TEST() cases here that exercise the submission's implementation directly.
-//
-// CXXPROBE_SOLUTION_FILE is defined by cxxprobe at compile time (it points
-// at whatever is actually being graded — solution.cpp by default, or
-// whatever `--submission` was passed) — don't hardcode "solution.cpp" here,
-// or `--submission` grading will silently test the wrong file.
-//
-// The submission has its own `main()` for the manual .in/.out tests; it's
-// renamed out of the way here so it doesn't collide with GTest's own main
-// (linked in via -lgtest_main).
+                                                         // This file is compiled together with the
+                                                         // submission into one binary (see
+                                                         // problem.yaml's `behavior:` section) and
+                                                         // run sandboxed; cxxprobe parses named
+                                                         // pass/fail results from GTest's own
+                                                         // --gtest_output=json. Write TEST() cases
+                                                         // here that exercise the submission's
+                                                         // implementation directly.
+                                                         //
+                                                         // CXXPROBE_SOLUTION_FILE is defined by
+                                                         // cxxprobe at compile time (it points at
+                                                         // whatever is actually being graded —
+                                                         // solution.cpp by default, or whatever
+                                                         // `--submission` was passed) — don't
+                                                         // hardcode "solution.cpp" here, or
+                                                         // `--submission` grading will silently
+                                                         // test the wrong file.
+                                                         //
+                                                         // The submission has its own `main()` for
+                                                         // the manual .in/.out tests; it's renamed
+                                                         // out of the way here so it doesn't
+                                                         // collide with GTest's own main (linked in
+                                                         // via -lgtest_main).
 #define main solution_main
 #include CXXPROBE_SOLUTION_FILE
 #undef main
 
-TEST(Placeholder, ScaffoldCompiles) {
-    // Replace with real behavior assertions once solution.cpp is filled in.
-    SUCCEED();
-}
+                                                         TEST(Placeholder, ScaffoldCompiles) {
+                                                             // Replace with real behavior
+                                                             // assertions once solution.cpp is
+                                                             // filled in.
+                                                             SUCCEED();
+                                                         }
 )CPP";
 
 }  // namespace
@@ -164,7 +177,7 @@ int NewCommand::execute_new_contest() {
 
     fs::create_directories(dir);
     write_file(dir / "contest.yaml",
-              std::format("version: 1\nname: \"{}\"\ndescription: \"\"\n", contest_name_));
+               std::format("version: 1\nname: \"{}\"\ndescription: \"\"\n", contest_name_));
 
     std::cout << "Created contest '" << contest_name_ << "' in " << dir.string() << "\n";
     return 0;
@@ -182,8 +195,9 @@ int NewCommand::execute_new_problem() {
     } else {
         auto found = find_contest_dir(fs::current_path());
         if (!found) {
-            std::cerr << "cxxprobe: no contest.yaml found in the current directory or any ancestor — "
-                         "run inside a contest created with `cxxprobe new contest`, or pass --dir\n";
+            std::cerr
+                << "cxxprobe: no contest.yaml found in the current directory or any ancestor — "
+                   "run inside a contest created with `cxxprobe new contest`, or pass --dir\n";
             return 2;
         }
         contest_dir = *found;
@@ -202,8 +216,10 @@ int NewCommand::execute_new_problem() {
 
     fs::create_directories(dir / "tests");
     write_file(dir / "tests" / ".gitkeep", "");
-    write_file(dir / "problem.yaml", std::vformat(kProblemYamlTemplate, std::make_format_args(problem_name_)));
-    write_file(dir / "problem.md", std::vformat(kProblemMdTemplate, std::make_format_args(problem_name_)));
+    write_file(dir / "problem.yaml",
+               std::vformat(kProblemYamlTemplate, std::make_format_args(problem_name_)));
+    write_file(dir / "problem.md",
+               std::vformat(kProblemMdTemplate, std::make_format_args(problem_name_)));
     write_file(dir / "solution_template.cpp", kSolutionTemplate);
     write_file(dir / "checker_gtest.cpp", kCheckerGtestTemplate);
 

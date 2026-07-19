@@ -18,8 +18,9 @@ class ProblemConfigTest : public ::testing::Test {
 protected:
     void SetUp() override {
         dir_ = std::filesystem::temp_directory_path() /
-               ("cxxprobe-problem-test-" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) +
-                "-" + std::string{::testing::UnitTest::GetInstance()->current_test_info()->name()});
+               ("cxxprobe-problem-test-" +
+                std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "-" +
+                std::string{::testing::UnitTest::GetInstance()->current_test_info()->name()});
         std::filesystem::remove_all(dir_);
         std::filesystem::create_directories(dir_);
     }
@@ -49,9 +50,9 @@ TEST_F(ProblemConfigTest, MinimalConfigParsesWithDefaults) {
     EXPECT_EQ(cfg.name, "Test Problem");
     EXPECT_EQ(cfg.solution_file, "solution.cpp");
     EXPECT_EQ(cfg.statement, "problem.md");
-    EXPECT_FALSE(cfg.tests.enabled);      // no tests/ dir with .in files
-    EXPECT_FALSE(cfg.symbolic.enabled);   // no must_include/must_not_include
-    EXPECT_FALSE(cfg.behavior.enabled);   // no checker_gtest.cpp on disk
+    EXPECT_FALSE(cfg.tests.enabled);     // no tests/ dir with .in files
+    EXPECT_FALSE(cfg.symbolic.enabled);  // no must_include/must_not_include
+    EXPECT_FALSE(cfg.behavior.enabled);  // no checker_gtest.cpp on disk
 }
 
 TEST_F(ProblemConfigTest, MissingNameThrows) {
@@ -64,7 +65,9 @@ TEST_F(ProblemConfigTest, UnknownVersionThrows) {
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
 }
 
-TEST_F(ProblemConfigTest, MissingFileThrows) { EXPECT_THROW(load(dir_ / "problem.yaml"), std::runtime_error); }
+TEST_F(ProblemConfigTest, MissingFileThrows) {
+    EXPECT_THROW(load(dir_ / "problem.yaml"), std::runtime_error);
+}
 
 // ─── tests (consolidated type 1) ─────────────────────────────────────────────
 
@@ -88,7 +91,8 @@ TEST_F(ProblemConfigTest, TestsExplicitFalseOverridesPresentData) {
 }
 
 TEST_F(ProblemConfigTest, TestsDirAndManifestMutuallyExclusive) {
-    write("problem.yaml", std::string{kMinimalYaml} + "tests:\n  dir: tests\n  manifest: cases.yaml\n");
+    write("problem.yaml",
+          std::string{kMinimalYaml} + "tests:\n  dir: tests\n  manifest: cases.yaml\n");
     write("cases.yaml", "[]\n");
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
 }
@@ -96,7 +100,8 @@ TEST_F(ProblemConfigTest, TestsDirAndManifestMutuallyExclusive) {
 // ─── symbolic (consolidated type 2) ──────────────────────────────────────────
 
 TEST_F(ProblemConfigTest, SymbolicEnabledInferredFromNonEmptyLists) {
-    write("problem.yaml", std::string{kMinimalYaml} + "symbolic:\n  must_include: [\"std::bit_cast\"]\n");
+    write("problem.yaml",
+          std::string{kMinimalYaml} + "symbolic:\n  must_include: [\"std::bit_cast\"]\n");
     auto cfg = load_from_dir(dir_);
     EXPECT_TRUE(cfg.symbolic.enabled);
     ASSERT_EQ(cfg.symbolic.must_include.size(), 1U);
@@ -177,8 +182,14 @@ TEST(ResolveLimits, FallsBackAndOverrides) {
 
 // ─── slugify ──────────────────────────────────────────────────────────────
 
-TEST(Slugify, BasicTitle) { EXPECT_EQ(cxxprobe::problem::slugify("A: FileReader RAII"), "a-filereader-raii"); }
+TEST(Slugify, BasicTitle) {
+    EXPECT_EQ(cxxprobe::problem::slugify("A: FileReader RAII"), "a-filereader-raii");
+}
 
-TEST(Slugify, CollapsesRunsAndTrims) { EXPECT_EQ(cxxprobe::problem::slugify("  Hello---World!!  "), "hello-world"); }
+TEST(Slugify, CollapsesRunsAndTrims) {
+    EXPECT_EQ(cxxprobe::problem::slugify("  Hello---World!!  "), "hello-world");
+}
 
-TEST(Slugify, AlreadySlug) { EXPECT_EQ(cxxprobe::problem::slugify("graph-diameter"), "graph-diameter"); }
+TEST(Slugify, AlreadySlug) {
+    EXPECT_EQ(cxxprobe::problem::slugify("graph-diameter"), "graph-diameter");
+}

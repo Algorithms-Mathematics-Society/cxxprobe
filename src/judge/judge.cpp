@@ -69,14 +69,16 @@ CompileStepReport to_compile_report(const cxxprobe::compile::Result& r) {
 }
 
 ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& config,
-                                   const cxxprobe::sandbox::Limits& limits, const fs::path& binary_path) {
+                                   const cxxprobe::sandbox::Limits& limits,
+                                   const fs::path& binary_path) {
     ManualTestsReport report;
 
     std::vector<cxxprobe::cases::TestCase> test_cases;
     try {
-        test_cases = config.tests.manifest
-                        ? cxxprobe::cases::load_cases_manifest(config.problem_dir / *config.tests.manifest)
-                        : cxxprobe::cases::load_cases_dir(config.problem_dir / config.tests.dir);
+        test_cases =
+            config.tests.manifest
+                ? cxxprobe::cases::load_cases_manifest(config.problem_dir / *config.tests.manifest)
+                : cxxprobe::cases::load_cases_dir(config.problem_dir / config.tests.dir);
     } catch (const std::exception&) {
         report.status = Status::Error;
         return report;
@@ -109,7 +111,8 @@ ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& confi
 
         if (tc.answer_data) {
             ++judged_total;
-            bool ok = cxxprobe::cases::check_output(checker_bin, tc.input_data, res, *tc.answer_data);
+            bool ok =
+                cxxprobe::cases::check_output(checker_bin, tc.input_data, res, *tc.answer_data);
             auto verdict = cxxprobe::cases::compute_verdict(res, limits, ok);
             detail.verdict = cxxprobe::cases::verdict_str(verdict);
             if (verdict == cxxprobe::cases::Verdict::AC) {
@@ -120,7 +123,8 @@ ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& confi
     }
 
     report.total = judged_total;
-    report.status = (judged_total == 0 || report.passed == judged_total) ? Status::Pass : Status::Fail;
+    report.status =
+        (judged_total == 0 || report.passed == judged_total) ? Status::Pass : Status::Fail;
     return report;
 }
 
@@ -188,7 +192,8 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
 
     fs::path results_json = make_temp_path("cxxprobe-behavior-results");
     results_json += ".json";
-    cxxprobe::sandbox::Limits run_limits = cxxprobe::problem::resolve_limits(config.limits, defaults);
+    cxxprobe::sandbox::Limits run_limits =
+        cxxprobe::problem::resolve_limits(config.limits, defaults);
 
     cxxprobe::sandbox::Result rres;
     try {
@@ -250,7 +255,8 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     fs::path submission_path =
         submission_override ? *submission_override : (config.problem_dir / config.solution_file);
     if (!fs::exists(submission_path)) {
-        throw std::runtime_error{std::format("submission source not found: {}", submission_path.string())};
+        throw std::runtime_error{
+            std::format("submission source not found: {}", submission_path.string())};
     }
     report.submission_path = submission_path.string();
 
@@ -258,7 +264,8 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     // the submission ends up compiling cleanly.
     if (config.symbolic.enabled) {
         try {
-            cxxprobe::symbolic::Report sym = cxxprobe::symbolic::run(config.symbolic, submission_path);
+            cxxprobe::symbolic::Report sym =
+                cxxprobe::symbolic::run(config.symbolic, submission_path);
             report.symbolic.status = sym.passed ? Status::Pass : Status::Fail;
             report.symbolic.checks = std::move(sym.outcomes);
         } catch (const std::exception&) {
@@ -266,8 +273,10 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
         }
     }
 
-    cxxprobe::problem::ResolvedCompiler resolved = cxxprobe::problem::resolve_compiler(config.compiler, defaults);
-    cxxprobe::sandbox::Limits run_limits = cxxprobe::problem::resolve_limits(config.limits, defaults);
+    cxxprobe::problem::ResolvedCompiler resolved =
+        cxxprobe::problem::resolve_compiler(config.compiler, defaults);
+    cxxprobe::sandbox::Limits run_limits =
+        cxxprobe::problem::resolve_limits(config.limits, defaults);
 
     if (config.tests.enabled) {
         fs::path solution_binary = make_temp_path("cxxprobe-solution");
@@ -293,10 +302,12 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     }
 
     if (config.behavior.enabled) {
-        report.behavior = run_behavior_checker(config, defaults, submission_path, resolved, report.behavior_compile);
+        report.behavior = run_behavior_checker(config, defaults, submission_path, resolved,
+                                               report.behavior_compile);
     }
 
-    report.overall = worse(worse(report.manual.status, report.symbolic.status), report.behavior.status);
+    report.overall =
+        worse(worse(report.manual.status, report.symbolic.status), report.behavior.status);
     return report;
 }
 

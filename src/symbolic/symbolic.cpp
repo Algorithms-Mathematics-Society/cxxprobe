@@ -12,9 +12,7 @@ namespace cxxprobe::symbolic {
 
 namespace {
 
-bool is_ident_char(char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
-}
+bool is_ident_char(char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_'; }
 
 // Blanks out a // line comment starting at i (out[i] == out[i+1] == '/').
 // The terminating newline, if any, is left untouched. Returns the index
@@ -68,7 +66,8 @@ std::optional<std::size_t> detect_raw_string_prefix(std::string_view out, std::s
     std::size_t enc_start = r_pos;
     if (r_pos >= 2 && out.compare(r_pos - 2, 2, "u8") == 0) {
         enc_start = r_pos - 2;
-    } else if (r_pos >= 1 && (out[r_pos - 1] == 'u' || out[r_pos - 1] == 'U' || out[r_pos - 1] == 'L')) {
+    } else if (r_pos >= 1 &&
+               (out[r_pos - 1] == 'u' || out[r_pos - 1] == 'U' || out[r_pos - 1] == 'L')) {
         enc_start = r_pos - 1;
     }
     bool boundary_ok = (enc_start == 0) || !is_ident_char(out[enc_start - 1]);
@@ -168,8 +167,8 @@ std::string strip_comments_and_literals(std::string_view source) {
     return out;
 }
 
-CheckOutcome evaluate(const cxxprobe::problem::SymbolicCheck& check, std::string_view stripped_source,
-                       bool expect_present) {
+CheckOutcome evaluate(const cxxprobe::problem::SymbolicCheck& check,
+                      std::string_view stripped_source, bool expect_present) {
     CheckOutcome outcome;
     outcome.pattern = check.pattern;
     outcome.regex = check.regex;
@@ -192,7 +191,8 @@ CheckOutcome evaluate(const cxxprobe::problem::SymbolicCheck& check, std::string
     return outcome;
 }
 
-Report run(const cxxprobe::problem::SymbolicConfig& config, const std::filesystem::path& source_file) {
+Report run(const cxxprobe::problem::SymbolicConfig& config,
+           const std::filesystem::path& source_file) {
     std::ifstream ifs{source_file, std::ios::binary};
     if (!ifs) {
         throw std::runtime_error{std::format("cannot open source file: {}", source_file.string())};

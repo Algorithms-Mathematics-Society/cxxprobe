@@ -2,7 +2,8 @@
 
 namespace cxxprobe::cli {
 
-Json result_to_json(const cxxprobe::sandbox::Result& res, std::optional<cxxprobe::cases::Verdict> verdict) {
+Json result_to_json(const cxxprobe::sandbox::Result& res,
+                    std::optional<cxxprobe::cases::Verdict> verdict) {
     Json j;
     j["exit_code"] = res.exit_code;
     j["peak_memory_bytes"] = res.peak_memory_bytes;

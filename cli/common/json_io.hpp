@@ -13,7 +13,8 @@ namespace cxxprobe::cli {
 // output shapes) rather than nlohmann::json's default alphabetical key sort.
 using Json = nlohmann::ordered_json;
 
-Json result_to_json(const cxxprobe::sandbox::Result& res, std::optional<cxxprobe::cases::Verdict> verdict);
+Json result_to_json(const cxxprobe::sandbox::Result& res,
+                    std::optional<cxxprobe::cases::Verdict> verdict);
 
 Json judge_report_to_json(const cxxprobe::judge::JudgeReport& report);
 

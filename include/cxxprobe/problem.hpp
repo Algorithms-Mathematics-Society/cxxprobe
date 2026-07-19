@@ -27,7 +27,7 @@ struct CompilerConfig {
 
 struct LimitsOverride {
     std::optional<std::size_t> memory_mb;
-    std::optional<std::string> cpu;   // duration string, e.g. "500ms"
+    std::optional<std::string> cpu;  // duration string, e.g. "500ms"
     std::optional<std::string> wall;
     std::optional<unsigned> pids;
 };
@@ -87,8 +87,10 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path);
 ProblemConfig load_from_dir(const std::filesystem::path& problem_dir);
 
 // Merges CompilerConfig/LimitsOverride onto ProjectDefaults, field by field.
-ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg, const ProjectDefaults& defaults);
-cxxprobe::sandbox::Limits resolve_limits(const LimitsOverride& override_cfg, const ProjectDefaults& defaults);
+ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg,
+                                  const ProjectDefaults& defaults);
+cxxprobe::sandbox::Limits resolve_limits(const LimitsOverride& override_cfg,
+                                         const ProjectDefaults& defaults);
 
 // Lowercases, collapses runs of non-[a-z0-9] to a single '-', trims edges.
 // "A: FileReader RAII" -> "a-filereader-raii".

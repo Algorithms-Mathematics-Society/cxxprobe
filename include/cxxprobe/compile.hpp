@@ -36,6 +36,7 @@ cxxprobe::sandbox::Limits default_compile_limits();
 // Builds argv {cxx, "-std="+std_flag, ...flags, ...extra_flags, ...sources,
 // "-o", output_binary} and runs it through cxxprobe::sandbox::run() — the
 // compiler itself is sandboxed, exactly like a submission run.
-Result compile(const Request& req, const cxxprobe::sandbox::Limits& compile_limits = default_compile_limits());
+Result compile(const Request& req,
+               const cxxprobe::sandbox::Limits& compile_limits = default_compile_limits());
 
 }  // namespace cxxprobe::compile

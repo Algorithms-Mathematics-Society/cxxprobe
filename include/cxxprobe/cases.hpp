@@ -41,10 +41,10 @@ bool token_equal(std::string_view a, std::string_view b);
 // exit 0 = AC). If checker_bin is empty, falls back to token_equal against
 // result.stdout_data.
 bool check_output(const std::string& checker_bin, const std::string& input_data,
-                   const cxxprobe::sandbox::Result& result, const std::string& answer_data);
+                  const cxxprobe::sandbox::Result& result, const std::string& answer_data);
 
 // Verdict priority when multiple conditions trigger: TLE > MLE > OLE > RE > WA/AC.
-Verdict compute_verdict(const cxxprobe::sandbox::Result& result, const cxxprobe::sandbox::Limits& limits,
-                        bool checker_ac);
+Verdict compute_verdict(const cxxprobe::sandbox::Result& result,
+                        const cxxprobe::sandbox::Limits& limits, bool checker_ac);
 
 }  // namespace cxxprobe::cases

@@ -48,7 +48,8 @@ Result compile(const Request& req, const cxxprobe::sandbox::Limits& compile_limi
 
     Result result;
     try {
-        cxxprobe::sandbox::Result sres = cxxprobe::sandbox::run(std::move(argv), "", compile_limits);
+        cxxprobe::sandbox::Result sres =
+            cxxprobe::sandbox::run(std::move(argv), "", compile_limits);
         result.exit_code = sres.exit_code;
         result.diagnostics = sres.stdout_data + sres.stderr_data;
         result.cpu_time = sres.cpu_time;

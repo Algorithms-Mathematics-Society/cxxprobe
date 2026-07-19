@@ -1,10 +1,10 @@
+#include "cxxprobe/gtest_report.hpp"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
-
-#include "cxxprobe/gtest_report.hpp"
 
 using cxxprobe::gtest_report::all_passed;
 using cxxprobe::gtest_report::parse_file;
@@ -78,16 +78,21 @@ TEST(GtestReportParse, MultipleSuitesFlattenedCorrectly) {
     EXPECT_EQ(report.cases[1].suite, "B");
 }
 
-TEST(GtestReportParse, MalformedJsonThrows) { EXPECT_THROW(parse_string("{not valid json"), std::runtime_error); }
+TEST(GtestReportParse, MalformedJsonThrows) {
+    EXPECT_THROW(parse_string("{not valid json"), std::runtime_error);
+}
 
-TEST(GtestReportParse, TopLevelNonObjectThrows) { EXPECT_THROW(parse_string("[1,2,3]"), std::runtime_error); }
+TEST(GtestReportParse, TopLevelNonObjectThrows) {
+    EXPECT_THROW(parse_string("[1,2,3]"), std::runtime_error);
+}
 
 TEST(GtestReportParse, MissingFileThrows) {
     EXPECT_THROW(parse_file("/nonexistent/path/results.json"), std::runtime_error);
 }
 
 TEST(GtestReportParse, ParseFileRoundTrip) {
-    std::filesystem::path tmp = std::filesystem::temp_directory_path() / "cxxprobe-gtest-report-test.json";
+    std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "cxxprobe-gtest-report-test.json";
     {
         std::ofstream ofs{tmp};
         ofs << kPassingSample;

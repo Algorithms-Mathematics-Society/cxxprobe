@@ -4,9 +4,8 @@
 #include <stdexcept>
 #include <string>
 
-#include "cxxprobe/cases.hpp"
-
 #include "../../cli/common/text_utils.hpp"
+#include "cxxprobe/cases.hpp"
 
 using ms = std::chrono::milliseconds;
 using cxxprobe::cases::token_equal;

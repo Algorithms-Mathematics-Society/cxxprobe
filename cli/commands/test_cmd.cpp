@@ -7,11 +7,10 @@
 #include <iostream>
 #include <optional>
 
-#include "cxxprobe/judge.hpp"
-#include "cxxprobe/problem.hpp"
-
 #include "../common/color.hpp"
 #include "../common/json_io.hpp"
+#include "cxxprobe/judge.hpp"
+#include "cxxprobe/problem.hpp"
 
 namespace cxxprobe::cli {
 
@@ -97,7 +96,8 @@ void print_human(const cxxprobe::judge::JudgeReport& report, bool quiet, const C
     if (!quiet) {
         for (const auto& c : report.manual.cases) {
             std::cout << std::format("  {:>4}: {:<3}   cpu:{}ms   wall:{}ms\n", c.label,
-                                     c.verdict.empty() ? "---" : c.verdict, c.cpu_time_ms, c.wall_time_ms);
+                                     c.verdict.empty() ? "---" : c.verdict, c.cpu_time_ms,
+                                     c.wall_time_ms);
         }
     }
 
@@ -106,8 +106,8 @@ void print_human(const cxxprobe::judge::JudgeReport& report, bool quiet, const C
     if (!quiet) {
         for (const auto& c : report.symbolic.checks) {
             std::cout << std::format("  [{}] {:<24} {}{}\n",
-                                     c.expect_present ? "must_include" : "must_not_include", c.pattern,
-                                     c.satisfied ? "OK" : "FAILED",
+                                     c.expect_present ? "must_include" : "must_not_include",
+                                     c.pattern, c.satisfied ? "OK" : "FAILED",
                                      c.message.empty() ? "" : (" — " + c.message));
         }
     }
@@ -129,7 +129,8 @@ void print_human(const cxxprobe::judge::JudgeReport& report, bool quiet, const C
         std::cout << "\nSolution compile failed:\n" << report.solution_compile.diagnostics << "\n";
     }
     if (report.behavior_compile.ran && !report.behavior_compile.ok) {
-        std::cout << "\nBehavior checker compile failed:\n" << report.behavior_compile.diagnostics << "\n";
+        std::cout << "\nBehavior checker compile failed:\n"
+                  << report.behavior_compile.diagnostics << "\n";
     }
 
     std::cout << std::format("\n---\nOverall: {}{}{}\n", status_col(report.overall, col),
@@ -155,7 +156,8 @@ TestCommand::TestCommand(CLI::App& parent) {
     test_app_ = parent.add_subcommand("test", "Run consolidated tests for a problem");
     test_app_->require_subcommand(1);
 
-    problem_app_ = test_app_->add_subcommand("problem", "Run all consolidated tests for one problem");
+    problem_app_ =
+        test_app_->add_subcommand("problem", "Run all consolidated tests for one problem");
     problem_app_->add_option("name", problem_name_, "Problem name or slug")->required();
     problem_app_->add_option(
         "-C,--dir", dir_override_,
@@ -168,9 +170,7 @@ TestCommand::TestCommand(CLI::App& parent) {
     problem_app_->add_flag("--no-color", no_color_, "Disable ANSI color output");
 }
 
-int TestCommand::execute() {
-    return execute_test_problem();
-}
+int TestCommand::execute() { return execute_test_problem(); }
 
 int TestCommand::execute_test_problem() {
     fs::path contest_dir;
@@ -179,8 +179,9 @@ int TestCommand::execute_test_problem() {
     } else {
         auto found = find_contest_dir(fs::current_path());
         if (!found) {
-            std::cerr << "cxxprobe: no contest.yaml found in the current directory or any ancestor — "
-                         "pass --dir to specify one\n";
+            std::cerr
+                << "cxxprobe: no contest.yaml found in the current directory or any ancestor — "
+                   "pass --dir to specify one\n";
             return 2;
         }
         contest_dir = *found;
@@ -189,8 +190,8 @@ int TestCommand::execute_test_problem() {
     std::vector<std::string> available;
     auto problem_dir = resolve_problem_dir(contest_dir, problem_name_, available);
     if (!problem_dir) {
-        std::cerr << "cxxprobe: no problem matching '" << problem_name_ << "' in " << contest_dir.string()
-                  << "\n";
+        std::cerr << "cxxprobe: no problem matching '" << problem_name_ << "' in "
+                  << contest_dir.string() << "\n";
         if (!available.empty()) {
             std::cerr << "Available problems:\n";
             for (const auto& name : available) {

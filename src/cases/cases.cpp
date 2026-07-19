@@ -3,7 +3,6 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
@@ -267,8 +266,8 @@ bool check_output(const std::string& checker_bin, const std::string& input_data,
     return run_checker(checker_bin, input_tmp.path, output_tmp.path, answer_tmp.path);
 }
 
-Verdict compute_verdict(const cxxprobe::sandbox::Result& result, const cxxprobe::sandbox::Limits& limits,
-                        bool checker_ac) {
+Verdict compute_verdict(const cxxprobe::sandbox::Result& result,
+                        const cxxprobe::sandbox::Limits& limits, bool checker_ac) {
     if (result.wall_timed_out || result.cpu_time >= limits.cpu) {
         return Verdict::TLE;
     }

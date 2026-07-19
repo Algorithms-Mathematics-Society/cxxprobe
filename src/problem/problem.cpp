@@ -35,7 +35,8 @@ std::chrono::milliseconds parse_duration_ms(const std::string& raw) {
                std::ranges::all_of(s, [](unsigned char c) { return std::isdigit(c) != 0; });
     };
     if (!all_digits(num)) {
-        throw std::runtime_error{std::format("invalid duration '{}' — use e.g. 2s, 500ms, 2000", raw)};
+        throw std::runtime_error{
+            std::format("invalid duration '{}' — use e.g. 2s, 500ms, 2000", raw)};
     }
 
     unsigned long val = std::stoul(std::string{num});
@@ -74,7 +75,8 @@ bool dir_has_case_files(const std::filesystem::path& dir) {
         return false;
     }
     std::filesystem::directory_iterator entries{dir};
-    return std::ranges::any_of(entries, [](const auto& entry) { return entry.path().extension() == ".in"; });
+    return std::ranges::any_of(entries,
+                               [](const auto& entry) { return entry.path().extension() == ".in"; });
 }
 
 CompilerConfig parse_compiler_section(const YAML::Node& doc) {
@@ -127,7 +129,8 @@ LimitsOverride parse_limits_section(const YAML::Node& doc) {
 
 // Throws if tests.dir and tests.manifest are both explicitly set, or if
 // tests.enabled is explicitly true but no case data is actually present.
-ManualTestsConfig parse_tests_section(const YAML::Node& doc, const std::filesystem::path& problem_dir) {
+ManualTestsConfig parse_tests_section(const YAML::Node& doc,
+                                      const std::filesystem::path& problem_dir) {
     ManualTestsConfig tests;
     std::optional<bool> enabled_explicit;
     YAML::Node t = doc["tests"];
@@ -145,12 +148,13 @@ ManualTestsConfig parse_tests_section(const YAML::Node& doc, const std::filesyst
             tests.checker = t["checker"].as<std::string>();
         }
         if (t["dir"] && t["manifest"] && !t["manifest"].IsNull()) {
-            throw std::runtime_error{"problem.yaml: tests.dir and tests.manifest are mutually exclusive"};
+            throw std::runtime_error{
+                "problem.yaml: tests.dir and tests.manifest are mutually exclusive"};
         }
     }
 
     bool resource_present = tests.manifest ? std::filesystem::exists(problem_dir / *tests.manifest)
-                                            : dir_has_case_files(problem_dir / tests.dir);
+                                           : dir_has_case_files(problem_dir / tests.dir);
     if (enabled_explicit) {
         if (*enabled_explicit && !resource_present) {
             throw std::runtime_error{std::format(
@@ -182,7 +186,8 @@ SymbolicConfig parse_symbolic_section(const YAML::Node& doc) {
     if (enabled_explicit) {
         if (*enabled_explicit && !has_checks) {
             throw std::runtime_error{
-                "problem.yaml: symbolic.enabled is true but must_include/must_not_include are both empty"};
+                "problem.yaml: symbolic.enabled is true but must_include/must_not_include are both "
+                "empty"};
         }
         symbolic.enabled = *enabled_explicit;
     } else {
@@ -193,7 +198,8 @@ SymbolicConfig parse_symbolic_section(const YAML::Node& doc) {
 
 // Throws if behavior.enabled is explicitly true but checker_file doesn't
 // exist on disk.
-BehaviorConfig parse_behavior_section(const YAML::Node& doc, const std::filesystem::path& problem_dir) {
+BehaviorConfig parse_behavior_section(const YAML::Node& doc,
+                                      const std::filesystem::path& problem_dir) {
     BehaviorConfig behavior;
     std::optional<bool> enabled_explicit;
     YAML::Node b = doc["behavior"];
@@ -248,7 +254,8 @@ std::string slugify(std::string_view title) {
 
 ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     if (!std::filesystem::exists(problem_yaml_path)) {
-        throw std::runtime_error{std::format("problem config not found: {}", problem_yaml_path.string())};
+        throw std::runtime_error{
+            std::format("problem config not found: {}", problem_yaml_path.string())};
     }
 
     YAML::Node doc = YAML::LoadFile(problem_yaml_path.string());
@@ -290,7 +297,8 @@ ProblemConfig load_from_dir(const std::filesystem::path& problem_dir) {
     return load(problem_dir / "problem.yaml");
 }
 
-ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg, const ProjectDefaults& defaults) {
+ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg,
+                                  const ProjectDefaults& defaults) {
     return ResolvedCompiler{
         .cxx = override_cfg.cxx.value_or(defaults.cxx),
         .std_flag = override_cfg.std_flag.value_or(defaults.std_flag),
@@ -299,7 +307,8 @@ ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg, const Proj
     };
 }
 
-cxxprobe::sandbox::Limits resolve_limits(const LimitsOverride& override_cfg, const ProjectDefaults& defaults) {
+cxxprobe::sandbox::Limits resolve_limits(const LimitsOverride& override_cfg,
+                                         const ProjectDefaults& defaults) {
     cxxprobe::sandbox::Limits limits = defaults.limits;
     if (override_cfg.memory_mb) {
         limits.memory_bytes = *override_cfg.memory_mb * 1024UL * 1024UL;

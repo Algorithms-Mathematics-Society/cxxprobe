@@ -30,8 +30,8 @@ struct CheckOutcome {
 
 // expect_present: true for must_include, false for must_not_include.
 // Throws std::runtime_error if check.regex is true and the pattern is invalid.
-CheckOutcome evaluate(const cxxprobe::problem::SymbolicCheck& check, std::string_view stripped_source,
-                       bool expect_present);
+CheckOutcome evaluate(const cxxprobe::problem::SymbolicCheck& check,
+                      std::string_view stripped_source, bool expect_present);
 
 struct Report {
     bool passed{false};
@@ -40,6 +40,7 @@ struct Report {
 
 // Reads source_file, strips it, evaluates every check in config.
 // Throws std::runtime_error on unreadable file or invalid regex pattern.
-Report run(const cxxprobe::problem::SymbolicConfig& config, const std::filesystem::path& source_file);
+Report run(const cxxprobe::problem::SymbolicConfig& config,
+           const std::filesystem::path& source_file);
 
 }  // namespace cxxprobe::symbolic

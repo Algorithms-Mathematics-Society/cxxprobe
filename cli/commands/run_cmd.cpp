@@ -13,12 +13,11 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "cxxprobe/cases.hpp"
-#include "cxxprobe/sandbox.hpp"
-
 #include "../common/color.hpp"
 #include "../common/json_io.hpp"
 #include "../common/text_utils.hpp"
+#include "cxxprobe/cases.hpp"
+#include "cxxprobe/sandbox.hpp"
 
 namespace cxxprobe::cli {
 
@@ -78,7 +77,8 @@ std::string load_stdin(const std::string& path) {
     return buf;
 }
 
-void print_human(const Result& res, const std::optional<Verdict>& verdict, bool quiet, const Col& col) {
+void print_human(const Result& res, const std::optional<Verdict>& verdict, bool quiet,
+                 const Col& col) {
     std::cout << res.stdout_data;
     std::cerr << res.stderr_data;
     if (!quiet) {
@@ -88,12 +88,12 @@ void print_human(const Result& res, const std::optional<Verdict>& verdict, bool 
                 : "--";
         std::string vpart;
         if (verdict) {
-            vpart = std::format(" | {}{}{}", verdict_col(*verdict, col), cxxprobe::cases::verdict_str(*verdict),
-                                col.rst);
+            vpart = std::format(" | {}{}{}", verdict_col(*verdict, col),
+                                cxxprobe::cases::verdict_str(*verdict), col.rst);
         }
         std::cerr << std::format("{}[exit:{} | cpu:{}ms | wall:{}ms | mem:{}{}]{}\n", col.bold,
-                                 res.exit_code, res.cpu_time.count(), res.wall_time.count(), mem_str,
-                                 vpart, col.rst);
+                                 res.exit_code, res.cpu_time.count(), res.wall_time.count(),
+                                 mem_str, vpart, col.rst);
     }
 }
 
@@ -118,15 +118,17 @@ void print_case_line(int index, const std::string& label, const std::optional<Ve
     const Result& r = *result;
     const char* vcol = verdict ? verdict_col(*verdict, col) : col.cyn;
     const char* vstr = verdict ? cxxprobe::cases::verdict_str(*verdict) : "---";
-    std::string mem = r.peak_memory_bytes > 0
-                          ? std::format("{:.1f}MiB", static_cast<double>(r.peak_memory_bytes) / kMiBd)
-                          : "--";
-    std::cout << std::format("{:>6}: {}{:<3}{}   cpu:{:>7}ms   wall:{:>7}ms   mem:{:>9}\n", label, vcol,
-                             vstr, col.rst, r.cpu_time.count(), r.wall_time.count(), mem);
+    std::string mem =
+        r.peak_memory_bytes > 0
+            ? std::format("{:.1f}MiB", static_cast<double>(r.peak_memory_bytes) / kMiBd)
+            : "--";
+    std::cout << std::format("{:>6}: {}{:<3}{}   cpu:{:>7}ms   wall:{:>7}ms   mem:{:>9}\n", label,
+                             vcol, vstr, col.rst, r.cpu_time.count(), r.wall_time.count(), mem);
 }
 
 int run_batch(const std::vector<std::string>& argv, const std::string& cases_path,
-             const std::string& checker_bin, const Limits& limits, bool json_output, const Col& col) {
+              const std::string& checker_bin, const Limits& limits, bool json_output,
+              const Col& col) {
     std::vector<TestCase> test_cases;
     try {
         test_cases = cxxprobe::cases::load_cases(cases_path);
@@ -150,7 +152,8 @@ int run_batch(const std::vector<std::string>& argv, const std::string& cases_pat
         try {
             result = cxxprobe::sandbox::run(argv, tc.input_data, limits);
             if (tc.answer_data) {
-                bool ok = cxxprobe::cases::check_output(checker_bin, tc.input_data, *result, *tc.answer_data);
+                bool ok = cxxprobe::cases::check_output(checker_bin, tc.input_data, *result,
+                                                        *tc.answer_data);
                 verdict = cxxprobe::cases::compute_verdict(*result, limits, ok);
                 any_verdict = true;
                 if (*verdict == Verdict::AC) {
@@ -191,11 +194,13 @@ int run_batch(const std::vector<std::string>& argv, const std::string& cases_pat
     } else {
         std::cout << "---\n";
         if (any_verdict) {
-            std::cout << std::format("{}{}/{} passed{}\n",
-                                     passed == static_cast<int>(test_cases.size()) ? col.grn : col.red,
-                                     passed, test_cases.size(), col.rst);
+            std::cout << std::format(
+                "{}{}/{} passed{}\n",
+                passed == static_cast<int>(test_cases.size()) ? col.grn : col.red, passed,
+                test_cases.size(), col.rst);
         } else {
-            std::cout << std::format("{} case(s) run (no expected output to judge)\n", test_cases.size());
+            std::cout << std::format("{} case(s) run (no expected output to judge)\n",
+                                     test_cases.size());
         }
     }
 
@@ -206,8 +211,8 @@ int run_batch(const std::vector<std::string>& argv, const std::string& cases_pat
 }
 
 int run_single(const std::vector<std::string>& argv, const std::string& input_file,
-              const std::string& expected_file, const std::string& checker_bin, const Limits& limits,
-              bool json_output, bool quiet, const Col& col) {
+               const std::string& expected_file, const std::string& checker_bin,
+               const Limits& limits, bool json_output, bool quiet, const Col& col) {
     std::string stdin_data;
     try {
         stdin_data = load_stdin(input_file);
@@ -262,18 +267,23 @@ RunCommand::RunCommand(CLI::App& parent) {
     app_ = parent.add_subcommand("run", "Run a program in the sandbox (single run or batch)");
 
     app_->add_option("-m,--memory-mb", memory_mib_, "Memory limit in MiB [default: 256]");
-    app_->add_option("-t,--cpu,--cpu-ms", cpu_str_, "CPU time limit: 2s / 500ms / 2000 [default: 5000ms]");
+    app_->add_option("-t,--cpu,--cpu-ms", cpu_str_,
+                     "CPU time limit: 2s / 500ms / 2000 [default: 5000ms]");
     app_->add_option("-w,--wall,--wall-ms", wall_str_,
                      "Wall-clock limit: 2s / 500ms / 10000 [default: 10000ms]");
     app_->add_option("-p,--pids", max_pids_, "Maximum PIDs in sandbox [default: 64]");
 
-    app_->add_option("-i,--input", input_file_, "File to use as stdin; use - to read from pipe [default: empty]");
+    app_->add_option("-i,--input", input_file_,
+                     "File to use as stdin; use - to read from pipe [default: empty]");
 
-    app_->add_option("-e,--expected", expected_file_, "Expected output file — enables verdict judgment");
-    app_->add_option("--checker", checker_bin_, "Custom checker binary (testlib ABI: checker <in> <out> <ans>)")
+    app_->add_option("-e,--expected", expected_file_,
+                     "Expected output file — enables verdict judgment");
+    app_->add_option("--checker", checker_bin_,
+                     "Custom checker binary (testlib ABI: checker <in> <out> <ans>)")
         ->check(CLI::ExistingFile);
 
-    app_->add_option("--cases", cases_path_, "Batch mode: directory of *.in/*.ans pairs or YAML/JSON manifest");
+    app_->add_option("--cases", cases_path_,
+                     "Batch mode: directory of *.in/*.ans pairs or YAML/JSON manifest");
 
     app_->add_flag("--json", json_output_, "Emit result(s) as JSON");
     app_->add_flag("-q,--quiet", quiet_, "Suppress metadata summary (human mode)");
@@ -312,8 +322,8 @@ int RunCommand::execute() {
     if (!cases_path_.empty()) {
         return run_batch(program_args_, cases_path_, checker_bin_, limits, json_output_, col);
     }
-    return run_single(program_args_, input_file_, expected_file_, checker_bin_, limits, json_output_,
-                      quiet_, col);
+    return run_single(program_args_, input_file_, expected_file_, checker_bin_, limits,
+                      json_output_, quiet_, col);
 }
 
 }  // namespace cxxprobe::cli

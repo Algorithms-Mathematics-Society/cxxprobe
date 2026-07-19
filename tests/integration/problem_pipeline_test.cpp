@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -9,12 +8,11 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 #include "cxxprobe/sandbox.hpp"
 
@@ -86,8 +84,9 @@ protected:
         if (!sandbox_available_) {
             GTEST_SKIP() << "sandbox not available — needs user namespaces + writable cgroup";
         }
-        base_dir_ = fs::temp_directory_path() /
-                    std::format("cxxprobe-pipeline-{}-{}", static_cast<long>(::getpid()), counter_++);
+        base_dir_ =
+            fs::temp_directory_path() /
+            std::format("cxxprobe-pipeline-{}-{}", static_cast<long>(::getpid()), counter_++);
         fs::create_directories(base_dir_);
     }
 
@@ -156,8 +155,9 @@ TEST_F(ProblemPipelineTest, SymbolicCheckFailureReportedIndependently) {
     // Overwrite (not append) — the scaffold template already has an empty
     // top-level `symbolic:` key, and appending a second one produces
     // duplicate YAML mapping keys with implementation-defined behavior.
-    write_file(problem_dir / "problem.yaml",
-              "version: 1\nname: \"Sum Two Numbers\"\nsymbolic:\n  must_include: [\"std::bit_cast\"]\n");
+    write_file(
+        problem_dir / "problem.yaml",
+        "version: 1\nname: \"Sum Two Numbers\"\nsymbolic:\n  must_include: [\"std::bit_cast\"]\n");
 
     auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
     EXPECT_EQ(r.exit_code, 1);
@@ -171,7 +171,7 @@ TEST_F(ProblemPipelineTest, SymbolicCheckFailureReportedIndependently) {
 TEST_F(ProblemPipelineTest, BehaviorCheckFailureReportedIndependently) {
     fs::path problem_dir = scaffold_baseline();
     write_file(problem_dir / "checker_gtest.cpp", "TEST(Extra, AlwaysFails) { EXPECT_EQ(1, 2); }\n",
-              /*append=*/true);
+               /*append=*/true);
 
     auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
     EXPECT_EQ(r.exit_code, 1);
@@ -197,8 +197,8 @@ TEST_F(ProblemPipelineTest, SubmissionOverrideGradesDifferentFile) {
     fs::path problem_dir = scaffold_baseline();
     write_file(problem_dir / "other.cpp", kCorrectSolution);
 
-    auto r =
-        run_cli({"test", "problem", "sum-two-numbers", "--submission", "other.cpp", "--json"}, problem_dir);
+    auto r = run_cli({"test", "problem", "sum-two-numbers", "--submission", "other.cpp", "--json"},
+                     problem_dir);
     ASSERT_EQ(r.exit_code, 0) << r.stdout_text;
     json j = json::parse(r.stdout_text);
     EXPECT_EQ(j["overall"], "PASS");

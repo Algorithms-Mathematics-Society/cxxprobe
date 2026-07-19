@@ -12,8 +12,8 @@ target_compile_definitions(
           CXXPROBE_SPINNER_PATH="$<TARGET_FILE:cxxprobe-spinner>")
 
 # problem_pipeline_test.cpp shells out to the real cxxprobe-cli binary for a
-# black-box scaffold -> author -> judge round trip, so it only makes sense
-# to build when the CLI itself is being built (CXXPROBE_BUILD_CLI).
+# black-box scaffold -> author -> judge round trip, so it only makes sense to
+# build when the CLI itself is being built (CXXPROBE_BUILD_CLI).
 if(TARGET cxxprobe-cli)
   target_sources(cxxprobe-integration-tests PRIVATE problem_pipeline_test.cpp)
   target_compile_definitions(

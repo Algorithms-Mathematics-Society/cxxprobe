@@ -70,8 +70,9 @@ struct JudgeReport {
 // check is Status::Fail/Error in the report, not an exception) — only
 // throws for config/filesystem errors that make judging impossible at all
 // (e.g. the submission source file doesn't exist).
-JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
-                        const cxxprobe::problem::ProjectDefaults& defaults,
-                        const std::optional<std::filesystem::path>& submission_override = std::nullopt);
+JudgeReport run_problem(
+    const cxxprobe::problem::ProblemConfig& config,
+    const cxxprobe::problem::ProjectDefaults& defaults,
+    const std::optional<std::filesystem::path>& submission_override = std::nullopt);
 
 }  // namespace cxxprobe::judge

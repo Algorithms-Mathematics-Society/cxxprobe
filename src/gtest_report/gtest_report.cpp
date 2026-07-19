@@ -1,8 +1,7 @@
 #include "cxxprobe/gtest_report.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 
@@ -89,8 +88,6 @@ Report parse_file(const std::filesystem::path& json_path) {
     return parse_string(buf.str());
 }
 
-bool all_passed(const Report& r) {
-    return r.failures == 0 && r.errors == 0;
-}
+bool all_passed(const Report& r) { return r.failures == 0 && r.errors == 0; }
 
 }  // namespace cxxprobe::gtest_report
