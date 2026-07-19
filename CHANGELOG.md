@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.5...v0.4.0) (2026-07-19)
+
+
+### Features
+
+* **contest:** add contest/problem scaffolding, symbolic & behavior checks ([dfc5212](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/dfc52128f80f22d185b031e21ca3e55638c71c7a)), closes [#include](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues/include)
+
 ## [0.3.5](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.3.4...v0.3.5) (2026-07-12)
 
 
