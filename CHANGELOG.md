@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.5.0...v0.6.0) (2026-07-21)
+
+
+### Features
+
+* **install:** modern terminal UI + actionable cgroup setup hint ([88c320a](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/88c320ab45103ec1bd244a3f6af7048a1a0da2a3))
+
 # [0.5.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.4.2...v0.5.0) (2026-07-21)
 
 
