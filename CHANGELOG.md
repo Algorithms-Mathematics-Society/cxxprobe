@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.7.1...v0.8.0) (2026-07-21)
+
+
+### Features
+
+* **serve:** add cxxprobe serve — HTTP judging service with embedded dev UI ([6c24482](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/6c24482fb2a329fb9fb4c433286fb90405d2e061))
+
 ## [0.7.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.7.0...v0.7.1) (2026-07-21)
 
 
