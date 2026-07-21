@@ -11,10 +11,11 @@ import { Callout } from 'nextra/components'
 cxxprobe <subcommand> [OPTIONS] ...
 ```
 
-cxxprobe has four subcommands: [`run`](#run) (sandbox a program directly),
+cxxprobe has five subcommands: [`run`](#run) (sandbox a program directly),
 [`new contest`](#new-contest--new-problem) / [`new problem`](#new-contest--new-problem)
-(scaffolding), and [`test problem`](#test-problem) (judging). `-V`/`--version`
-works at the top level without a subcommand.
+(scaffolding), [`test problem`](#test-problem) (judging), and
+[`serve`](#serve) (the HTTP judging service). `-V`/`--version` works at the
+top level without a subcommand.
 
 ## `run`
 
@@ -211,3 +212,52 @@ compile error) as opposed to a genuine test failure.
   passed/was skipped)
 - `1` — overall `FAIL` (at least one enabled section failed)
 - `2` — overall `ERROR` (compile failure, missing problem, config error)
+
+---
+
+## `serve`
+
+Starts the HTTP judging service — the same `problem::load_from_dir` →
+`judge::run_problem` pipeline `test problem` uses, exposed over REST + SSE
+for a contest platform (or your own scripts) to submit against instead of
+shelling out to the CLI. See [Running the HTTP Judging
+Service](/guides/http-judging-service) for a full walkthrough and
+[architecture](/architecture/http-service) for how it's built.
+
+```text
+cxxprobe serve [OPTIONS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `-C, --contest-dir PATH` | auto-detect via `contest.yaml` | Contest directory to serve problems from |
+| `--bind ADDRESS` | `0.0.0.0` | Address to bind the API to |
+| `--port PORT` | `8191` | API port |
+| `--ui` | off | Also serve the embedded developer UI |
+| `--ui-port PORT` | `8181` | Developer UI port (only with `--ui`) |
+| `--workers N` | `4` | Judging worker threads |
+| `--queue-capacity N` | `256` | Max queued submissions before `POST /submissions` returns `503` |
+| `--http-threads N` | `4` | HTTP connection-handling threads |
+| `--db PATH` | `cxxprobe-serve.sqlite3` | SQLite database file for submission state |
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Worker/queue status |
+| `GET` | `/metrics` | Prometheus text exposition (or JSON with `Accept: application/json`) |
+| `GET` | `/problems` | List problems in the served contest |
+| `GET` | `/problems/{slug}` | Statement, limits, language — never the reference solution |
+| `POST` | `/submissions` | Submit `{problem_slug, language, source}` — returns `202` immediately |
+| `GET` | `/submissions/{id}` | Status + full `JudgeReport` once finished |
+| `GET` | `/submissions` | Recent submission history (`?limit=N`, default 50, max 200) |
+| `GET` | `/events` | SSE stream of submission/worker lifecycle events (`?submission_id=` to scope) |
+
+No authentication — `cxxprobe serve` assumes it's reachable only from a
+trusted caller. Errors are `{"error": "...", "message": "..."}` with `400`
+(bad request), `404` (unknown problem/submission), or `503` (queue full,
+`Retry-After` set).
+
+Graceful shutdown on `SIGINT`/`SIGTERM`: stops accepting new connections,
+lets any in-flight judging finish (a worker is never killed mid-judge), then
+exits.

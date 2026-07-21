@@ -6,6 +6,8 @@ project(
 
 option(CXXPROBE_BUILD_TESTS "Build tests" ON)
 option(CXXPROBE_BUILD_CLI "Build CLI tool" ON)
+option(CXXPROBE_BUILD_SERVER
+       "Build 'cxxprobe serve' HTTP judging service support" ON)
 option(CXXPROBE_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(CXXPROBE_ENABLE_COVERAGE "Enable Code Coverage" OFF)
 option(
@@ -21,6 +23,10 @@ include(cmake/Sanitizers.cmake)
 include(cmake/CodeCoverage.cmake)
 
 add_subdirectory(src)
+
+if(CXXPROBE_BUILD_SERVER)
+  add_subdirectory(server)
+endif()
 
 if(CXXPROBE_BUILD_CLI)
   add_subdirectory(cli)

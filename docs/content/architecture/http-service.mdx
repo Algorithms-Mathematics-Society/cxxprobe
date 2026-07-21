@@ -1,0 +1,166 @@
+---
+title: HTTP Judging Service
+description: How `cxxprobe serve` turns libcxxprobe into a queued, worker-pooled HTTP API.
+---
+
+import { Callout } from 'nextra/components'
+
+# HTTP Judging Service
+
+`cxxprobe serve` exposes the same judging pipeline `test problem` uses —
+`problem::load_from_dir` → `judge::run_problem` — as a long-running REST +
+SSE service, for a contest platform (or any other REST client) to submit
+against instead of shelling out to the CLI. It is **not** a contest
+management platform: no users, no auth, no scoreboards. That's deliberately
+someone else's job (e.g. a separate "AMS Judge"-style service) — `cxxprobe
+serve` only judges.
+
+```text
+REST/SSE client
+      │
+cxxprobe serve (one process)
+      │
+  Router + middleware ──▶ Services ──▶ Queue ──▶ Worker pool ──▶ libcxxprobe
+                                          │                          │
+                                          ▼                          ▼
+                                      Event bus              SQLite repository
+```
+
+## Why a queue and a worker pool
+
+`POST /submissions` doesn't compile-and-judge inline on the HTTP request
+thread — it writes the submitted source to a temp file, inserts a `Queued`
+row, pushes a lightweight job onto an in-memory queue, and returns `202
+Accepted` immediately with the new submission's id. A fixed pool of worker
+threads (`--workers N`, default 4) pulls jobs off that queue one at a time
+and runs the real `judge::run_problem` call.
+
+This is deliberate, not incidental:
+
+- **A fixed worker count caps how many sandboxed compiles/runs happen
+  concurrently**, regardless of how many requests arrive at once — a burst
+  of 500 submissions can't fork 500 simultaneous compiler invocations on the
+  grading host.
+- **HTTP threads never block on judging.** A judge run can take seconds; the
+  HTTP-handling thread pool stays free to keep accepting and answering other
+  requests (`GET /health`, polling `GET /submissions/{id}`, etc.) the whole
+  time.
+- **One bad submission can't take a worker down.** Each worker's loop
+  catches everything (`judge::run_problem` itself only throws for
+  config/filesystem errors that make judging impossible outright, but the
+  catch is cheap insurance) and records `Status::Error` rather than crashing
+  the thread.
+
+## Module boundaries
+
+The codebase enforces one hard rule throughout: **HTTP handlers never call
+`run_problem()` or touch the queue/repository directly.** They only call
+into a `services/` layer, which is the single place allowed to know about
+the queue, the repository, the event bus, and `problem::`/`judge::`. This is
+what makes the rest of the design possible:
+
+- `judge`/`worker` never depend on anything HTTP-related — they're testable
+  with no server running at all.
+- Swapping the in-process `ConcurrentQueueSubmissionQueue` for a
+  Redis/SQS-backed one, or `LocalEventBus` for Redis Pub/Sub, changes only
+  what gets constructed in the composition root (`server/app.cpp`) — zero
+  changes to `Worker`, `WorkerManager`, or any handler.
+- Swapping SQLite for PostgreSQL is a new `ISubmissionRepository`
+  implementation, nothing else.
+
+<Callout type="info">
+  None of those swaps are built today — `cxxprobe serve` ships with the
+  in-process/single-machine implementations (moodycamel queue, SQLite,
+  in-process event bus). The interfaces exist so a future distributed
+  deployment doesn't require touching judging logic at all.
+</Callout>
+
+## Request flow, end to end
+
+```text
+POST /submissions
+  → SubmissionService: resolve problem, write source to a temp file,
+    create a "Queued" row, push a job              [event: submission_queued]
+  → 202 Accepted {id, status: "queued"}
+
+  (asynchronously, whenever a worker is free:)
+  → Worker: dequeue, mark "Running"                 [event: submission_started]
+  → judge::run_problem(...) runs (the same call `test problem` makes)
+  → store the JudgeReport, mark "Finished"/"Error"   [event: submission_finished]
+
+GET /submissions/{id}  → current status, and the full JudgeReport once finished
+GET /events            → SSE stream of the events above, live
+```
+
+`GET /submissions/{id}`'s `report` field is exactly
+`cxxprobe::judge::to_json(JudgeReport)` — the same canonical shape `cxxprobe
+test problem --json` prints, so anything already parsing the CLI's JSON
+output understands the API's response for free.
+
+## Threading model
+
+| Threads | Role |
+|---|---|
+| HTTP connection pool (`--http-threads`, default 4) | Accept connections, read/dispatch/write one request each (synchronous per connection — see below) |
+| Worker pool (`--workers`, default 4) | One dequeue → judge → store → publish loop each |
+| Signal-handling thread | Watches SIGINT/SIGTERM, triggers graceful shutdown |
+| Main thread | Accept loop for the API port (and the UI port's own thread, under `--ui`) |
+
+Each HTTP connection is handled **synchronously, one request per
+connection** (no keep-alive) on a thread from the connection pool — a
+deliberate simplification over a fully async, event-driven server, traded
+for a much simpler and easier-to-verify connection lifecycle. This is not a
+bottleneck for the actual workload (a judging backend fronting a bounded
+worker pool, not a high-concurrency public API).
+
+Shutdown (`SIGINT`/`SIGTERM`) stops accepting new connections, lets
+in-flight judging finish (a worker never gets killed mid-judge), then joins
+everything. Accept loops poll a shutdown flag with a short non-blocking
+timeout rather than relying on a concurrent `acceptor.close()` to interrupt
+a blocked `accept()` call — that interruption is racy/undefined on Linux
+when done from a different thread than the one blocked in the syscall.
+
+## The optional developer UI
+
+`cxxprobe serve --ui` additionally serves a small embedded developer UI on
+its own port (`--ui-port`, default 8181, vs. the API's own `--port`, default
+8191) — think Prometheus + Prometheus UI, or MinIO + MinIO Console. It is
+**not** a replacement for a real contest platform; it exists for local
+testing, debugging a problem's checks, and trying the API by hand.
+
+- **Zero Node.js, ever** — not at runtime, not at build time. The UI is
+  vanilla JS + [Alpine.js](https://alpinejs.dev/) (reactive state) +
+  [htmx](https://htmx.org/) (used for the metrics page's periodic
+  plain-text refresh) + [CodeMirror 5](https://codemirror.net/5/) (the
+  source editor), all vendored as plain committed files — no bundler step.
+- **Embedded into the binary at C++ build time.** A small Python script
+  (`server/ui/generate_embedded_assets.py`) turns every file under
+  `server/ui/assets/` into a byte array + `{path, content_type, data}`
+  table, compiled directly into `cxxprobe-cli` — no runtime filesystem
+  access, so the UI keeps working even from a relocated or read-only binary.
+- **Talks exclusively through the public REST/SSE API.** The UI's `fetch()`/
+  `EventSource` calls hit the exact same endpoints an external integrator
+  would — there is no special/privileged path from the UI into server
+  internals. The one server-side exception is `index.html` itself, which
+  gets a single string substituted in (the API's actual base URL, since the
+  UI and API listen on different ports) — every other asset is served
+  byte-for-byte as embedded.
+
+## What's deliberately out of scope (v1)
+
+- **Auth.** `cxxprobe serve` assumes it's reachable only from a trusted
+  caller (a contest platform, an internal network) — it does not
+  authenticate requests itself. A future `ApiKeyMiddleware` slots into the
+  existing middleware chain without touching anything else if that's ever
+  needed.
+- **Multi-language judging.** The API's `language` field only accepts
+  `"cpp"`/absent — real multi-language support would mean making
+  `problem::CompilerConfig`/`compile::Request` per-language-aware, a
+  `libcxxprobe` change well beyond `serve` itself.
+- **gRPC.** REST + SSE only for now; the service layer is shaped so a gRPC
+  facade could be added later as a pure-addition adapter alongside the REST
+  handlers, without touching worker/judging code.
+- **Live contest-directory reload.** Problems are scanned once at startup
+  and cached for the process lifetime — editing `problem.yaml` while the
+  server is running requires a restart to take effect. This is what
+  guarantees a submission never observes a half-edited config mid-judge.

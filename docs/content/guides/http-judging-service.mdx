@@ -1,0 +1,195 @@
+---
+title: Running the HTTP Judging Service
+description: Start `cxxprobe serve`, submit against it over REST, and watch live progress over SSE.
+---
+
+import { Steps, Callout, Cards } from 'nextra/components'
+
+# Running the HTTP Judging Service
+
+`cxxprobe serve` turns a contest directory into a long-running HTTP API —
+the same three-way judging `test problem` does, reachable over REST instead
+of the CLI. This is the piece a contest platform (or your own scripts) talks
+to instead of shelling out to `cxxprobe` per submission. For how it's built
+internally, see [HTTP Judging Service architecture](/architecture/http-service).
+
+<Callout type="info">
+  This is a judging backend, not a contest platform — no users, no auth, no
+  scoreboards. Point it at a contest scaffolded the normal way (see [Build a
+  Contest](/guides/build-a-contest)) and it serves whatever problems are in
+  there.
+</Callout>
+
+<Steps>
+
+### Start the server
+
+Run this from inside a contest directory (or pass `--contest-dir`
+explicitly):
+
+```bash
+cd ams-ascent
+cxxprobe serve
+```
+
+```text
+cxxprobe serve: listening on 0.0.0.0:8191 (4 workers, contest: /path/to/ams-ascent)
+```
+
+Useful flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `-C, --contest-dir PATH` | auto-detect via `contest.yaml` | Which contest to serve |
+| `--bind ADDRESS` | `0.0.0.0` | Address to bind the API to |
+| `--port PORT` | `8191` | API port |
+| `--workers N` | `4` | Judging worker threads — caps concurrent sandboxed compiles/runs |
+| `--queue-capacity N` | `256` | Max queued-but-not-yet-judged submissions before `POST /submissions` returns `503` |
+| `--http-threads N` | `4` | HTTP connection-handling threads |
+| `--db PATH` | `cxxprobe-serve.sqlite3` | Where submission state is persisted |
+| `--ui` | off | Also serve the embedded developer UI — see below |
+| `--ui-port PORT` | `8181` | Developer UI port (only with `--ui`) |
+
+### List problems
+
+```bash
+curl -s http://localhost:8191/problems
+```
+
+```json
+{"problems": [{"slug": "a-filereader-raii", "name": "A: FileReader RAII"}]}
+```
+
+```bash
+curl -s http://localhost:8191/problems/a-filereader-raii
+```
+
+```json
+{
+  "slug": "a-filereader-raii",
+  "name": "A: FileReader RAII",
+  "statement_markdown": "# A: FileReader RAII\n\n...",
+  "limits": {"memory_mb": 256, "cpu_ms": 5000, "wall_ms": 10000},
+  "language": "cpp"
+}
+```
+
+Note what's *not* here: the reference solution and checker source are never
+served — only what a contestant needs to attempt the problem.
+
+### Submit a solution
+
+```bash
+curl -s -X POST http://localhost:8191/submissions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "problem_slug": "a-filereader-raii",
+        "language": "cpp",
+        "source": "int main() { return 0; }"
+      }'
+```
+
+```json
+{"id": "20b9971f-cd42-4982-b94d-fb0745cebd70", "status": "queued", "problem_slug": "a-filereader-raii"}
+```
+
+This returns immediately — judging happens asynchronously on the worker
+pool, exactly mirroring what `cxxprobe test problem --submission <path>`
+does locally.
+
+### Poll for the result
+
+```bash
+curl -s http://localhost:8191/submissions/20b9971f-cd42-4982-b94d-fb0745cebd70
+```
+
+```json
+{
+  "id": "20b9971f-cd42-4982-b94d-fb0745cebd70",
+  "problem_slug": "a-filereader-raii",
+  "status": "finished",
+  "created_at": "2026-07-21T17:38:46Z",
+  "finished_at": "2026-07-21T17:38:47Z",
+  "report": {
+    "problem": "A: FileReader RAII", "slug": "a-filereader-raii",
+    "overall": "PASS",
+    "tests": {"manual": {"status": "PASS", "...": "..."}, "symbolic": {"...": "..."}, "behavior": {"...": "..."}}
+  }
+}
+```
+
+`status` moves `queued` → `running` → `finished`/`error`. `report` is
+exactly the same JSON shape `cxxprobe test problem --json` prints (see
+[JSON Output](/guides/json-output)) — anything already parsing that output
+understands this for free.
+
+### Or watch it live over SSE
+
+```bash
+curl -N http://localhost:8191/events
+```
+
+```text
+event: submission_queued
+data: {"submission_id":"20b9971f-cd42-4982-b94d-fb0745cebd70"}
+
+event: submission_started
+data: {"submission_id":"20b9971f-cd42-4982-b94d-fb0745cebd70"}
+
+event: submission_finished
+data: {"submission_id":"20b9971f-cd42-4982-b94d-fb0745cebd70"}
+```
+
+Add `?submission_id=<id>` to scope the stream to one submission instead of
+the global firehose (which also includes `worker_online`/`worker_offline`
+events).
+
+### Check history, health, and metrics
+
+```bash
+curl -s "http://localhost:8191/submissions?limit=10"   # recent submissions, newest first
+curl -s http://localhost:8191/health                    # worker/queue status
+curl -s http://localhost:8191/metrics                    # Prometheus text exposition
+curl -s -H "Accept: application/json" http://localhost:8191/metrics  # same data as JSON
+```
+
+</Steps>
+
+## The optional developer UI
+
+```bash
+cxxprobe serve --ui
+```
+
+```text
+cxxprobe serve: listening on 0.0.0.0:8191 (4 workers, contest: ...)
+cxxprobe serve: developer UI at http://localhost:8181
+```
+
+Open `http://localhost:8181` for a small browser UI: pick a problem, edit a
+solution in a real code editor, submit, and watch the same SSE events above
+render live, plus a submission history table, a raw API request tester, and
+health/metrics pages. It talks to the API purely through the same
+endpoints above — nothing it does is unavailable to any other client.
+
+<Callout type="warning">
+  This is for local development and debugging, not a contest platform for
+  contestants — no auth, no per-user anything.
+</Callout>
+
+## Error responses
+
+| Status | When |
+|---|---|
+| `400` | Malformed JSON body, missing `problem_slug`/`source`, or an unsupported `language` (only `"cpp"`/absent is accepted today) |
+| `404` | Unknown `problem_slug` or unknown submission `id` |
+| `503` | Submission queue is full (`Retry-After` header set) — back off and retry |
+
+```json
+{"error": "problem_not_found", "message": "unknown problem: nope"}
+```
+
+<Cards num={2}>
+  <Cards.Card title="HTTP Judging Service architecture" href="/architecture/http-service" arrow />
+  <Cards.Card title="JSON Output" href="/guides/json-output" arrow />
+</Cards>

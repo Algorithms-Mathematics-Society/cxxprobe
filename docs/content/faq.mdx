@@ -144,6 +144,32 @@ a `JudgeReport` struct — the same thing `cxxprobe test problem --json`
 prints, but as native C++ types your own judge platform can call directly
 instead of shelling out to the CLI and re-parsing its stdout.
 
+### Does `cxxprobe serve` have authentication?
+
+No, not in v1 — it assumes it's only reachable from a trusted caller (a
+contest platform, an internal network), and focuses purely on judging. A
+future `ApiKeyMiddleware` would slot into the existing middleware chain
+without touching anything else if that's ever needed. See [HTTP Judging
+Service architecture](/architecture/http-service#whats-deliberately-out-of-scope-v1).
+
+### Is `cxxprobe serve --ui` a contest platform?
+
+No — it's a small embedded developer UI for local testing and debugging
+(think Prometheus + Prometheus UI, or MinIO + MinIO Console), not a
+replacement for a real contest platform. No users, no auth, no scoreboards.
+It talks to the API through the exact same public endpoints any other
+client would use — see [Running the HTTP Judging
+Service](/guides/http-judging-service#the-optional-developer-ui).
+
+### Why is `cxxprobe serve --ui` one binary with no Node.js involved?
+
+The UI is vanilla JS + [Alpine.js](https://alpinejs.dev/) +
+[htmx](https://htmx.org/) + [CodeMirror 5](https://codemirror.net/5/),
+vendored as plain committed static files — no bundler, no build step, ever.
+A small Python script embeds every asset file into the C++ binary at build
+time as a byte array + lookup table, so there's no runtime filesystem
+dependency and nothing extra to install or ship alongside `cxxprobe-cli`.
+
 <Callout type="info">
   Didn't find your question here? Open an issue on
   [GitHub](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues).

@@ -13,7 +13,8 @@ add_library(
   gtest_report/gtest_report.cpp
   compile/compile.cpp
   cases/cases.cpp
-  judge/judge.cpp)
+  judge/judge.cpp
+  judge/judge_json.cpp)
 
 add_library(cxxprobe::cxxprobe ALIAS cxxprobe)
 

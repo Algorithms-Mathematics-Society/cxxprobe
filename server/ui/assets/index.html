@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cxxprobe — developer UI</title>
+<link rel="stylesheet" href="/vendor/codemirror/codemirror.css" />
+<link rel="stylesheet" href="/css/app.css" />
+<script>
+  // Substituted server-side (UiAssetHandler) with the real API base URL —
+  // the only piece of this page that isn't a byte-for-byte static asset.
+  window.__CXXPROBE_API_BASE__ = "%%CXXPROBE_API_BASE%%";
+</script>
+</head>
+<body x-data="cxxprobeApp()" x-init="init()">
+
+<header>
+  <h1>cxxprobe</h1>
+  <span class="badge">developer UI — for local testing only, not a replacement for AMS Judge</span>
+</header>
+
+<nav>
+  <button :class="{active: tab === 'problems'}" @click="selectTab('problems')">Problems</button>
+  <button :class="{active: tab === 'history'}" @click="selectTab('history')">Submission History</button>
+  <button :class="{active: tab === 'explorer'}" @click="selectTab('explorer')">API Explorer</button>
+  <button :class="{active: tab === 'health'}" @click="selectTab('health')">Health</button>
+  <button :class="{active: tab === 'metrics'}" @click="selectTab('metrics')">Metrics</button>
+</nav>
+
+<main>
+
+  <!-- ===== Problems / Submit ===== -->
+  <template x-if="tab === 'problems'">
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Problems</h3>
+        <template x-if="problems.length === 0">
+          <p class="muted">No problems found in the served contest directory.</p>
+        </template>
+        <template x-for="p in problems" :key="p.slug">
+          <div class="problem-list-item"
+               :class="{selected: selectedProblem && selectedProblem.slug === p.slug}"
+               @click="selectProblem(p.slug)">
+            <strong x-text="p.name"></strong>
+            <div class="muted mono" x-text="p.slug"></div>
+          </div>
+        </template>
+      </div>
+
+      <div class="panel">
+        <template x-if="!selectedProblem">
+          <p class="muted">Select a problem to view its statement and submit a solution.</p>
+        </template>
+        <template x-if="selectedProblem">
+          <div>
+            <h3 x-text="selectedProblem.name"></h3>
+            <pre class="statement" x-text="selectedProblem.statement_markdown"></pre>
+
+            <div class="muted" style="margin-bottom: 0.5rem;">
+              limits: <span x-text="selectedProblem.limits.memory_mb"></span> MiB /
+              <span x-text="selectedProblem.limits.cpu_ms"></span>ms CPU /
+              <span x-text="selectedProblem.limits.wall_ms"></span>ms wall
+              &middot; language:
+              <select disabled>
+                <option x-text="selectedProblem.language"></option>
+              </select>
+              <span class="muted">(multi-language coming later — v1 is C++ only)</span>
+            </div>
+
+            <textarea id="source-editor"></textarea>
+
+            <div style="margin-top: 0.75rem; display:flex; gap: 0.75rem; align-items:center;">
+              <button class="primary" :disabled="submitting" @click="submit()">
+                <span x-show="!submitting">Submit</span>
+                <span x-show="submitting">Judging…</span>
+              </button>
+              <span class="muted" x-text="submitError" style="color: var(--fail);"></span>
+            </div>
+
+            <template x-if="submission">
+              <div style="margin-top: 1rem;">
+                <div>
+                  Submission <span class="mono" x-text="submission.id"></span> —
+                  <span class="status-pill" :class="statusClass(submission.status)" x-text="submission.status"></span>
+                  <template x-if="submission.report">
+                    <span class="status-pill" :class="statusClass(submission.report.overall)" x-text="submission.report.overall"></span>
+                  </template>
+                </div>
+                <template x-if="submission.report">
+                  <pre class="report-json" x-text="JSON.stringify(submission.report, null, 2)"></pre>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===== Submission History ===== -->
+  <template x-if="tab === 'history'">
+    <div class="panel">
+      <h3>Recent Submissions <button class="secondary" @click="loadHistory()">Refresh</button></h3>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Problem</th><th>Status</th><th>Created</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="s in history" :key="s.id">
+            <tr>
+              <td class="mono" x-text="s.id.slice(0, 8)"></td>
+              <td x-text="s.problem_slug"></td>
+              <td><span class="status-pill" :class="statusClass(s.status)" x-text="s.status"></span></td>
+              <td class="muted" x-text="s.created_at"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <template x-if="history.length === 0">
+        <p class="muted">No submissions yet.</p>
+      </template>
+
+      <h3 style="margin-top:1.5rem;">Live Activity</h3>
+      <div class="event-log">
+        <template x-for="(line, i) in eventLog" :key="i">
+          <div x-text="line"></div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===== API Explorer ===== -->
+  <template x-if="tab === 'explorer'">
+    <div class="panel">
+      <h3>API Explorer</h3>
+      <p class="muted">Every request below goes through the exact same public REST API this page
+        uses for everything else — nothing here is a special/privileged path.</p>
+      <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem;">
+        <select x-model="explorer.method" style="width:100px;">
+          <option>GET</option>
+          <option>POST</option>
+        </select>
+        <input type="text" x-model="explorer.path" placeholder="/problems" style="flex:1;" />
+        <button class="primary" @click="runExplorer()">Send</button>
+      </div>
+      <template x-if="explorer.method === 'POST'">
+        <textarea x-model="explorer.body" rows="4" style="width:100%;"
+                 placeholder='{"problem_slug":"a-warmup","source":"int main(){}"}'></textarea>
+      </template>
+      <div class="muted" style="margin-top:0.5rem;">status: <span x-text="explorer.status"></span></div>
+      <pre class="report-json" x-text="explorer.response"></pre>
+    </div>
+  </template>
+
+  <!-- ===== Health ===== -->
+  <template x-if="tab === 'health'">
+    <div class="panel">
+      <h3>Health <button class="secondary" @click="refreshHealth()">Refresh</button></h3>
+      <template x-if="health">
+        <div>
+          <div class="metric-tile">
+            <div class="value" x-text="health.status"></div>
+            <div class="label">status</div>
+          </div>
+          <div class="metric-tile">
+            <div class="value" x-text="health.workers.active + ' / ' + health.workers.total"></div>
+            <div class="label">workers active/total</div>
+          </div>
+          <div class="metric-tile">
+            <div class="value" x-text="health.queue_depth"></div>
+            <div class="label">queue depth</div>
+          </div>
+          <div class="metric-tile">
+            <div class="value" x-text="health.uptime_seconds + 's'"></div>
+            <div class="label">uptime</div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <!-- ===== Metrics ===== -->
+  <!-- Genuine htmx usage: /metrics in Prometheus mode is plain text meant to
+       be displayed as-is, not JSON needing client-side parsing — a periodic
+       hx-get/hx-swap is a better fit here than Alpine's fetch-driven state. -->
+  <template x-if="tab === 'metrics'">
+    <div class="panel">
+      <h3>Metrics (Prometheus text exposition)</h3>
+      <div id="metrics-panel"
+           class="report-json"
+           hx-get="%%CXXPROBE_API_BASE%%/metrics"
+           hx-headers='{"Accept": "text/plain"}'
+           hx-trigger="load, every 5s"
+           hx-swap="innerHTML">loading…</div>
+    </div>
+  </template>
+
+</main>
+
+<script src="/vendor/htmx.min.js"></script>
+<script src="/vendor/codemirror/codemirror.js"></script>
+<script src="/vendor/codemirror/clike.js"></script>
+<script src="/js/app.js"></script>
+<script defer src="/vendor/alpine.min.js"></script>
+</body>
+</html>

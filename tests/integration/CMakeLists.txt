@@ -20,6 +20,12 @@ if(TARGET cxxprobe-cli)
     cxxprobe-integration-tests
     PRIVATE CXXPROBE_CLI_PATH="$<TARGET_FILE:cxxprobe-cli>")
   add_dependencies(cxxprobe-integration-tests cxxprobe-cli)
+
+  if(TARGET cxxprobe-server-lib)
+    target_sources(cxxprobe-integration-tests PRIVATE server_pipeline_test.cpp)
+    target_link_libraries(cxxprobe-integration-tests
+                          PRIVATE cxxprobe-server-lib)
+  endif()
 endif()
 
 if(CXXPROBE_ENABLE_ASAN)

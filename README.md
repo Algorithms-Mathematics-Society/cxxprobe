@@ -63,6 +63,11 @@ for a full worked walkthrough.
   same three-way judging against anyone's code.
 - **Speaks JSON.** Every command has a `--json` mode built for grading
   pipelines and CI, not just terminal output.
+- **Runs as an HTTP service too.** `cxxprobe serve` exposes the same
+  judging pipeline over a queued, worker-pooled REST + SSE API — for a
+  contest platform to submit against instead of shelling out per
+  submission. `cxxprobe serve --ui` adds a small embedded developer UI
+  (zero Node.js, one binary) for trying it by hand.
 
 ## Requirements
 

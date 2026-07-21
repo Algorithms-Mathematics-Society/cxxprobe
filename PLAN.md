@@ -52,6 +52,42 @@
   contest organizers manage presentation order themselves; problem folders are
   freeform slugified titles
 
+## Phase 4 — HTTP Judging Service ✅ (v0.8.0)
+
+- ✅ `cxxprobe serve` — exposes `problem::load_from_dir` → `judge::run_problem`
+  (the same pipeline `test problem` uses) as a queued, worker-pooled REST + SSE
+  service, for a contest platform to submit against instead of shelling out per
+  submission. Not a contest platform itself — no users, no auth, no
+  scoreboards; deliberately out of scope, someone else's job.
+- ✅ `ISubmissionQueue` (moodycamel-backed) / `IJudgeService` / `ISubmissionRepository`
+  (SQLite, hand-written RAII wrapper, WAL mode) / `IEventBus` (in-process
+  pub/sub) — each an interface with one concrete in-process implementation
+  today, so a future distributed deployment (Redis/SQS queue, Postgres,
+  Redis Pub/Sub) only changes what's constructed in the composition root,
+  never `Worker`/`WorkerManager`/handler code
+- ✅ Fixed-size worker pool (`--workers`, `std::jthread`-based) caps concurrent
+  sandboxed compiles/runs regardless of request burst size; per-submission
+  exception isolation (a bad submission can't take a worker down permanently)
+- ✅ Hand-rolled router/middleware chain on synchronous Boost.Beast (one
+  request per connection, no keep-alive — a deliberate simplification);
+  `LoggingMiddleware`/`CorsMiddleware`/`ErrorMappingMiddleware`
+- ✅ `GET /health`, `/metrics` (Prometheus text + JSON), `/problems`,
+  `/problems/{slug}`, `POST /submissions`, `GET /submissions/{id}`,
+  `GET /submissions` (history), `GET /events` (SSE, global or
+  `?submission_id=`-scoped)
+- ✅ `--ui` — an embedded developer UI (vanilla JS + Alpine.js + htmx +
+  CodeMirror 5, vendored static files, zero Node.js at build or runtime;
+  embedded into the binary at C++ build time via a small Python generator
+  script). Talks exclusively through the public REST/SSE API — no
+  privileged path into server internals. For local testing/debugging only,
+  not a contest-platform replacement.
+- ✅ Graceful shutdown on `SIGINT`/`SIGTERM` — stop accepting, let in-flight
+  judging finish, then exit
+- Deliberately **not** included (see [HTTP Judging Service
+  architecture](docs/content/architecture/http-service.mdx)): auth, gRPC,
+  multi-language judging, live contest-directory reload — each is a
+  documented extension point, not built
+
 ---
 
 ## Deferred / Backlog
@@ -63,11 +99,17 @@ No committed timeline. Revisit if/when a concrete need shows up.
   revisit only if regex-based symbolic checks prove insufficient in practice
   (libclang isn't cleanly Conan-installable and is a large added surface)
 - **Doxygen API documentation** generation
-- **Parallel worker-pool** batch/contest evaluation (today: `run --cases` and a
-  grading loop over `test problem` are both sequential; parallelize externally
-  via `xargs -P` / GNU `parallel` in the meantime)
+- **Parallel worker-pool** batch/contest evaluation for the CLI (today:
+  `run --cases` and a grading loop over `test problem` are both sequential;
+  parallelize externally via `xargs -P` / GNU `parallel` in the meantime —
+  `cxxprobe serve`'s worker pool, added in Phase 4, is a separate thing)
 - **Windows support** (Job Objects) — cxxprobe is Linux-only by design (cgroup v2
   + user namespaces); WSL2 is the supported Windows path
-- **Distributed evaluation server** (gRPC API)
-- **Web dashboard** for contest administration
+- **gRPC facade** alongside `cxxprobe serve`'s REST + SSE API — the service
+  layer is already shaped for this as a pure-addition adapter
+- **Distributed deployment** of `cxxprobe serve` (Redis/SQS queue, Postgres
+  repository, Redis Pub/Sub event bus) — the interfaces exist, the concrete
+  distributed implementations don't yet
+- **Web dashboard** for contest administration (not the same as `serve --ui`,
+  which is a local dev tool, not an admin console)
 - ConanCenter publication, formal security audit, LTS policy

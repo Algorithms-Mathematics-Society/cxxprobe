@@ -59,6 +59,11 @@ don't trust yet.
     href="/architecture/sandbox-internals"
     arrow
   />
+  <Cards.Card
+    title="Run it as an HTTP service"
+    href="/guides/http-judging-service"
+    arrow
+  />
 </Cards>
 
 ## Why cxxprobe
@@ -88,6 +93,11 @@ don't trust yet.
   exit code, resource usage, verdict, and full per-check detail — so
   grading a hundred submissions in CI is exactly as easy as grading one by
   hand.
+- **Runs as a real service, not just a CLI.** `cxxprobe serve` exposes the
+  exact same judging pipeline over REST + SSE — queued, worker-pooled, with
+  live progress events — for a contest platform to submit against instead
+  of shelling out per submission. See [Running the HTTP Judging
+  Service](/guides/http-judging-service).
 
 <Callout type="info">
   cxxprobe needs **Linux with cgroup v2** (WSL2 works too) and one quick

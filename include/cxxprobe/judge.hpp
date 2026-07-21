@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -74,5 +75,10 @@ JudgeReport run_problem(
     const cxxprobe::problem::ProblemConfig& config,
     const cxxprobe::problem::ProjectDefaults& defaults,
     const std::optional<std::filesystem::path>& submission_override = std::nullopt);
+
+// Canonical JSON shape for a JudgeReport — the single source of truth used
+// by both `cxxprobe test problem --json` and `cxxprobe serve`'s HTTP API.
+// Field order matches insertion order (ordered_json), not alphabetical.
+nlohmann::ordered_json to_json(const JudgeReport& report);
 
 }  // namespace cxxprobe::judge

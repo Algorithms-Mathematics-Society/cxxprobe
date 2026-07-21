@@ -5,6 +5,9 @@
 #include "commands/new_cmd.hpp"
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
+#ifdef CXXPROBE_SERVE_ENABLED
+#include "commands/serve_cmd.hpp"
+#endif
 
 #ifndef CXXPROBE_VERSION
 #define CXXPROBE_VERSION "0.0.0-dev"
@@ -19,6 +22,9 @@ int main(int argc, char* argv[]) {
     cxxprobe::cli::RunCommand run_cmd{app};
     cxxprobe::cli::NewCommand new_cmd{app};
     cxxprobe::cli::TestCommand test_cmd{app};
+#ifdef CXXPROBE_SERVE_ENABLED
+    cxxprobe::cli::ServeCommand serve_cmd{app};
+#endif
 
     CLI11_PARSE(app, argc, argv);
 
@@ -31,5 +37,10 @@ int main(int argc, char* argv[]) {
     if (test_cmd.problem_invoked()) {
         return test_cmd.execute();
     }
+#ifdef CXXPROBE_SERVE_ENABLED
+    if (serve_cmd.invoked()) {
+        return serve_cmd.execute();
+    }
+#endif
     return 1;
 }

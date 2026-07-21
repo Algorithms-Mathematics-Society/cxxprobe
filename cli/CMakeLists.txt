@@ -14,6 +14,12 @@ add_executable(
 target_link_libraries(cxxprobe-cli PRIVATE cxxprobe CLI11::CLI11
                                            nlohmann_json::nlohmann_json)
 
+if(TARGET cxxprobe-server-lib)
+  target_sources(cxxprobe-cli PRIVATE commands/serve_cmd.cpp)
+  target_link_libraries(cxxprobe-cli PRIVATE cxxprobe-server-lib)
+  target_compile_definitions(cxxprobe-cli PRIVATE CXXPROBE_SERVE_ENABLED)
+endif()
+
 target_compile_definitions(cxxprobe-cli
                            PRIVATE CXXPROBE_VERSION="${PROJECT_VERSION}")
 

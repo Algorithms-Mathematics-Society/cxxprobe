@@ -2,6 +2,7 @@ Checks: >-
   -*,
   clang-diagnostic-*,
   clang-analyzer-*,
+  -clang-analyzer-unix.BlockInCriticalSection,
   cppcoreguidelines-*,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
