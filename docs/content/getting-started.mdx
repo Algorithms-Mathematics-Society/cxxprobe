@@ -7,8 +7,11 @@ import { Steps, Callout, Tabs } from 'nextra/components'
 
 # Getting Started
 
-cxxprobe is distributed as source — there's no package manager release yet, so
-you build the CLI with CMake + Conan. The whole process takes a few minutes.
+By the end of this page you'll have a working `cxxprobe` binary and a
+sandbox that's actually usable — everything after this is about *using* it,
+starting with [Build a Contest](/guides/build-a-contest). cxxprobe is
+distributed as source (no package manager release yet), so you build the
+CLI with CMake + Conan — the whole process takes a few minutes.
 
 ## Requirements
 
@@ -143,11 +146,10 @@ gets scaffolded, see [Folder Structure](/architecture/folder-structure).
     `Skipped`, not failed.
   </Tabs.Tab>
   <Tabs.Tab>
-    WSL2 ships cgroup v2 mounted by default (`nsdelegate` option enabled).
-    Delegation works the same as native Linux. One cgroup test
-    (`CgroupTest.AddPidCgroupProcsContainsPid`) self-skips under `nsdelegate`
-    because direct `cgroup.procs` migration from outside the ancestor chain is
-    blocked by the kernel — this is expected and already handled by an
-    `RLIMIT_AS` fallback in the sandbox code.
+    WSL2 ships cgroup v2 mounted by default — delegation works exactly the
+    same as native Linux, same three commands above. If you're curious about
+    one internal test that self-skips specifically under WSL2's kernel
+    config, see [FAQ](/faq#does-cxxprobe-work-on-wsl2) — it doesn't affect
+    actual sandboxed runs.
   </Tabs.Tab>
 </Tabs>

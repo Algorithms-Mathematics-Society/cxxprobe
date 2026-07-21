@@ -1,40 +1,45 @@
 ---
 title: Introduction
-description: A professional C++ evaluation framework for coding contests and interviews.
+description: Scaffold a contest, judge submissions three ways, and grade with confidence — a C++ evaluation framework for coding contests and interviews.
 ---
 
 import { Cards, Callout } from 'nextra/components'
 
 # cxxprobe
 
-**cxxprobe** is a sandboxed evaluation engine for competitive programming and
-technical interviews. It runs an untrusted binary inside a locked-down Linux
-sandbox (cgroup v2 + a user namespace), enforces memory, CPU, wall-clock and
-process-count limits, captures stdout/stderr, and — optionally — judges the
-result against expected output.
-
-It ships as a single static-ish CLI, `cxxprobe`, plus a small C++ library
-(`libcxxprobe`) that the CLI is built on, so you can embed sandboxed execution
-directly into your own judge or contest platform.
+**Set up a coding contest in three commands, and grade every submission with
+confidence — not just "did the output match," but "did they actually solve
+it the way the problem asked."**
 
 ```bash
-cxxprobe run -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
+cxxprobe new contest "AMS Ascent"
+cxxprobe new problem "A: FileReader RAII"
+# fill in solution.cpp, then:
+cxxprobe test problem a-filereader-raii
 ```
 
 ```text
-15
-[exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB | AC]
+Problem: A: FileReader RAII (a-filereader-raii)
+
+Manual tests    PASS (3/3)
+Symbolic checks PASS
+Behavior tests  PASS (4/4)
+
+---
+Overall: PASS
 ```
 
-<Callout type="info">
-  cxxprobe requires **Linux with cgroup v2**. It runs fine as an unprivileged
-  user once a delegated cgroup subtree is set up — see [Getting
-  Started](/getting-started).
-</Callout>
-
-## Where to go next
+That's a whole problem — scaffolded, authored, and judged three different
+ways at once — without writing any grading infrastructure yourself. Every
+run happens inside a real sandbox, so it's safe to point this at code you
+don't trust yet.
 
 <Cards num={2}>
+  <Cards.Card
+    title="→ Build a Contest (start here)"
+    href="/guides/build-a-contest"
+    arrow
+  />
   <Cards.Card
     title="Getting Started"
     href="/getting-started"
@@ -46,12 +51,7 @@ cxxprobe run -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
     arrow
   />
   <Cards.Card
-    title="Build a Contest"
-    href="/guides/build-a-contest"
-    arrow
-  />
-  <Cards.Card
-    title="Sandbox Internals"
+    title="How the sandbox works"
     href="/architecture/sandbox-internals"
     arrow
   />
@@ -59,30 +59,52 @@ cxxprobe run -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
 
 ## Why cxxprobe
 
-- **Real resource isolation.** Memory, swap, CPU time, wall-clock time and PID
-  count are enforced by the kernel via cgroup v2 — not by best-effort polling.
-- **No root required.** Sandboxing uses `CLONE_NEWUSER | CLONE_NEWNS`, so it
-  works under an unprivileged user once cgroup delegation is configured once.
-- **Judge built in.** Token-based diffing out of the box, or bring your own
-  [testlib-ABI checker](/guides/custom-checker) for floating point / multiple
-  valid answers / interactive problems.
-- **Three ways to judge a submission, run together.** Manual `.in`/`.out`
-  cases, comment/string-aware source checks (`must_include`/
-  `must_not_include` — "did they actually use `std::bit_cast`, not
-  `memcpy`?"), and a GTest-linked behavior checker that tests the
-  submission's actual implementation, not just its stdin/stdout. `cxxprobe
-  test problem` runs all three and reports one aggregate verdict.
-- **Contest scaffolding.** `cxxprobe new contest` / `cxxprobe new problem`
-  generate the whole directory structure — `problem.yaml`, a statement
-  template, a solution template, a checker template — so there's nothing to
-  hand-roll.
-- **Machine-readable output.** `--json` emits exit code, resource usage,
-  verdict and captured output as JSON for grading pipelines and CI.
+- **Three ways to judge, together — pick what fits each problem.** A plain
+  "does stdin/stdout match" problem needs nothing extra. A problem that's
+  really testing a technique ("use `std::bit_cast`, not `memcpy`") gets a
+  one-line source check. A problem where correctness can't be seen from
+  stdout at all — RAII cleanup, move semantics, exception safety — gets a
+  real behavior checker. Combine any of the three per problem; `cxxprobe
+  test problem` reports one clear verdict either way.
+- **Scaffolding, not folder conventions to memorize.** `cxxprobe new
+  contest` / `cxxprobe new problem` generate everything — statement,
+  solution template, test directory, checker template — so there's nothing
+  to hand-roll and nothing to get subtly wrong.
+- **Grade contestants, not just your own reference solution.** `cxxprobe
+  test problem --submission path/to/contestant.cpp` runs the exact same
+  three-way judging against anyone's code — that's the whole grading
+  pipeline, one command per submission.
+- **Real safety, not best-effort.** Every run — including compiling the
+  submission — happens in a sandbox where memory, CPU time, wall-clock time,
+  and process count are enforced by the Linux kernel itself. A fork bomb or
+  an infinite loop in a contestant's code can't take down your grading
+  host, and it costs you nothing to set up beyond a one-time step — no root
+  required.
+- **Built for pipelines, not just terminals.** Everything speaks `--json` —
+  exit code, resource usage, verdict, and full per-check detail — so
+  grading a hundred submissions in CI is exactly as easy as grading one by
+  hand.
 
-## Where a contest lives
+<Callout type="info">
+  cxxprobe needs **Linux with cgroup v2** (WSL2 works too) and one quick
+  one-time setup step — see [Getting Started](/getting-started). No root
+  required after that.
+</Callout>
 
-`cxxprobe new contest "Name"` and `cxxprobe new problem "Name"` scaffold a
-contest directory and its problems — see [Folder
-Structure](/architecture/folder-structure) for exactly what gets generated,
-and [Contest Workflows](/guides/contest-workflows) for the end-to-end
-authoring and grading flow.
+## Prefer the low-level primitive?
+
+Everything above is built on top of `cxxprobe run` — a single sandboxed
+execution with explicit limits, no contest scaffolding required:
+
+```bash
+cxxprobe run -m 256 -w 2s -t 1s -i tests/1.in -e tests/1.ans ./solution
+```
+
+```text
+15
+[exit:0 | cpu:42ms | wall:47ms | mem:3.2MiB | AC]
+```
+
+Reach for this directly if you're integrating cxxprobe into your own
+existing tooling rather than using its contest scaffolding — see [Single-Run
+Judging](/guides/single-run-judging) and [Batch Mode](/guides/batch-mode).

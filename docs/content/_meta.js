@@ -1,8 +1,8 @@
 export default {
   index: 'Introduction',
   'getting-started': 'Getting Started',
-  'cli-reference': 'CLI Reference',
   guides: 'Guides',
+  'cli-reference': 'CLI Reference',
   architecture: 'Architecture',
   contributing: 'Contributing',
   faq: 'FAQ'
