@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.6.0...v0.7.0) (2026-07-21)
+
+
+### Features
+
+* **install:** automatically add install dir to PATH ([db55295](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/db55295a4f818f05259b33d73e2db82ce9835624))
+
 # [0.6.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.5.0...v0.6.0) (2026-07-21)
 
 
