@@ -6,9 +6,13 @@
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
 
+#ifndef CXXPROBE_VERSION
+#define CXXPROBE_VERSION "0.0.0-dev"
+#endif
+
 int main(int argc, char* argv[]) {
     CLI::App app{"cxxprobe — sandboxed evaluation framework for coding contests"};
-    app.set_version_flag("-V,--version", "cxxprobe 0.4.0");
+    app.set_version_flag("-V,--version", "cxxprobe " CXXPROBE_VERSION);
     app.failure_message(CLI::FailureMessage::help);
     app.require_subcommand(1);
 

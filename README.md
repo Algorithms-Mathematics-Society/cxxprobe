@@ -16,6 +16,10 @@ technique the problem is testing for, and does the implementation actually
 *behave* correctly — not just produce the right stdout.
 
 ```bash
+curl -sSf https://algorithms-mathematics-society.github.io/cxxprobe/install.sh | sh
+```
+
+```bash
 cxxprobe new contest "AMS Ascent"
 cxxprobe new problem "A: FileReader RAII"
 # fill in solution.cpp, then:
@@ -62,9 +66,11 @@ for a full worked walkthrough.
 
 ## Requirements
 
-Linux with cgroup v2 (including WSL2). See
-[Getting Started](https://algorithms-mathematics-society.github.io/cxxprobe/getting-started)
-for the full build (CMake + Conan) and one-time setup.
+Linux with cgroup v2 (including WSL2), and a C++ compiler on `PATH` to build
+problem solutions/checkers. The installer above only supports x86_64 today —
+see [Getting Started](https://algorithms-mathematics-society.github.io/cxxprobe/getting-started)
+for building from source on other architectures, plus the one-time cgroup
+setup every install needs.
 
 ## Contributing
 

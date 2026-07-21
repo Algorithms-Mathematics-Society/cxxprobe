@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Build cxxprobe from source, set up cgroup v2 delegation, and run your first sandboxed program.
+description: Install cxxprobe, set up cgroup v2 delegation, and run your first sandboxed program.
 ---
 
 import { Steps, Callout, Tabs } from 'nextra/components'
@@ -9,56 +9,35 @@ import { Steps, Callout, Tabs } from 'nextra/components'
 
 By the end of this page you'll have a working `cxxprobe` binary and a
 sandbox that's actually usable — everything after this is about *using* it,
-starting with [Build a Contest](/guides/build-a-contest). cxxprobe is
-distributed as source (no package manager release yet), so you build the
-CLI with CMake + Conan — the whole process takes a few minutes.
+starting with [Build a Contest](/guides/build-a-contest).
 
 ## Requirements
 
 - **Linux with cgroup v2** mounted (check with `mount | grep cgroup2`). This
-  includes recent Ubuntu, Fedora, Arch, and WSL2.
-- A **C++23 compiler** — GCC ≥ 13 or Clang ≥ 17.
-- **CMake ≥ 3.20** and **Conan 2.x**.
+  includes recent Ubuntu, Fedora, Arch, and WSL2 — cxxprobe is Linux-only by
+  design (it sandboxes via cgroup v2 + Linux user namespaces).
+- A **C++ compiler** (`g++` or `clang++`) on `PATH` — needed to compile
+  problem solutions and checkers via `cxxprobe new`/`test problem`. Not
+  needed just to run `cxxprobe run` against an already-built binary.
 - Root, `sudo`, or write access to `/sys/fs/cgroup` — see [cgroup
   delegation](#one-time-cgroup-delegation) below.
 
-## Build from source
-
-<Steps>
-
-### Clone and install dependencies
-
-cxxprobe pulls GoogleTest, yaml-cpp, CLI11, and nlohmann/json through Conan.
+## Install
 
 ```bash
-git clone https://github.com/Algorithms-Mathematics-Society/cxxprobe.git
-cd cxxprobe
-pip install conan
-conan profile detect --force   # first time only
-conan install . -s build_type=Debug -s compiler.cppstd=23 \
-  --output-folder=build --build=missing
+curl -sSf https://algorithms-mathematics-society.github.io/cxxprobe/install.sh | sh
 ```
 
-### Configure and build
+This downloads the latest release — a self-contained, statically-linked
+binary with no dependency on Conan, CMake, or yaml-cpp being installed —
+verifies its checksum, and installs it to `~/.local/bin/cxxprobe`. Add that
+to your `PATH` if the installer says it isn't already there.
 
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
-cmake --build build -j$(nproc)
-```
-
-This produces `build/cli/cxxprobe-cli`, the static library `build/src/libcxxprobe.a`,
-and the unit/integration test binaries.
-
-### Run the test suite
-
-```bash
-ctest --test-dir build --output-on-failure
-```
-
-Everything except the sandbox/cgroup tests will pass immediately. Those need
-one more step.
-
-</Steps>
+<Callout type="info">
+  Only x86_64 Linux has a prebuilt binary today. On another architecture, or
+  if you'd rather build from source (e.g. to track an unreleased fix), see
+  [Building from source](#building-from-source) below.
+</Callout>
 
 ## One-time cgroup delegation
 
@@ -84,12 +63,6 @@ This is **not persistent across reboots** — `/sys/fs/cgroup` is a virtual
 filesystem reset at boot. Re-run the three commands (or wire them into a
 systemd unit / tmpfiles.d rule) after restarting.
 
-Once delegated, re-run the full suite:
-
-```bash
-ctest --test-dir build --output-on-failure
-```
-
 <Callout type="info">
   Running as **root** (as CI does) skips this step entirely — the sandbox
   already has write access to all of `/sys/fs/cgroup`.
@@ -98,7 +71,7 @@ ctest --test-dir build --output-on-failure
 ## Your first sandboxed run
 
 ```bash
-./build/cli/cxxprobe-cli run /bin/echo hello
+cxxprobe run /bin/echo hello
 ```
 
 ```text
@@ -117,12 +90,12 @@ Judging](/guides/single-run-judging).
 whole contest/problem workflow on top of it:
 
 ```bash
-./build/cli/cxxprobe-cli new contest "My Contest"
+cxxprobe new contest "My Contest"
 cd my-contest
-../build/cli/cxxprobe-cli new problem "A: Warmup"
+cxxprobe new problem "A: Warmup"
 cd a-warmup
 cp solution_template.cpp solution.cpp   # fill it in
-../../build/cli/cxxprobe-cli test problem a-warmup
+cxxprobe test problem a-warmup
 ```
 
 For a full, worked example — one contest, three problems, each combining a
@@ -130,6 +103,50 @@ different set of the 3 consolidated check types — see [Build a
 Contest](/guides/build-a-contest). For the grading and submission-handling
 side, see [Contest Workflows](/guides/contest-workflows); for exactly what
 gets scaffolded, see [Folder Structure](/architecture/folder-structure).
+
+## Building from source
+
+For contributing to cxxprobe, tracking an unreleased fix, or running on an
+architecture without a prebuilt binary. Takes a few minutes with CMake +
+Conan.
+
+<Steps>
+
+### Clone and install dependencies
+
+cxxprobe pulls GoogleTest, yaml-cpp, CLI11, and nlohmann/json through Conan.
+
+```bash
+git clone https://github.com/Algorithms-Mathematics-Society/cxxprobe.git
+cd cxxprobe
+pip install conan
+conan profile detect --force   # first time only
+conan install . -s build_type=Debug -s compiler.cppstd=23 \
+  --output-folder=build --build=missing
+```
+
+### Configure and build
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+cmake --build build -j$(nproc)
+```
+
+This produces `build/cli/cxxprobe-cli`, the static library `build/src/libcxxprobe.a`,
+and the unit/integration test binaries. Use `./build/cli/cxxprobe-cli` in
+place of `cxxprobe` in the commands above, or symlink it onto your `PATH`.
+
+### Run the test suite
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+Everything except the sandbox/cgroup tests will pass immediately — those
+need [cgroup delegation](#one-time-cgroup-delegation) above, then re-run the
+same command.
+
+</Steps>
 
 ## Environment notes
 
@@ -141,8 +158,9 @@ gets scaffolded, see [Folder Structure](/architecture/folder-structure).
   </Tabs.Tab>
   <Tabs.Tab>
     Follow the [delegation steps](#one-time-cgroup-delegation) above once per
-    boot. If delegation isn't possible on your machine, you can still build and
-    run the non-sandbox unit tests; sandbox/cgroup tests will report
+    boot. If delegation isn't possible on your machine, `cxxprobe run` and
+    `cxxprobe test problem` won't work, but building from source and running
+    the non-sandbox unit tests still will; sandbox/cgroup tests report
     `Skipped`, not failed.
   </Tabs.Tab>
   <Tabs.Tab>

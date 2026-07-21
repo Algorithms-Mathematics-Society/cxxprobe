@@ -1,0 +1,59 @@
+name: Release Assets
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-attach:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Conan
+        run: pip install conan
+
+      - name: Setup Conan
+        run: conan profile detect --force
+
+      - name: Install dependencies (Release, static)
+        run: |
+          conan install . -s build_type=Release -s compiler.cppstd=23 \
+            --output-folder=build-release --build=missing
+
+      - name: Configure
+        run: |
+          cmake -B build-release -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=build-release/conan_toolchain.cmake \
+            -DCXXPROBE_STATIC_LINK=ON \
+            -DCXXPROBE_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build-release --target cxxprobe-cli --parallel
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build-release/cli/cxxprobe-cli dist/cxxprobe-x86_64-linux
+          strip dist/cxxprobe-x86_64-linux
+          cd dist
+          sha256sum cxxprobe-x86_64-linux | cut -d' ' -f1 > cxxprobe-x86_64-linux.sha256
+          ./cxxprobe-x86_64-linux --version
+          ldd cxxprobe-x86_64-linux
+
+      - name: Attach to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            dist/cxxprobe-x86_64-linux \
+            dist/cxxprobe-x86_64-linux.sha256 \
+            --clobber

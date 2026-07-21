@@ -14,6 +14,13 @@ add_executable(
 target_link_libraries(cxxprobe-cli PRIVATE cxxprobe CLI11::CLI11
                                            nlohmann_json::nlohmann_json)
 
+target_compile_definitions(cxxprobe-cli
+                           PRIVATE CXXPROBE_VERSION="${PROJECT_VERSION}")
+
+if(CXXPROBE_STATIC_LINK)
+  target_link_options(cxxprobe-cli PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
 # Treat third-party headers as system so clang-tidy ignores them.
 get_target_property(_cli11_inc CLI11::CLI11 INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(cxxprobe-cli SYSTEM PRIVATE ${_cli11_inc})
