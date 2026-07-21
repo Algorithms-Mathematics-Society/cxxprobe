@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.7.0...v0.7.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **cli:** stop clang-format from corrupting scaffold file templates ([9c28289](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/9c28289b1b7b5d4e27a1952eaffbd04251a920dc))
+
 # [0.7.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.6.0...v0.7.0) (2026-07-21)
 
 
