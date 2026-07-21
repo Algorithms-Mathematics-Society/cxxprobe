@@ -5,9 +5,10 @@
 #   curl -sSf https://algorithms-mathematics-society.github.io/cxxprobe/install.sh | sh
 #
 # Env vars:
-#   CXXPROBE_INSTALL_DIR   where to install (default: $HOME/.local/bin)
-#   CXXPROBE_VERSION       install a specific tag instead of latest, e.g. v0.4.2
-#   NO_COLOR               disable colored/styled output
+#   CXXPROBE_INSTALL_DIR    where to install (default: $HOME/.local/bin)
+#   CXXPROBE_VERSION        install a specific tag instead of latest, e.g. v0.4.2
+#   CXXPROBE_NO_MODIFY_PATH don't touch shell rc files — just print the export line
+#   NO_COLOR                disable colored/styled output
 set -eu
 
 REPO="Algorithms-Mathematics-Society/cxxprobe"
@@ -73,6 +74,48 @@ bin_url="$base_url/$ASSET"
 sha_url="$base_url/$ASSET.sha256"
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# ── PATH setup ────────────────────────────────────────────────────────────────
+# A child process (this script) can't change its parent shell's already-live
+# environment — "automatic" here means appending an idempotent, clearly
+# marked line to the right rc file for future sessions, detected from $SHELL.
+RC_FILE=""
+RELOAD_CMD=""
+PATH_ALREADY_SET=0
+
+add_to_path_permanently() {
+    shell_name=$(basename "${SHELL:-sh}")
+    case "$shell_name" in
+        fish)
+            RC_FILE="$HOME/.config/fish/config.fish"
+            export_line="fish_add_path $INSTALL_DIR"
+            RELOAD_CMD="source $RC_FILE"
+            ;;
+        zsh)
+            RC_FILE="$HOME/.zshrc"
+            export_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+            RELOAD_CMD=". $RC_FILE"
+            ;;
+        bash)
+            RC_FILE="$HOME/.bashrc"
+            export_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+            RELOAD_CMD=". $RC_FILE"
+            ;;
+        *)
+            RC_FILE="$HOME/.profile"
+            export_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+            RELOAD_CMD=". $RC_FILE"
+            ;;
+    esac
+
+    if [ -f "$RC_FILE" ] && grep -qF "$INSTALL_DIR" "$RC_FILE" 2>/dev/null; then
+        PATH_ALREADY_SET=1
+        return
+    fi
+
+    mkdir -p "$(dirname "$RC_FILE")"
+    printf '\n# added by cxxprobe installer\n%s\n' "$export_line" >>"$RC_FILE"
+}
 
 # Downloads $1 to file $2. Shows curl/wget's own progress bar when the
 # terminal can render one; stays quiet otherwise (e.g. inside CI logs).
@@ -149,9 +192,20 @@ esac
 cgroup_ready=1
 [ -d "$CGROUP_ROOT" ] && [ -w "$CGROUP_ROOT" ] || cgroup_ready=0
 
-if [ "$path_ok" = 0 ]; then
-    warn "$INSTALL_DIR isn't on your PATH yet. Add this to your shell profile:"
+if [ "$path_ok" = 1 ]; then
+    : # already on PATH, nothing to do
+elif [ -n "${CXXPROBE_NO_MODIFY_PATH:-}" ]; then
+    warn "$INSTALL_DIR isn't on your PATH. Add this to your shell profile:"
     cmd_line "export PATH=\"$INSTALL_DIR:\$PATH\""
+else
+    add_to_path_permanently
+    if [ "$PATH_ALREADY_SET" = 1 ]; then
+        ok "PATH already configured in $RC_FILE"
+    else
+        ok "Added $INSTALL_DIR to PATH in $RC_FILE"
+        warn "open a new terminal, or run this to use cxxprobe right now:"
+        cmd_line "$RELOAD_CMD"
+    fi
 fi
 
 if [ "$cgroup_ready" = 1 ]; then
