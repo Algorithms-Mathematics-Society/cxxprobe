@@ -1,8 +1,9 @@
 export default {
+  'build-a-contest': 'Build a Contest',
+  'contest-workflows': 'Contest Workflows',
   'single-run-judging': 'Single-Run Judging',
   'json-output': 'JSON Output',
   'batch-mode': 'Batch Mode',
   'custom-checker': 'Custom Checkers',
-  'contest-workflows': 'Contest Workflows',
   'stress-testing': 'Stress Testing & Debugging'
 }

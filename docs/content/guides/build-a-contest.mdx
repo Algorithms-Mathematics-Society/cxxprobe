@@ -1,0 +1,456 @@
+---
+title: Build a Contest
+description: A hands-on walkthrough — scaffold a contest and author 3 problems, each using a different combination of the 3 consolidated check types.
+---
+
+import { Steps, Callout, Cards } from 'nextra/components'
+
+# Build a Contest
+
+This is a from-scratch, copy-pasteable walkthrough: one contest, three
+problems, each one adding a different [consolidated check
+type](/cli-reference#test-problem) so you can see exactly what each looks
+like and how they combine.
+
+| Problem | Manual tests | Symbolic checks | Behavior checker |
+|---|---|---|---|
+| A: Sum Two Integers | ✅ | — | — |
+| B: Bit-Cast a Float | ✅ | ✅ | — |
+| C: Move-Only File Handle | ✅ | ✅ | ✅ |
+
+<Callout type="info">
+  Everything here is verified against a real build — every command and every
+  line of output on this page came from actually running `cxxprobe`, not
+  hand-written. If your output looks slightly different (timings, wall-clock
+  ms), that's expected; the verdicts shouldn't be.
+</Callout>
+
+## Create the contest
+
+```bash
+cxxprobe new contest "AMS Starter Cup"
+cd ams-starter-cup
+```
+
+```text
+Created contest 'AMS Starter Cup' in /path/to/ams-starter-cup
+```
+
+That's it — `contest.yaml` is the only file, and it's just a marker so
+`new problem` and `test problem` know where the contest root is. See [Folder
+Structure](/architecture/folder-structure) if you want the full picture of
+what's on disk at each step.
+
+## Problem A — manual tests only
+
+The simplest possible problem: read two integers, print their sum. No
+technique to enforce, no behavior beyond stdin/stdout — just test data.
+
+<Steps>
+
+### Scaffold it
+
+```bash
+cxxprobe new problem "A: Sum Two Integers"
+cd a-sum-two-integers
+```
+
+### Write the solution
+
+```cpp filename="solution.cpp"
+#include <iostream>
+
+int main() {
+    int a = 0;
+    int b = 0;
+    std::cin >> a >> b;
+    std::cout << (a + b) << "\n";
+    return 0;
+}
+```
+
+### Add test cases
+
+```bash
+echo "3 4" > tests/1.in;      echo "7" > tests/1.ans
+echo "-10 10" > tests/2.in;   echo "0" > tests/2.ans
+echo "100000 250000" > tests/3.in; echo "350000" > tests/3.ans
+```
+
+### Trim problem.yaml down to what you actually need
+
+The scaffold generates a fully-commented `problem.yaml` with every field
+shown (see the [CLI Reference](/cli-reference#test-problem) for the full
+schema) — everything left out just falls back to its default. Since this
+problem doesn't need a behavior checker, delete the placeholder
+`checker_gtest.cpp` and turn that section off explicitly:
+
+```bash
+rm checker_gtest.cpp
+```
+
+```yaml filename="problem.yaml"
+version: 1
+name: "A: Sum Two Integers"
+description: "Warm-up: read two integers, print their sum."
+statement: problem.md
+
+solution:
+  file: solution.cpp
+
+tests:
+  dir: tests
+
+behavior:
+  enabled: false
+```
+
+<Callout type="info">
+  Turning `behavior` off explicitly (rather than just deleting
+  `checker_gtest.cpp` and leaving the section unset) makes the intent
+  unambiguous — anyone reading this file later knows there's deliberately no
+  behavior checker for this problem, not a forgotten one.
+</Callout>
+
+### Run it
+
+```bash
+cxxprobe test problem a-sum-two-integers
+```
+
+```text
+Problem: A: Sum Two Integers (a-sum-two-integers)
+
+Manual tests    PASS (3/3)
+     1: AC    cpu:0ms   wall:15ms
+     2: AC    cpu:0ms   wall:1ms
+     3: AC    cpu:0ms   wall:2ms
+Symbolic checks SKIPPED
+Behavior tests  SKIPPED
+
+---
+Overall: PASS
+```
+
+</Steps>
+
+## Problem B — manual tests + a symbolic check
+
+Print a `float`'s raw bit pattern as an unsigned integer. This problem is
+really testing whether the solver knows to use `std::bit_cast` for type
+punning rather than `memcpy` or `reinterpret_cast` — something no amount of
+stdin/stdout testing can verify, since both approaches produce the same
+output. That's exactly what a symbolic check is for.
+
+<Steps>
+
+### Scaffold and write the solution
+
+```bash
+cd ..
+cxxprobe new problem "B: Bit-Cast a Float"
+cd b-bit-cast-a-float
+rm checker_gtest.cpp
+```
+
+```cpp filename="solution.cpp"
+#include <bit>
+#include <cstdint>
+#include <iostream>
+
+int main() {
+    float f = 0.0F;
+    std::cin >> f;
+    std::uint32_t bits = std::bit_cast<std::uint32_t>(f);
+    std::cout << bits << "\n";
+    return 0;
+}
+```
+
+### Add test cases
+
+Any float works — the expected output is just its IEEE-754 bit pattern as an
+unsigned integer:
+
+```text filename="tests/1.in"
+1.0
+```
+
+```text filename="tests/1.ans"
+1065353216
+```
+
+```text filename="tests/2.in"
+-2.5
+```
+
+```text filename="tests/2.ans"
+3223322624
+```
+
+### Add the symbolic requirement
+
+```yaml filename="problem.yaml"
+version: 1
+name: "B: Bit-Cast a Float"
+description: "Print a float's raw bit pattern as an unsigned integer."
+statement: problem.md
+
+solution:
+  file: solution.cpp
+
+tests:
+  dir: tests
+
+symbolic:
+  must_include:
+    - "std::bit_cast"
+  must_not_include:
+    - pattern: "\\bmemcpy\\s*\\("
+      regex: true
+      message: "memcpy for type punning is undefined behavior — use std::bit_cast"
+
+behavior:
+  enabled: false
+```
+
+`must_include` takes a bare string as shorthand for a literal-substring
+match; `must_not_include` here uses the explicit map form for a regex
+pattern with a custom failure message. Both forms can mix freely in the same
+list. The scan strips comments and string literals first, so a solution that
+only *mentions* `memcpy` in a comment wouldn't trip this check — see
+[FAQ](/faq#why-regex-based-symbolic-checks-and-not-a-real-astlibclang) for
+how the scan works.
+
+### Run it
+
+```bash
+cxxprobe test problem b-bit-cast-a-float
+```
+
+```text
+Problem: B: Bit-Cast a Float (b-bit-cast-a-float)
+
+Manual tests    PASS (4/4)
+     1: AC    cpu:0ms   wall:11ms
+     2: AC    cpu:0ms   wall:1ms
+     3: AC    cpu:0ms   wall:1ms
+     4: AC    cpu:0ms   wall:1ms
+Symbolic checks PASS
+  [must_include] std::bit_cast            OK
+  [must_not_include] \bmemcpy\s*\(            OK
+
+Behavior tests  SKIPPED
+
+---
+Overall: PASS
+```
+
+</Steps>
+
+## Problem C — manual tests + symbolic + a behavior checker
+
+A move-only RAII handle wrapping a `FILE*`. This is the case where stdin/
+stdout testing structurally *can't* verify what matters: does the
+destructor actually close the file, does moving transfer ownership instead
+of double-closing, is the type actually non-copyable? A GTest-linked
+behavior checker tests the class directly.
+
+<Steps>
+
+### Scaffold it
+
+```bash
+cd ..
+cxxprobe new problem "C: Move-Only File Handle"
+cd c-move-only-file-handle
+```
+
+This time keep `checker_gtest.cpp` — this problem needs it.
+
+### Write the solution
+
+```cpp filename="solution.cpp"
+#include <cstdio>
+#include <iostream>
+#include <utility>
+
+class FileHandle {
+public:
+    explicit FileHandle(std::FILE* f) noexcept : file_(f) {}
+
+    ~FileHandle() {
+        if (file_ != nullptr) {
+            std::fclose(file_);
+        }
+    }
+
+    FileHandle(const FileHandle&) = delete;
+    FileHandle& operator=(const FileHandle&) = delete;
+
+    FileHandle(FileHandle&& other) noexcept : file_(std::exchange(other.file_, nullptr)) {}
+
+    FileHandle& operator=(FileHandle&& other) noexcept {
+        if (this != &other) {
+            if (file_ != nullptr) {
+                std::fclose(file_);
+            }
+            file_ = std::exchange(other.file_, nullptr);
+        }
+        return *this;
+    }
+
+    [[nodiscard]] bool is_open() const noexcept { return file_ != nullptr; }
+
+private:
+    std::FILE* file_;
+};
+
+int main() {
+    FileHandle f{std::tmpfile()};
+    std::cout << (f.is_open() ? "open" : "closed") << "\n";
+    return 0;
+}
+```
+
+### Add a (light) manual test
+
+The manual test here is almost incidental — it just confirms the program
+runs and prints something sane. The real verification happens in the
+behavior checker below.
+
+```bash
+echo "" > tests/1.in
+echo "open" > tests/1.ans
+```
+
+### Write the behavior checker
+
+```cpp filename="checker_gtest.cpp"
+#include <gtest/gtest.h>
+
+#define main solution_main
+#include CXXPROBE_SOLUTION_FILE
+#undef main
+
+TEST(FileHandle, OpensSuccessfully) {
+    FileHandle f{std::tmpfile()};
+    EXPECT_TRUE(f.is_open());
+}
+
+TEST(FileHandle, MoveTransfersOwnership) {
+    FileHandle a{std::tmpfile()};
+    FileHandle b{std::move(a)};
+    EXPECT_TRUE(b.is_open());
+    // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+    EXPECT_FALSE(a.is_open());
+}
+
+TEST(FileHandle, MoveAssignTransfersOwnership) {
+    FileHandle a{std::tmpfile()};
+    FileHandle b{std::tmpfile()};
+    b = std::move(a);
+    EXPECT_TRUE(b.is_open());
+}
+
+TEST(FileHandle, NotCopyable) {
+    EXPECT_FALSE(std::is_copy_constructible_v<FileHandle>);
+    EXPECT_FALSE(std::is_copy_assignable_v<FileHandle>);
+}
+```
+
+<Callout type="warning">
+  `CXXPROBE_SOLUTION_FILE` — not a hardcoded `#include "solution.cpp"` — is
+  what makes `--submission` grading work correctly later (it points at
+  whichever file is actually being graded). And `#define main
+  solution_main` renames the submission's own `main()` out of the way so it
+  doesn't collide with GTest's `main()` — see [Folder
+  Structure](/architecture/folder-structure#a-problem) for why both of these
+  matter.
+</Callout>
+
+### Layer on the symbolic check and problem.yaml
+
+Nothing stops you from combining all three types on one problem — here a
+symbolic check rides along with the manual test and the behavior checker:
+
+```yaml filename="problem.yaml"
+version: 1
+name: "C: Move-Only File Handle"
+description: "Wrap a FILE* in a move-only RAII handle that closes on destruction."
+statement: problem.md
+
+solution:
+  file: solution.cpp
+
+tests:
+  dir: tests
+
+symbolic:
+  must_not_include:
+    - pattern: "\\bmemcpy\\s*\\("
+      regex: true
+      message: "no need for memcpy here"
+
+behavior:
+  checker_file: checker_gtest.cpp
+```
+
+### Run it
+
+```bash
+cxxprobe test problem c-move-only-file-handle
+```
+
+```text
+Problem: C: Move-Only File Handle (c-move-only-file-handle)
+
+Manual tests    PASS (1/1)
+     1: AC    cpu:0ms   wall:21ms
+Symbolic checks PASS
+  [must_not_include] \bmemcpy\s*\(            OK
+
+Behavior tests  PASS (4/4)
+  FileHandle.OpensSuccessfully             PASS
+  FileHandle.MoveTransfersOwnership        PASS
+  FileHandle.MoveAssignTransfersOwnership  PASS
+  FileHandle.NotCopyable                   PASS
+
+---
+Overall: PASS
+```
+
+All three sections ran and all three passed — that's what `Overall: PASS`
+aggregates across.
+
+</Steps>
+
+## Run the whole contest at once
+
+```bash
+cd ..
+for p in a-sum-two-integers b-bit-cast-a-float c-move-only-file-handle; do
+    overall=$(cxxprobe test problem "$p" --json | jq -r '.overall')
+    echo "$p: $overall"
+done
+```
+
+```text
+a-sum-two-integers: PASS
+b-bit-cast-a-float: PASS
+c-move-only-file-handle: PASS
+```
+
+This is the same loop shape you'd use to grade real submissions — just add
+`--submission path/to/contestant.cpp` per problem. See [Contest
+Workflows](/guides/contest-workflows#grading-a-submission) for the full
+grading-many-submissions pattern.
+
+## What's next
+
+<Cards num={2}>
+  <Cards.Card title="Contest Workflows" href="/guides/contest-workflows" arrow />
+  <Cards.Card title="Custom Checkers" href="/guides/custom-checker" arrow />
+  <Cards.Card title="CLI Reference" href="/cli-reference" arrow />
+  <Cards.Card title="Folder Structure" href="/architecture/folder-structure" arrow />
+</Cards>

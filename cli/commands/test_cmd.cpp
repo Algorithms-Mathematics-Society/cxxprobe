@@ -105,10 +105,10 @@ void print_human(const cxxprobe::judge::JudgeReport& report, bool quiet, const C
                              status_str(report.symbolic.status), col.rst);
     if (!quiet) {
         for (const auto& c : report.symbolic.checks) {
-            std::cout << std::format("  [{}] {:<24} {}{}\n",
-                                     c.expect_present ? "must_include" : "must_not_include",
-                                     c.pattern, c.satisfied ? "OK" : "FAILED",
-                                     c.message.empty() ? "" : (" — " + c.message));
+            bool show_message = !c.satisfied && !c.message.empty();
+            std::cout << std::format(
+                "  [{}] {:<24} {}{}\n", c.expect_present ? "must_include" : "must_not_include",
+                c.pattern, c.satisfied ? "OK" : "FAILED", show_message ? (" — " + c.message) : "");
         }
     }
 
