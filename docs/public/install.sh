@@ -174,12 +174,24 @@ else
 fi
 
 # ── install ────────────────────────────────────────────────────────────────────
+previous_version=""
+if [ -x "$INSTALL_DIR/cxxprobe" ]; then
+    previous_version=$("$INSTALL_DIR/cxxprobe" --version 2>/dev/null || printf '')
+fi
+
 mkdir -p "$INSTALL_DIR"
 chmod +x "$tmp_dir/$ASSET"
 mv "$tmp_dir/$ASSET" "$INSTALL_DIR/cxxprobe"
-ok "Installed to $INSTALL_DIR/cxxprobe"
 
 installed_version=$("$INSTALL_DIR/cxxprobe" --version 2>/dev/null || printf 'cxxprobe (version unknown)')
+
+if [ -n "$previous_version" ] && [ "$previous_version" != "$installed_version" ]; then
+    ok "Updated $INSTALL_DIR/cxxprobe ($previous_version -> $installed_version)"
+elif [ -n "$previous_version" ]; then
+    ok "$INSTALL_DIR/cxxprobe is already up to date ($installed_version)"
+else
+    ok "Installed to $INSTALL_DIR/cxxprobe"
+fi
 
 title "Done — $installed_version"
 

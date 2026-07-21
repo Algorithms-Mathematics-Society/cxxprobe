@@ -39,6 +39,17 @@ to your `PATH` if the installer says it isn't already there.
   [Building from source](#building-from-source) below.
 </Callout>
 
+**To update**, just run the same command again — it always fetches the
+latest release and overwrites the existing binary in place, and tells you
+what changed:
+
+```text
+✓ Updated ~/.local/bin/cxxprobe (cxxprobe 0.5.0 -> cxxprobe 0.7.0)
+```
+
+Pin a specific version instead of `latest` with `CXXPROBE_VERSION=v0.7.0 curl
+-sSf .../install.sh | sh`.
+
 ## One-time cgroup delegation
 
 cxxprobe creates a cgroup leaf per run under `/sys/fs/cgroup/cxxprobe/<uuid>/`.

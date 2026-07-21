@@ -92,52 +92,58 @@ constexpr std::string_view kProblemMdTemplate = R"MD(# {}
 ## Examples
 )MD";
 
-constexpr std::string_view kSolutionTemplate = R"CPP(// Fill this in to implement the solution
-                                                     // described in problem.md.
-                                                     // Symbolic requirements for this problem are
-                                                     // enforced from problem.yaml — see the
-                                                     // `symbolic:` section (must_include /
-                                                     // must_not_include).
+// clang-format off
+// NOTE: the raw-string delimiter is deliberately NOT "CPP"/"CC"/etc. — clang-format
+// recognizes those as a C++-language tag and reformats the embedded text as if it
+// were real source, corrupting these templates. The clang-format off/on guard below
+// is belt-and-suspenders in case a future clang-format version recognizes this tag too.
+constexpr std::string_view kSolutionTemplate = R"TEMPLATE(// Fill this in to implement the solution
+// described in problem.md.
+// Symbolic requirements for this problem are
+// enforced from problem.yaml — see the
+// `symbolic:` section (must_include /
+// must_not_include).
 
-                                                     int main() { return 0; }
-)CPP";
+int main() { return 0; }
+)TEMPLATE";
 
-constexpr std::string_view kCheckerGtestTemplate = R"CPP(#include <gtest/gtest.h>
+constexpr std::string_view kCheckerGtestTemplate = R"TEMPLATE(#include <gtest/gtest.h>
 
-                                                         // This file is compiled together with the
-                                                         // submission into one binary (see
-                                                         // problem.yaml's `behavior:` section) and
-                                                         // run sandboxed; cxxprobe parses named
-                                                         // pass/fail results from GTest's own
-                                                         // --gtest_output=json. Write TEST() cases
-                                                         // here that exercise the submission's
-                                                         // implementation directly.
-                                                         //
-                                                         // CXXPROBE_SOLUTION_FILE is defined by
-                                                         // cxxprobe at compile time (it points at
-                                                         // whatever is actually being graded —
-                                                         // solution.cpp by default, or whatever
-                                                         // `--submission` was passed) — don't
-                                                         // hardcode "solution.cpp" here, or
-                                                         // `--submission` grading will silently
-                                                         // test the wrong file.
-                                                         //
-                                                         // The submission has its own `main()` for
-                                                         // the manual .in/.out tests; it's renamed
-                                                         // out of the way here so it doesn't
-                                                         // collide with GTest's own main (linked in
-                                                         // via -lgtest_main).
+// This file is compiled together with the
+// submission into one binary (see
+// problem.yaml's `behavior:` section) and
+// run sandboxed; cxxprobe parses named
+// pass/fail results from GTest's own
+// --gtest_output=json. Write TEST() cases
+// here that exercise the submission's
+// implementation directly.
+//
+// CXXPROBE_SOLUTION_FILE is defined by
+// cxxprobe at compile time (it points at
+// whatever is actually being graded —
+// solution.cpp by default, or whatever
+// `--submission` was passed) — don't
+// hardcode "solution.cpp" here, or
+// `--submission` grading will silently
+// test the wrong file.
+//
+// The submission has its own `main()` for
+// the manual .in/.out tests; it's renamed
+// out of the way here so it doesn't
+// collide with GTest's own main (linked in
+// via -lgtest_main).
 #define main solution_main
 #include CXXPROBE_SOLUTION_FILE
 #undef main
 
-                                                         TEST(Placeholder, ScaffoldCompiles) {
-                                                             // Replace with real behavior
-                                                             // assertions once solution.cpp is
-                                                             // filled in.
-                                                             SUCCEED();
-                                                         }
-)CPP";
+TEST(Placeholder, ScaffoldCompiles) {
+    // Replace with real behavior
+    // assertions once solution.cpp is
+    // filled in.
+    SUCCEED();
+}
+)TEMPLATE";
+// clang-format on
 
 }  // namespace
 
