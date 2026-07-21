@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.4.2...v0.5.0) (2026-07-21)
+
+
+### Features
+
+* **release:** publish a static release binary + curl|sh installer ([e2a2483](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/e2a24836b3f4431059834a54f32c20087f192c5b))
+
 ## [0.4.2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.4.1...v0.4.2) (2026-07-19)
 
 
