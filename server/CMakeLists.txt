@@ -39,15 +39,16 @@ add_library(
 target_include_directories(cxxprobe-server-lib PUBLIC ${PROJECT_SOURCE_DIR})
 
 target_link_libraries(
-  cxxprobe-server-lib PUBLIC cxxprobe boost::boost SQLite::SQLite3
-                            concurrentqueue::concurrentqueue cxxprobe-ui-assets)
+  cxxprobe-server-lib
+  PUBLIC cxxprobe boost::boost SQLite::SQLite3 concurrentqueue::concurrentqueue
+         cxxprobe-ui-assets)
 
 target_compile_definitions(cxxprobe-server-lib PUBLIC BOOST_ASIO_NO_DEPRECATED)
 
-# Treat third-party headers as SYSTEM so clang-tidy analyzes only our own
-# code, not Boost/SQLite3/concurrentqueue's own internals (their
-# HeaderFilterRegex-matched headers would otherwise be flagged the same as
-# our code — same pattern already used for CLI11/yaml-cpp in cli/CMakeLists.txt).
+# Treat third-party headers as SYSTEM so clang-tidy analyzes only our own code,
+# not Boost/SQLite3/concurrentqueue's own internals (their
+# HeaderFilterRegex-matched headers would otherwise be flagged the same as our
+# code — same pattern already used for CLI11/yaml-cpp in cli/CMakeLists.txt).
 foreach(_dep boost::boost SQLite::SQLite3 concurrentqueue::concurrentqueue)
   get_target_property(_dep_inc ${_dep} INTERFACE_INCLUDE_DIRECTORIES)
   if(_dep_inc)

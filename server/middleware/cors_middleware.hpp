@@ -10,7 +10,7 @@ namespace cxxprobe::server::middleware {
 class CorsMiddleware final : public Middleware {
 public:
     void handle(cxxprobe::server::router::Request& req, cxxprobe::server::router::Response& res,
-               const Next& next) override;
+                const Next& next) override;
 };
 
 }  // namespace cxxprobe::server::middleware

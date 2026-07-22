@@ -2,7 +2,6 @@
 
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>
-
 #include <chrono>
 #include <format>
 
@@ -60,7 +59,8 @@ std::string SqliteSubmissionRepository::create_submission(const NewSubmission& s
     auto& conn = connection_for_current_thread();
     std::string id = generate_id();
     SqliteStatement stmt(
-        conn, "INSERT INTO submissions (id, problem_slug, status, created_at) VALUES (?, ?, ?, ?);");
+        conn,
+        "INSERT INTO submissions (id, problem_slug, status, created_at) VALUES (?, ?, ?, ?);");
     stmt.bind(1, id);
     stmt.bind(2, s.problem_slug);
     stmt.bind(3, static_cast<std::int64_t>(SubmissionStatus::Queued));
@@ -118,8 +118,8 @@ std::vector<SubmissionRecord> SqliteSubmissionRepository::list_recent(int limit)
     // the overall status per row, not each submission's full JudgeReport
     // blob; GET /submissions/{id} is where the full report lives.
     SqliteStatement stmt(conn,
-                        "SELECT id, problem_slug, status, created_at, finished_at "
-                        "FROM submissions ORDER BY created_at DESC LIMIT ?;");
+                         "SELECT id, problem_slug, status, created_at, finished_at "
+                         "FROM submissions ORDER BY created_at DESC LIMIT ?;");
     stmt.bind(1, static_cast<std::int64_t>(limit));
 
     std::vector<SubmissionRecord> out;

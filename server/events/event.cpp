@@ -7,7 +7,7 @@ const std::string* event_submission_id(const Event& ev) {
         [](const auto& e) -> const std::string* {
             using T = std::decay_t<decltype(e)>;
             if constexpr (std::is_same_v<T, WorkerOnlineEvent> ||
-                         std::is_same_v<T, WorkerOfflineEvent>) {
+                          std::is_same_v<T, WorkerOfflineEvent>) {
                 return nullptr;
             } else {
                 return &e.submission_id;

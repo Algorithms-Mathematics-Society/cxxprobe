@@ -1,13 +1,14 @@
-#include "server/router/route_pattern.hpp"
 #include "server/router/router.hpp"
 
 #include <gtest/gtest.h>
 
+#include "server/router/route_pattern.hpp"
+
 namespace beast_http = cxxprobe::server::router::beast_http;
 using cxxprobe::server::router::Request;
 using cxxprobe::server::router::Response;
-using cxxprobe::server::router::Router;
 using cxxprobe::server::router::RoutePattern;
+using cxxprobe::server::router::Router;
 
 namespace {
 
@@ -67,9 +68,8 @@ TEST(RouterTest, DispatchesToMatchingRoute) {
 TEST(RouterTest, PassesPathParamsToHandler) {
     Router router;
     std::string captured_slug;
-    router.add_route(beast_http::verb::get, "/problems/{slug}", [&](Request& req, Response&) {
-        captured_slug = req.path_param("slug");
-    });
+    router.add_route(beast_http::verb::get, "/problems/{slug}",
+                     [&](Request& req, Response&) { captured_slug = req.path_param("slug"); });
 
     Request req = make_request(beast_http::verb::get, "/problems/a-warmup");
     Response res;

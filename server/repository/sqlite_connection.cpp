@@ -54,8 +54,7 @@ SqliteStatement::~SqliteStatement() {
 }
 
 void SqliteStatement::bind(int index, std::string_view value) {
-    sqlite3_bind_text(stmt_, index, value.data(), static_cast<int>(value.size()),
-                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
 }
 
 void SqliteStatement::bind(int index, std::int64_t value) {

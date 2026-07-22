@@ -31,11 +31,10 @@ std::pair<std::string, std::unordered_map<std::string, std::string>> split_targe
 
 }  // namespace
 
-Request::Request(BeastRequest raw) : raw_(std::move(raw)) {
-    auto [path, query] = split_target(std::string(raw_.target()));
-    path_ = path;
-    query_params_ = query;
-}
+Request::Request(BeastRequest raw)
+    : raw_(std::move(raw)),
+      path_(split_target(std::string(raw_.target())).first),
+      query_params_(split_target(std::string(raw_.target())).second) {}
 
 std::string Request::header(beast_http::field name) const {
     auto it = raw_.find(name);

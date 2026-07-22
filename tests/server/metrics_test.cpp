@@ -1,8 +1,8 @@
+#include <gtest/gtest.h>
+
 #include "server/metrics/metrics_registry.hpp"
 #include "server/metrics/prometheus_text_exporter.hpp"
 #include "server/queue/concurrentqueue_submission_queue.hpp"
-
-#include <gtest/gtest.h>
 
 using cxxprobe::server::metrics::DurationHistogram;
 using cxxprobe::server::metrics::MetricsRegistry;
@@ -20,7 +20,7 @@ TEST(DurationHistogramTest, ObserveIncrementsCountAndSum) {
 
 TEST(DurationHistogramTest, BucketsAreCumulative) {
     DurationHistogram hist;
-    hist.observe(std::chrono::milliseconds(50));   // falls in the first bucket (<=100)
+    hist.observe(std::chrono::milliseconds(50));  // falls in the first bucket (<=100)
 
     // Cumulative ("le") semantics: every bucket >= the matching one gets +1,
     // including the implicit +Inf bucket at index kBucketBoundsMs.size().

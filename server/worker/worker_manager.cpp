@@ -12,7 +12,7 @@ WorkerManager::WorkerManager(
     workers_.reserve(count);
     for (std::size_t i = 0; i < count; ++i) {
         workers_.push_back(std::make_unique<Worker>(static_cast<int>(i), queue, judge, repo, bus,
-                                                     catalog, metrics));
+                                                    catalog, metrics));
     }
 }
 

@@ -68,12 +68,10 @@ TEST(DtoTest, ParseSubmitRequestThrowsOnMalformedJson) {
 }
 
 TEST(DtoTest, ParseSubmitRequestThrowsOnMissingProblemSlug) {
-    EXPECT_THROW(cxxprobe::server::api::parse_submit_request(R"({"source":"x"})"),
-                BadRequestError);
+    EXPECT_THROW(cxxprobe::server::api::parse_submit_request(R"({"source":"x"})"), BadRequestError);
 }
 
 TEST(DtoTest, ParseSubmitRequestThrowsOnMissingSource) {
-    EXPECT_THROW(
-        cxxprobe::server::api::parse_submit_request(R"({"problem_slug":"a-warmup"})"),
-        BadRequestError);
+    EXPECT_THROW(cxxprobe::server::api::parse_submit_request(R"({"problem_slug":"a-warmup"})"),
+                 BadRequestError);
 }

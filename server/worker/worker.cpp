@@ -11,11 +11,11 @@
 namespace cxxprobe::server::worker {
 
 Worker::Worker(int id, std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue,
-              std::shared_ptr<cxxprobe::server::judge::IJudgeService> judge,
-              std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository> repo,
-              std::shared_ptr<cxxprobe::server::events::IEventBus> bus,
-              std::shared_ptr<cxxprobe::server::services::ProblemCatalogService> catalog,
-              std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry> metrics)
+               std::shared_ptr<cxxprobe::server::judge::IJudgeService> judge,
+               std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository> repo,
+               std::shared_ptr<cxxprobe::server::events::IEventBus> bus,
+               std::shared_ptr<cxxprobe::server::services::ProblemCatalogService> catalog,
+               std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry> metrics)
     : id_(id),
       queue_(std::move(queue)),
       judge_(std::move(judge)),
@@ -67,9 +67,8 @@ void Worker::run(const std::stop_token& stop) {
                 cxxprobe::judge::JudgeReport report =
                     judge_->judge(*problem, catalog_->defaults(), job->submission_source_path);
                 repo_->store_report(job->submission_id, report);
-                bus_->publish(SubmissionFinishedEvent{.submission_id = job->submission_id,
-                                                      .overall = report.overall,
-                                                      .message = ""});
+                bus_->publish(SubmissionFinishedEvent{
+                    .submission_id = job->submission_id, .overall = report.overall, .message = ""});
             }
         } catch (const std::exception& ex) {
             // A bad submission must never take this jthread down permanently

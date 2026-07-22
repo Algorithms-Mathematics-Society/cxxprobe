@@ -63,8 +63,7 @@ std::optional<cxxprobe::server::repository::SubmissionRecord> SubmissionService:
     return repo_->fetch_submission(id);
 }
 
-std::vector<cxxprobe::server::repository::SubmissionRecord> SubmissionService::history(
-    int limit) {
+std::vector<cxxprobe::server::repository::SubmissionRecord> SubmissionService::history(int limit) {
     return repo_->list_recent(limit);
 }
 

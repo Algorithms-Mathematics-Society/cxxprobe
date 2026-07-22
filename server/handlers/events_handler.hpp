@@ -1,8 +1,7 @@
 #pragma once
 
-#include <boost/beast/core.hpp>
-
 #include <atomic>
+#include <boost/beast/core.hpp>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,8 +28,8 @@ public:
     // becomes true. `submission_id_filter`, if set, scopes delivery to
     // events for that one submission; unset means the global firehose.
     void serve(boost::beast::tcp_stream& stream,
-              const std::optional<std::string>& submission_id_filter,
-              const std::atomic<bool>& shutting_down);
+               const std::optional<std::string>& submission_id_filter,
+               const std::atomic<bool>& shutting_down);
 
 private:
     std::shared_ptr<cxxprobe::server::events::IEventBus> bus_;

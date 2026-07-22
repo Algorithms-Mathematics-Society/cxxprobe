@@ -13,7 +13,7 @@ SubmissionsHandler::SubmissionsHandler(
     : svc_(std::move(svc)) {}
 
 void SubmissionsHandler::post(cxxprobe::server::router::Request& req,
-                             cxxprobe::server::router::Response& res) {
+                              cxxprobe::server::router::Response& res) {
     // parse_submit_request/svc_->submit both throw on invalid input — caught
     // and mapped to the right status by ErrorMappingMiddleware, not here.
     auto parsed = cxxprobe::server::api::parse_submit_request(req.body());
@@ -25,7 +25,7 @@ void SubmissionsHandler::post(cxxprobe::server::router::Request& req,
 }
 
 void SubmissionsHandler::get(cxxprobe::server::router::Request& req,
-                            cxxprobe::server::router::Response& res) {
+                             cxxprobe::server::router::Response& res) {
     std::string id = req.path_param("id");
     auto rec = svc_->get(id);
     if (!rec) {
@@ -39,7 +39,7 @@ void SubmissionsHandler::get(cxxprobe::server::router::Request& req,
 }
 
 void SubmissionsHandler::list(cxxprobe::server::router::Request& req,
-                             cxxprobe::server::router::Response& res) {
+                              cxxprobe::server::router::Response& res) {
     constexpr int kDefaultLimit = 50;
     constexpr int kMaxLimit = 200;
 

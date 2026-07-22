@@ -19,11 +19,11 @@ namespace cxxprobe::server::worker {
 class Worker {
 public:
     Worker(int id, std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue,
-          std::shared_ptr<cxxprobe::server::judge::IJudgeService> judge,
-          std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository> repo,
-          std::shared_ptr<cxxprobe::server::events::IEventBus> bus,
-          std::shared_ptr<cxxprobe::server::services::ProblemCatalogService> catalog,
-          std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry> metrics);
+           std::shared_ptr<cxxprobe::server::judge::IJudgeService> judge,
+           std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository> repo,
+           std::shared_ptr<cxxprobe::server::events::IEventBus> bus,
+           std::shared_ptr<cxxprobe::server::services::ProblemCatalogService> catalog,
+           std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry> metrics);
 
     void request_stop();
     void join();

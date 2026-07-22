@@ -12,7 +12,7 @@ namespace cxxprobe::server::handlers {
 class MetricsHandler {
 public:
     MetricsHandler(std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry> registry,
-                  std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue);
+                   std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue);
 
     void get(cxxprobe::server::router::Request& req, cxxprobe::server::router::Response& res);
 

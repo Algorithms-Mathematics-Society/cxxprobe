@@ -14,7 +14,7 @@ namespace cxxprobe::server::handlers {
 class HealthHandler {
 public:
     HealthHandler(std::shared_ptr<cxxprobe::server::worker::WorkerManager> workers,
-                 std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue);
+                  std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue);
 
     void get(cxxprobe::server::router::Request& req, cxxprobe::server::router::Response& res);
 

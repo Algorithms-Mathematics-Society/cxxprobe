@@ -1,9 +1,9 @@
-#include "server/queue/concurrentqueue_submission_queue.hpp"
-
 #include <gtest/gtest.h>
 
 #include <stop_token>
 #include <thread>
+
+#include "server/queue/concurrentqueue_submission_queue.hpp"
 
 using cxxprobe::server::queue::ConcurrentQueueSubmissionQueue;
 using cxxprobe::server::queue::SubmissionJob;

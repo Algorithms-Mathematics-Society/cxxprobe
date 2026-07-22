@@ -1,4 +1,7 @@
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
+find_package(
+  Python3
+  COMPONENTS Interpreter
+  REQUIRED)
 
 set(CXXPROBE_UI_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 set(CXXPROBE_UI_GENERATED_CPP

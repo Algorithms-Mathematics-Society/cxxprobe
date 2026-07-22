@@ -12,7 +12,7 @@ MetricsHandler::MetricsHandler(std::shared_ptr<cxxprobe::server::metrics::Metric
     : registry_(std::move(registry)), queue_(std::move(queue)) {}
 
 void MetricsHandler::get(cxxprobe::server::router::Request& req,
-                        cxxprobe::server::router::Response& res) {
+                         cxxprobe::server::router::Response& res) {
     std::string accept = req.header(cxxprobe::server::router::beast_http::field::accept);
     res.set_status(200);
 
@@ -28,9 +28,8 @@ void MetricsHandler::get(cxxprobe::server::router::Request& req,
         return;
     }
 
-    res.set_text_body(
-        cxxprobe::server::metrics::render_prometheus_text(*registry_, *queue_),
-        "text/plain; version=0.0.4");
+    res.set_text_body(cxxprobe::server::metrics::render_prometheus_text(*registry_, *queue_),
+                      "text/plain; version=0.0.4");
 }
 
 }  // namespace cxxprobe::server::handlers

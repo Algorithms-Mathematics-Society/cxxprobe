@@ -1,8 +1,8 @@
-#include "server/events/local_event_bus.hpp"
-
 #include <gtest/gtest.h>
 
 #include <vector>
+
+#include "server/events/local_event_bus.hpp"
 
 using cxxprobe::server::events::Event;
 using cxxprobe::server::events::event_submission_id;

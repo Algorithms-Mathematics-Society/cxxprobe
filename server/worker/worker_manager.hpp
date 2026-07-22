@@ -14,12 +14,12 @@ namespace cxxprobe::server::worker {
 class WorkerManager {
 public:
     WorkerManager(std::size_t count,
-                 const std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue>& queue,
-                 const std::shared_ptr<cxxprobe::server::judge::IJudgeService>& judge,
-                 const std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository>& repo,
-                 const std::shared_ptr<cxxprobe::server::events::IEventBus>& bus,
-                 const std::shared_ptr<cxxprobe::server::services::ProblemCatalogService>& catalog,
-                 const std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry>& metrics);
+                  const std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue>& queue,
+                  const std::shared_ptr<cxxprobe::server::judge::IJudgeService>& judge,
+                  const std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository>& repo,
+                  const std::shared_ptr<cxxprobe::server::events::IEventBus>& bus,
+                  const std::shared_ptr<cxxprobe::server::services::ProblemCatalogService>& catalog,
+                  const std::shared_ptr<cxxprobe::server::metrics::MetricsRegistry>& metrics);
 
     // Requests every worker stop dequeuing new items; each worker finishes
     // its current in-flight judge to completion first (never killed

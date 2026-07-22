@@ -1,5 +1,6 @@
 #include "server/app.hpp"
 
+#include <atomic>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/post.hpp>
@@ -7,8 +8,6 @@
 #include <boost/asio/thread_pool.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
-
-#include <atomic>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -79,7 +78,8 @@ void handle_connection(tcp::socket socket, const router::Router& router,
     }
 
     router::Response res;
-    chain.run(req, res, [&](router::Request& r, router::Response& out) { router.dispatch(r, out); });
+    chain.run(req, res,
+              [&](router::Request& r, router::Response& out) { router.dispatch(r, out); });
 
     res.raw().keep_alive(false);
     res.raw().prepare_payload();
@@ -122,7 +122,7 @@ void handle_ui_connection(tcp::socket socket, handlers::UiAssetHandler& ui_handl
 // non-blocking mode instead, so shutdown is detected by polling a flag,
 // never by assuming a concurrent close() unblocks anything.
 bool bind_acceptor(tcp::acceptor& acceptor, const std::string& bind_address, unsigned short port,
-                  const std::string& label) {
+                   const std::string& label) {
     tcp::endpoint endpoint(asio::ip::make_address(bind_address), port);
     boost::system::error_code ec;
     acceptor.open(endpoint.protocol(), ec);
@@ -199,34 +199,27 @@ int run_server(const ServerConfig& config) {
     handlers::EventsHandler events_handler(bus);
 
     router::Router router;
-    router.add_route(beast_http::verb::get, "/health",
-                     [&](router::Request& req, router::Response& res) {
-                         health_handler.get(req, res);
-                     });
-    router.add_route(beast_http::verb::get, "/metrics",
-                     [&](router::Request& req, router::Response& res) {
-                         metrics_handler.get(req, res);
-                     });
-    router.add_route(beast_http::verb::get, "/problems",
-                     [&](router::Request& req, router::Response& res) {
-                         problems_handler.list(req, res);
-                     });
-    router.add_route(beast_http::verb::get, "/problems/{slug}",
-                     [&](router::Request& req, router::Response& res) {
-                         problems_handler.get(req, res);
-                     });
-    router.add_route(beast_http::verb::post, "/submissions",
-                     [&](router::Request& req, router::Response& res) {
-                         submissions_handler.post(req, res);
-                     });
-    router.add_route(beast_http::verb::get, "/submissions",
-                     [&](router::Request& req, router::Response& res) {
-                         submissions_handler.list(req, res);
-                     });
-    router.add_route(beast_http::verb::get, "/submissions/{id}",
-                     [&](router::Request& req, router::Response& res) {
-                         submissions_handler.get(req, res);
-                     });
+    router.add_route(
+        beast_http::verb::get, "/health",
+        [&](router::Request& req, router::Response& res) { health_handler.get(req, res); });
+    router.add_route(
+        beast_http::verb::get, "/metrics",
+        [&](router::Request& req, router::Response& res) { metrics_handler.get(req, res); });
+    router.add_route(
+        beast_http::verb::get, "/problems",
+        [&](router::Request& req, router::Response& res) { problems_handler.list(req, res); });
+    router.add_route(
+        beast_http::verb::get, "/problems/{slug}",
+        [&](router::Request& req, router::Response& res) { problems_handler.get(req, res); });
+    router.add_route(
+        beast_http::verb::post, "/submissions",
+        [&](router::Request& req, router::Response& res) { submissions_handler.post(req, res); });
+    router.add_route(
+        beast_http::verb::get, "/submissions",
+        [&](router::Request& req, router::Response& res) { submissions_handler.list(req, res); });
+    router.add_route(
+        beast_http::verb::get, "/submissions/{id}",
+        [&](router::Request& req, router::Response& res) { submissions_handler.get(req, res); });
 
     middleware::MiddlewareChain chain;
     chain.use(std::make_shared<middleware::LoggingMiddleware>());

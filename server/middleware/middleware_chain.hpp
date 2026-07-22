@@ -18,7 +18,7 @@ public:
 
     void use(std::shared_ptr<Middleware> mw);
     void run(cxxprobe::server::router::Request& req, cxxprobe::server::router::Response& res,
-            const Terminal& terminal) const;
+             const Terminal& terminal) const;
 
 private:
     std::vector<std::shared_ptr<Middleware>> middleware_;

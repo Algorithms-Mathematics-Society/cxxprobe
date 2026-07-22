@@ -34,7 +34,7 @@ std::string replace_all(std::string text, const std::string& from, const std::st
 UiAssetHandler::UiAssetHandler(std::string api_base_url) : api_base_url_(std::move(api_base_url)) {}
 
 void UiAssetHandler::serve(cxxprobe::server::router::Request& req,
-                          cxxprobe::server::router::Response& res) {
+                           cxxprobe::server::router::Response& res) {
     std::string path = req.path();
     if (path == "/") {
         path = "/index.html";
@@ -47,8 +47,8 @@ void UiAssetHandler::serve(cxxprobe::server::router::Request& req,
         return;
     }
 
-    std::string body(reinterpret_cast<const char*>(asset->data.data()),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-                     asset->data.size());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string body(reinterpret_cast<const char*>(asset->data.data()), asset->data.size());
     if (path == "/index.html") {
         // A distinct token from the JS global name it's assigned to
         // (window.__CXXPROBE_API_BASE__) — a naive substitution using the

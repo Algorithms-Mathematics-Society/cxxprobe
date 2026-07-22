@@ -5,9 +5,8 @@
 namespace cxxprobe::server::router {
 
 void Router::add_route(beast_http::verb method, const std::string& pattern, Handler handler) {
-    routes_.push_back(Route{.method = method,
-                            .pattern = RoutePattern(pattern),
-                            .handler = std::move(handler)});
+    routes_.push_back(
+        Route{.method = method, .pattern = RoutePattern(pattern), .handler = std::move(handler)});
 }
 
 void Router::dispatch(Request& req, Response& res) const {

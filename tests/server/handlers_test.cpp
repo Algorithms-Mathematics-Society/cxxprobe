@@ -1,8 +1,3 @@
-#include "server/handlers/health_handler.hpp"
-#include "server/handlers/metrics_handler.hpp"
-#include "server/handlers/problems_handler.hpp"
-#include "server/handlers/submissions_handler.hpp"
-
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -12,6 +7,10 @@
 #include <nlohmann/json.hpp>
 
 #include "server/events/local_event_bus.hpp"
+#include "server/handlers/health_handler.hpp"
+#include "server/handlers/metrics_handler.hpp"
+#include "server/handlers/problems_handler.hpp"
+#include "server/handlers/submissions_handler.hpp"
 #include "server/judge/cxxprobe_judge_service.hpp"
 #include "server/queue/concurrentqueue_submission_queue.hpp"
 #include "server/repository/sqlite_submission_repository.hpp"
@@ -40,14 +39,14 @@ Request make_request(beast_http::verb method, const std::string& target,
 class HandlersTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        base_dir_ = fs::temp_directory_path() /
-                   std::format("cxxprobe-handlers-test-{}-{}", static_cast<long>(::getpid()),
-                              counter_++);
+        base_dir_ =
+            fs::temp_directory_path() /
+            std::format("cxxprobe-handlers-test-{}-{}", static_cast<long>(::getpid()), counter_++);
         fs::path problem_dir = base_dir_ / "a-warmup";
         fs::create_directories(problem_dir);
         std::ofstream(problem_dir / "problem.yaml")
             << "version: 1\nname: \"A: Warmup\"\ndescription: \"\"\nstatement: problem.md\n"
-              "solution:\n  file: solution.cpp\n";
+               "solution:\n  file: solution.cpp\n";
         std::ofstream(problem_dir / "problem.md") << "# A: Warmup\n\nSome statement text.\n";
 
         catalog_ = std::make_shared<cxxprobe::server::services::ProblemCatalogService>(base_dir_);
@@ -87,7 +86,7 @@ TEST_F(HandlersTest, ProblemDetailIncludesStatementMarkdown) {
     json j = json::parse(res.raw().body());
     EXPECT_EQ(j["slug"], "a-warmup");
     EXPECT_NE(j["statement_markdown"].get<std::string>().find("Some statement text"),
-             std::string::npos);
+              std::string::npos);
     EXPECT_EQ(j["language"], "cpp");
 }
 

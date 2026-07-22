@@ -93,9 +93,9 @@ protected:
         if (!sandbox_available_) {
             GTEST_SKIP() << "sandbox not available — needs user namespaces + writable cgroup";
         }
-        base_dir_ = fs::temp_directory_path() /
-                   std::format("cxxprobe-server-pipeline-{}-{}", static_cast<long>(::getpid()),
-                              counter_++);
+        base_dir_ =
+            fs::temp_directory_path() / std::format("cxxprobe-server-pipeline-{}-{}",
+                                                    static_cast<long>(::getpid()), counter_++);
         fs::create_directories(base_dir_);
     }
 
@@ -157,8 +157,7 @@ int ServerPipelineTest::counter_ = 0;
 TEST_F(ServerPipelineTest, SubmitCorrectSolutionEndsUpFinishedWithPassOverall) {
     fs::path contest_dir = scaffold_contest_with_manual_test();
 
-    auto catalog =
-        std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
+    auto catalog = std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
     catalog->load();
     ASSERT_TRUE(catalog->find("sum-two-numbers").has_value());
 
@@ -178,10 +177,10 @@ TEST_F(ServerPipelineTest, SubmitCorrectSolutionEndsUpFinishedWithPassOverall) {
     cxxprobe::server::services::SubmissionService svc(queue, repo, bus, catalog,
                                                       base_dir_ / "work");
 
-    auto accepted = svc.submit(cxxprobe::server::services::SubmitRequest{
-        .problem_slug = "sum-two-numbers",
-        .language = "cpp",
-        .source = std::string(kCorrectSolution)});
+    auto accepted = svc.submit(
+        cxxprobe::server::services::SubmitRequest{.problem_slug = "sum-two-numbers",
+                                                  .language = "cpp",
+                                                  .source = std::string(kCorrectSolution)});
     ASSERT_FALSE(accepted.id.empty());
 
     auto rec = wait_for_terminal_status(svc, accepted.id);
@@ -193,18 +192,17 @@ TEST_F(ServerPipelineTest, SubmitCorrectSolutionEndsUpFinishedWithPassOverall) {
     EXPECT_NE(rec->report_json.find("\"PASS\""), std::string::npos) << rec->report_json;
 
     EXPECT_NE(std::find(events_seen.begin(), events_seen.end(), "submission_queued"),
-             events_seen.end());
+              events_seen.end());
     EXPECT_NE(std::find(events_seen.begin(), events_seen.end(), "submission_started"),
-             events_seen.end());
+              events_seen.end());
     EXPECT_NE(std::find(events_seen.begin(), events_seen.end(), "submission_finished"),
-             events_seen.end());
+              events_seen.end());
 }
 
 TEST_F(ServerPipelineTest, SubmitWrongSolutionEndsUpFinishedWithFailOverall) {
     fs::path contest_dir = scaffold_contest_with_manual_test();
 
-    auto catalog =
-        std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
+    auto catalog = std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
     catalog->load();
 
     auto queue = std::make_shared<cxxprobe::server::queue::ConcurrentQueueSubmissionQueue>(16);
@@ -232,8 +230,7 @@ TEST_F(ServerPipelineTest, SubmitWrongSolutionEndsUpFinishedWithFailOverall) {
 
 TEST_F(ServerPipelineTest, SubmitUnknownProblemThrowsProblemNotFound) {
     fs::path contest_dir = scaffold_contest_with_manual_test();
-    auto catalog =
-        std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
+    auto catalog = std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
     catalog->load();
 
     auto queue = std::make_shared<cxxprobe::server::queue::ConcurrentQueueSubmissionQueue>(16);
@@ -243,15 +240,15 @@ TEST_F(ServerPipelineTest, SubmitUnknownProblemThrowsProblemNotFound) {
 
     cxxprobe::server::services::SubmissionService svc(queue, repo, bus, catalog,
                                                       base_dir_ / "work");
-    EXPECT_THROW(svc.submit(cxxprobe::server::services::SubmitRequest{
-                    .problem_slug = "does-not-exist", .language = "cpp", .source = "int main(){}"}),
-                cxxprobe::server::services::ProblemNotFoundError);
+    EXPECT_THROW(
+        svc.submit(cxxprobe::server::services::SubmitRequest{
+            .problem_slug = "does-not-exist", .language = "cpp", .source = "int main(){}"}),
+        cxxprobe::server::services::ProblemNotFoundError);
 }
 
 TEST_F(ServerPipelineTest, SubmitUnsupportedLanguageThrows) {
     fs::path contest_dir = scaffold_contest_with_manual_test();
-    auto catalog =
-        std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
+    auto catalog = std::make_shared<cxxprobe::server::services::ProblemCatalogService>(contest_dir);
     catalog->load();
 
     auto queue = std::make_shared<cxxprobe::server::queue::ConcurrentQueueSubmissionQueue>(16);
@@ -261,7 +258,8 @@ TEST_F(ServerPipelineTest, SubmitUnsupportedLanguageThrows) {
 
     cxxprobe::server::services::SubmissionService svc(queue, repo, bus, catalog,
                                                       base_dir_ / "work");
-    EXPECT_THROW(svc.submit(cxxprobe::server::services::SubmitRequest{
-                    .problem_slug = "sum-two-numbers", .language = "python", .source = "print(1)"}),
-                cxxprobe::server::services::UnsupportedLanguageError);
+    EXPECT_THROW(
+        svc.submit(cxxprobe::server::services::SubmitRequest{
+            .problem_slug = "sum-two-numbers", .language = "python", .source = "print(1)"}),
+        cxxprobe::server::services::UnsupportedLanguageError);
 }

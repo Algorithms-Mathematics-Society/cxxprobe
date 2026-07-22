@@ -3,7 +3,6 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/beast/http.hpp>
-
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -28,14 +27,14 @@ std::string format_frame(const cxxprobe::server::events::Event& ev) {
     const std::string* sub_id = cxxprobe::server::events::event_submission_id(ev);
     std::string data = R"({"submission_id":")" + (sub_id != nullptr ? *sub_id : "") + "\"}";
     return std::string("event: ") + cxxprobe::server::events::event_type_name(ev) +
-          "\ndata: " + data + "\n\n";
+           "\ndata: " + data + "\n\n";
 }
 
 }  // namespace
 
 void EventsHandler::serve(boost::beast::tcp_stream& stream,
-                         const std::optional<std::string>& submission_id_filter,
-                         const std::atomic<bool>& shutting_down) {
+                          const std::optional<std::string>& submission_id_filter,
+                          const std::atomic<bool>& shutting_down) {
     beast_http::response<beast_http::empty_body> header{beast_http::status::ok, 11};
     header.set(beast_http::field::server, "cxxprobe");
     header.set(beast_http::field::content_type, "text/event-stream");

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <moodycamel/blockingconcurrentqueue.h>
+
 #include <atomic>
 #include <cstddef>
-
-#include <moodycamel/blockingconcurrentqueue.h>
 
 #include "server/queue/isubmission_queue.hpp"
 

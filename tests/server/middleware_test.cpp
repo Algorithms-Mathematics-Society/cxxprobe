@@ -1,9 +1,9 @@
+#include <gtest/gtest.h>
+
 #include "server/middleware/cors_middleware.hpp"
 #include "server/middleware/error_middleware.hpp"
 #include "server/middleware/middleware_chain.hpp"
 #include "server/services/submission_service.hpp"
-
-#include <gtest/gtest.h>
 
 namespace beast_http = cxxprobe::server::router::beast_http;
 using cxxprobe::server::middleware::CorsMiddleware;
@@ -82,9 +82,8 @@ TEST(ErrorMappingMiddlewareTest, MapsProblemNotFoundTo404) {
     ErrorMappingMiddleware mw;
     Request req = make_get_request("/submissions");
     Response res;
-    mw.handle(req, res, [] {
-        throw cxxprobe::server::services::ProblemNotFoundError("no-such-problem");
-    });
+    mw.handle(req, res,
+              [] { throw cxxprobe::server::services::ProblemNotFoundError("no-such-problem"); });
     EXPECT_EQ(res.raw().result_int(), 404);
     EXPECT_NE(res.raw().body().find("problem_not_found"), std::string::npos);
 }
@@ -94,7 +93,7 @@ TEST(ErrorMappingMiddlewareTest, MapsUnsupportedLanguageTo400) {
     Request req = make_get_request("/submissions");
     Response res;
     mw.handle(req, res,
-             [] { throw cxxprobe::server::services::UnsupportedLanguageError("python"); });
+              [] { throw cxxprobe::server::services::UnsupportedLanguageError("python"); });
     EXPECT_EQ(res.raw().result_int(), 400);
 }
 

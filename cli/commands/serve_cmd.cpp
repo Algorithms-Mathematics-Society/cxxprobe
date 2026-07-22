@@ -59,8 +59,8 @@ int ServeCommand::execute() {
         config.contest_dir = *found;
     } else {
         std::cerr << "cxxprobe serve: no contest.yaml found walking up from "
-                 << fs::current_path().string()
-                 << " — pass --contest-dir explicitly or run from inside a contest\n";
+                  << fs::current_path().string()
+                  << " — pass --contest-dir explicitly or run from inside a contest\n";
         return 1;
     }
 

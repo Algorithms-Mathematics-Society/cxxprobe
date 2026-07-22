@@ -13,7 +13,7 @@ HealthHandler::HealthHandler(std::shared_ptr<cxxprobe::server::worker::WorkerMan
       started_at_(std::chrono::steady_clock::now()) {}
 
 void HealthHandler::get(cxxprobe::server::router::Request& /*req*/,
-                       cxxprobe::server::router::Response& res) {
+                        cxxprobe::server::router::Response& res) {
     auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::steady_clock::now() - started_at_);
     cxxprobe::server::api::Json j = cxxprobe::server::api::health_to_json(

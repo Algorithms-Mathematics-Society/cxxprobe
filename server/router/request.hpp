@@ -1,7 +1,6 @@
 #pragma once
 
 #include <boost/beast/http.hpp>
-
 #include <string>
 #include <unordered_map>
 

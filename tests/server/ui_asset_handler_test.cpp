@@ -37,7 +37,7 @@ TEST(UiAssetHandlerTest, SubstitutesApiBaseIntoIndexHtmlWithoutCorruptingTheGlob
     const std::string& body = res.raw().body();
     // The substituted VALUE must be present...
     EXPECT_NE(body.find(R"(window.__CXXPROBE_API_BASE__ = "http://localhost:18291")"),
-             std::string::npos)
+              std::string::npos)
         << body;
     // ...and the JS global name itself (which shares a literal substring
     // with the substitution placeholder) must survive intact — a naive
