@@ -1,3 +1,10 @@
+## [0.8.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.8.0...v0.8.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **server:** fix clang-tidy failure breaking CI and release asset builds ([128d4a5](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/128d4a5187a089e8f20c95941853e64de7c89ccf))
+
 # [0.8.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.7.1...v0.8.0) (2026-07-21)
 
 
