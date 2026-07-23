@@ -2,5 +2,6 @@ export default {
   'folder-structure': 'Folder Structure',
   'sandbox-internals': 'Sandbox Internals',
   'resource-limits': 'Resource Limits',
-  'http-service': 'HTTP Judging Service'
+  'http-service': 'HTTP Judging Service',
+  'ams-integration-contract': 'AMS Integration Contract'
 }

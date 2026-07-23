@@ -2,6 +2,7 @@
 #include <CLI/CLI.hpp>
 // NOLINTEND(misc-include-cleaner)
 
+#include "commands/bundle_cmd.hpp"
 #include "commands/new_cmd.hpp"
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
@@ -21,6 +22,7 @@ int main(int argc, char* argv[]) {
 
     cxxprobe::cli::RunCommand run_cmd{app};
     cxxprobe::cli::NewCommand new_cmd{app};
+    cxxprobe::cli::BundleCommand bundle_cmd{app};
     cxxprobe::cli::TestCommand test_cmd{app};
 #ifdef CXXPROBE_SERVE_ENABLED
     cxxprobe::cli::ServeCommand serve_cmd{app};
@@ -33,6 +35,9 @@ int main(int argc, char* argv[]) {
     }
     if (new_cmd.contest_invoked() || new_cmd.problem_invoked()) {
         return new_cmd.execute();
+    }
+    if (bundle_cmd.validate_invoked()) {
+        return bundle_cmd.execute();
     }
     if (test_cmd.problem_invoked()) {
         return test_cmd.execute();

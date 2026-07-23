@@ -278,6 +278,15 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     cxxprobe::sandbox::Limits run_limits =
         cxxprobe::problem::resolve_limits(config.limits, defaults);
 
+    report.execution.compiler = {.cxx = resolved.cxx,
+                                 .std_flag = resolved.std_flag,
+                                 .flags = resolved.flags,
+                                 .extra_sources = resolved.extra_sources};
+    report.execution.limits = {.memory_bytes = run_limits.memory_bytes,
+                               .cpu_time_ms = run_limits.cpu.count(),
+                               .wall_time_ms = run_limits.wall.count(),
+                               .max_pids = run_limits.max_pids};
+
     if (config.tests.enabled) {
         fs::path solution_binary = make_temp_path("cxxprobe-solution");
         cxxprobe::compile::Request req;

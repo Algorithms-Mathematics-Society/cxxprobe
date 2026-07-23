@@ -9,6 +9,7 @@ add_executable(
   common/json_io.cpp
   commands/run_cmd.cpp
   commands/new_cmd.cpp
+  commands/bundle_cmd.cpp
   commands/test_cmd.cpp)
 
 target_link_libraries(cxxprobe-cli PRIVATE cxxprobe CLI11::CLI11

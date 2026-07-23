@@ -1,0 +1,340 @@
+---
+title: AMS Integration Contract
+description: Frozen v1 boundary between cxxprobe, the AMS Go control plane, and desktop clients.
+---
+
+import { Callout } from 'nextra/components'
+
+# AMS integration contract (v1)
+
+This document freezes the first production integration boundary between
+`cxxprobe`, the AMS Go service, and the AMS desktop/web client. It describes
+the **target contract**, not functionality that v0.8.1 already implements in
+full. Phase 1 work must satisfy the acceptance criteria at the end of this
+document before the integration is enabled for scored contests.
+
+The baseline is `cxxprobe` **v0.8.1** at commit
+`3fe00c404cd3565dc3d18e3f51ffbebde54aba30`.
+
+## Decision summary
+
+| Concern | v1 authority |
+|---|---|
+| Executable C++ problem semantics | `cxxprobe`: compiler configuration, limits, manual tests, custom checker, symbolic checks, and behavior checks |
+| Contest/session metadata | Go: question UUID, ordering, points, visibility, schedule, assignments, and eligibility |
+| Submission lifecycle | Go: authentication, authorization, durable queueing, idempotency, retries, attempt records, and result publication |
+| Scoring | Go, using the normalized verdict produced from the complete cxxprobe report |
+| Judge execution | Pinned cxxprobe CLI in a hardened Linux worker |
+| Desktop platforms | Windows, Linux, and macOS are API clients; none runs cxxprobe locally |
+| Problem identity | Immutable, content-addressed judge bundle pinned to every attempt |
+
+Only C++ is in scope. Other languages remain on their existing judge paths
+until an explicit, independently versioned contract is designed for them.
+
+## System boundary
+
+```text
+Windows / Linux / macOS client
+             |
+             | authenticated HTTPS
+             v
+       AMS Go control plane
+  metadata, attempts, idempotency,
+  durable queue, scoring, results
+             |
+             | attempt + immutable bundle digest
+             v
+        Linux judge worker
+  fetch inputs -> enter outer sandbox
+             |
+             | one process, canonical JSON
+             v
+  cxxprobe test problem <slug>
+    --dir <contest>
+    --submission <source.cpp>
+    --json
+```
+
+The Go attempt is the durable unit of work and the system of record. A
+cxxprobe invocation must not create a second attempt, decide whether a retry
+is a duplicate, or publish a score directly.
+
+## Invocation mode
+
+Phase 1 uses one CLI process per Go worker job. Both CLI and HTTP service use
+`judge::to_json(JudgeReport)`, so this does not create a private result
+format.
+
+`cxxprobe serve` is gated to local problem authoring and non-production
+prejudge use in v1. It must not become a second production queue or a public
+endpoint yet because the current service:
+
+- has no authentication or tenant boundary;
+- uses an in-memory queue and local event bus;
+- does not provide platform idempotency or recover queued SQLite rows after a
+  process restart;
+- does not persist the engine digest, bundle digest, or Go attempt ID; and
+- binds to `0.0.0.0` by default and enables permissive CORS.
+
+If `serve` is used for development, bind it to loopback, leave the developer
+UI off unless needed, and do not expose it to candidates. Promoting it to a
+production sidecar requires a separate design review covering all gaps above.
+
+No C ABI, cgo wrapper, or in-process library linkage is part of v1. Process
+isolation and a versioned JSON boundary are preferable to coupling the Go
+worker to a C++ ABI.
+
+## Immutable problem bundle
+
+### Authority and identity
+
+A v1 **judge bundle** is a minimal cxxprobe contest tree: it contains the
+`contest.yaml` wrapper and exactly one direct-child problem directory. That
+directory contains every file needed to load and execute the question,
+including private tests/checkers. More than one direct-child problem is
+rejected so the digest remains question-scoped while the bundle remains
+directly executable by `cxxprobe test problem -C`. The problem's executable
+identity is:
+
+```text
+sha256:<lowercase hex digest of canonical manifest content>
+```
+
+A versioned ordered-JSON manifest records the problem slug, resolved
+`execution.compiler` and `execution.limits`, and, for every included file, its
+normalized path, byte size, and SHA-256 digest. Resolution uses the same
+cxxprobe problem defaults and overrides as judging. The files are sorted by
+normalized path. `bundle_sha256` is computed from the compact canonical
+manifest JSON with the `bundle_sha256` self-digest field omitted.
+The complete emitted manifest then includes that digest. Compression, archive
+timestamps, permissions, and other packaging metadata therefore do not affect
+problem identity.
+
+Manifest production and bundle validation must be deterministic:
+
+- paths are UTF-8, relative, `/`-separated, sorted bytewise, and unique;
+- absolute paths, `..`, empty path segments, devices, FIFOs, hard links, and
+  symbolic links are rejected;
+- entries represented in the manifest are regular files only;
+- case-only path collisions are rejected, even on a case-sensitive host;
+- file bytes are not newline-normalized or otherwise rewritten; and
+- path length, file count, per-file size, and total expanded size are bounded.
+
+The canonical manifest serialization and contract version must be fixed by
+the Phase 1 implementation and covered by golden digest fixtures. A digest is
+always stored with that contract version; silently changing canonicalization
+is forbidden. Archive extraction still follows the rejection and size rules
+above, but an archive's byte representation is transport, not identity.
+
+Go stores the immutable bundle by digest. Contest publication pins the
+digest to its question record, and every attempt copies that digest. Editing
+a problem creates a new digest; it never mutates an existing object. The
+engine version/digest and problem digest cannot change for an active contest.
+
+Before publication, a trusted validation step must safely extract the bundle,
+load it with the pinned cxxprobe version, verify that the slug matches the Go
+mapping, and reject a problem with no enabled, meaningful checks.
+
+### Public and secret projections
+
+The judge bundle is secret and is never downloadable by a candidate client.
+Go derives and stores a separately approved **public projection** containing
+only fields needed to attempt the question, for example:
+
+- stable Go question ID and public title;
+- rendered statement and explicitly designated public assets;
+- language (`cpp`) and user-visible limits; and
+- an explicitly designated starter template, if present.
+
+The reference solution, expected answers, private inputs, custom checker,
+behavior checker, symbolic-check configuration, compiler diagnostics from
+checker builds, and the bundle archive are secret. A filename is not a
+security label: publication must use an allowlist manifest, not “copy all
+files except known secrets.” cxxprobe's `/problems` response is not the AMS
+candidate API.
+
+## Submission contract
+
+The desktop client submits source and a Go question/session identifier to Go.
+Go resolves the immutable bundle digest and records it on the attempt before
+queueing. A worker job contains, at minimum:
+
+- immutable Go attempt ID and idempotency key;
+- question ID, cxxprobe slug, and problem bundle digest;
+- source object digest and language (`cpp`);
+- exact worker image digest; and
+- exact cxxprobe version, commit, and binary digest.
+
+The trusted worker broker fetches the source and bundle, verifies both
+digests, safely extracts the bundle, and only then starts the no-network
+execution boundary. The submission filename/path returned by cxxprobe is
+internal data and must not be exposed to candidates.
+
+The worker invokes:
+
+```bash
+cxxprobe test problem "$SLUG" \
+  --dir "$EXTRACTED_CONTEST" \
+  --submission "$SOURCE_FILE" \
+  --json
+```
+
+It enforces an outer deadline, captures bounded stdout/stderr, parses exactly
+one JSON report, verifies the returned slug, and stores the raw report before
+normalization. CLI exit status is a consistency signal, not the result
+contract: `0` means `PASS`/`SKIPPED`, `1` means `FAIL`, and `2` means
+`ERROR` or an invocation/configuration failure.
+
+## Result and verdict normalization
+
+Go retains the full canonical cxxprobe report and derives its public/scoring
+verdict deterministically:
+
+| cxxprobe condition | Go scoring verdict | Structured failure kind |
+|---|---|---|
+| Solution compile ran and `ok` is false | `CE` | `solution_compile` |
+| Manual case `TLE`, `MLE`, `OLE`, or `RE` | same verdict | `manual_case` |
+| Manual case `WA` | `WA` | `manual_case` |
+| Symbolic status `FAIL` | `WA` | `symbolic_check` |
+| Behavior status `FAIL` | `WA` | `behavior_check` |
+| Overall `PASS` and all enabled sections pass | `AC` | none |
+| Overall/section `ERROR`, behavior-checker compile failure, malformed/missing JSON, slug mismatch, outer timeout, or worker failure | `IE` (not candidate fault) | specific infrastructure/configuration kind |
+| Overall `SKIPPED`, or every test section skipped | `IE` | `invalid_problem` |
+
+When several manual cases fail, Go uses cxxprobe's per-case verdicts and a
+documented deterministic precedence rather than relying on array accident.
+The v1 precedence is `TLE > MLE > OLE > RE > WA`. Section failures do not
+replace or discard the original report.
+
+`IE` attempts are non-scoring and follow Go's bounded retry policy. Candidate
+faults (`CE`, `WA`, `TLE`, `MLE`, `OLE`, `RE`) are terminal and are never
+retried merely to obtain a different verdict. Idempotent re-delivery may
+replay storage, but cannot create a second scored attempt.
+
+### Resource semantics
+
+The canonical source values are each manual case's:
+
+- `cpu_time_ms`: cgroup CPU consumption;
+- `wall_time_ms`: elapsed wall clock, including scheduling/waiting; and
+- `peak_memory_bytes`: cgroup peak memory.
+
+They are distinct quantities and must never be hashed, rounded for storage,
+subtracted, or substituted for one another. Go stores all three per case as
+integers in their canonical units. The legacy attempt-level `runtime_ms` is
+the maximum `cpu_time_ms` across executed manual cases; it is only a
+compatibility projection. The UI labels CPU and wall time separately.
+
+Behavior test `time_ms` is GoogleTest case timing, not equivalent to sandbox
+CPU or wall time and must not populate the legacy runtime field. Resource
+measurements are diagnostic and limit-enforcement evidence; they are not a
+cross-host ranking score unless a separately certified homogeneous worker
+pool and variance policy are in place.
+
+## Security boundary
+
+<Callout type="warning">
+  cxxprobe's current user/mount namespaces and cgroup v2 controls are strong
+  resource isolation, but not a complete adversarial-code boundary. They do
+  not provide a network namespace, seccomp filter, or filesystem overlay.
+</Callout>
+
+Every compile and run therefore occurs inside a disposable outer Linux
+boundary, such as a dedicated short-lived VM or reviewed microVM/container
+configuration, with:
+
+- no cloud credentials or access to instance metadata;
+- no outbound network and no inbound listener;
+- a read-only base filesystem and minimal read-only toolchain;
+- only the verified problem/source inputs and bounded scratch space mounted;
+- dropped capabilities, syscall filtering, no host PID namespace, and no
+  writable host paths;
+- independent CPU, memory, process, disk, output, and outer wall limits; and
+- destruction and sensitive-file cleanup after every attempt.
+
+The chosen runtime must support cgroup v2 delegation and unprivileged user
+namespaces without running cxxprobe as a broadly privileged container. This
+compatibility is a later deployment spike and a production integration gate,
+not an assumption. Results leave the boundary through a narrow
+broker-controlled channel only.
+
+## Compatibility and versioning
+
+Every stored result records these independent identities:
+
+- integration contract version (`ams-cxxprobe/v1`);
+- canonical manifest contract version and bundle SHA-256 digest;
+- cxxprobe semantic version, Git commit, and binary digest;
+- worker image digest; and
+- raw-report `report_schema_version`.
+
+The Phase 1 canonical report adds these required top-level provenance keys to
+the judging payload used by both CLI and HTTP transports:
+
+- `report_schema_version` selects the machine-report contract;
+- `engine` contains `name`, `version`, `commit`, and `dirty`; and
+- `execution` contains the resolved `compiler` and `limits` that actually
+  governed the run.
+
+The v0.8.1 release predates these keys; they are Phase 1 contract additions.
+The Go adapter validates the schema version and every required provenance
+field strictly while tolerating unknown additive fields within a compatible
+schema. Missing fields, changed enum strings, changed units, incompatible type
+changes, an unexpected commit, or a dirty production engine fail closed as
+`IE`. Before any engine upgrade, golden reports and representative problems
+run in shadow mode and differences are reviewed. An active contest stays on
+its pinned engine and bundle even if a newer worker is deployed.
+
+## Phase 1: cxxprobe acceptance criteria
+
+Phase 1 is limited to the machine-contract additions owned by the cxxprobe
+repository. It is complete only when all of the following are demonstrated:
+
+1. Canonical judge-report JSON carries `report_schema_version`,
+   `engine{name,version,commit,dirty}`, and
+   `execution{compiler,limits}`. CLI and HTTP serialization remain the same
+   contract.
+2. A machine-readable manifest/validation command produces identical
+   canonical manifest content and `bundle_sha256` on two clean hosts for the
+   same files, independent of archive/compression metadata.
+3. Validation rejects traversal, absolute paths, links, special files,
+   duplicate and case-colliding paths, unknown contract/schema versions, and
+   every configured size/count limit violation.
+4. Validation loads the problem with cxxprobe, reports resolved compiler,
+   flags and limits, and rejects a problem with no meaningful enabled checks.
+5. Committed golden manifests and reports cover stable identity plus `AC`,
+   `CE`, all manual verdicts, symbolic/behavior failure, invalid checker or
+   problem configuration, and all-skipped/empty problems.
+6. cxxprobe unit/integration tests and the documentation production build pass
+   from a clean checkout, and the CLI/reference documentation describes every
+   new field, versioning rule, limit, and failure mode.
+
+Phase 1 does not itself enable a production judge.
+
+## Later production integration gates
+
+After the cxxprobe-owned Phase 1 contract is complete, Go, worker deployment,
+and clients must independently prove all of the following before a scored
+pilot:
+
+- the candidate public projection is allowlist-based and cannot disclose
+  solutions, private inputs/answers, checker source, symbolic configuration,
+  bundle contents, or internal paths;
+- Go persists idempotency, source/problem identities, exact engine and worker
+  identities, raw reports, deterministic normalized verdicts, failure kinds,
+  and verbatim per-case resources;
+- the pinned worker verifies its cxxprobe binary and image identities at
+  startup, and duplicate delivery/crash/retry tests cannot duplicate or
+  overwrite a terminal score;
+- the selected outer boundary passes filesystem, network, metadata,
+  credential, process, resource-abuse, and cleanup tests while cxxprobe's
+  cgroup accounting works without broad privilege;
+- Windows, Linux, and macOS clients pass the same API contract tests and need
+  no local cxxprobe, WSL, or VM to submit; and
+- representative submissions pass shadow comparison, capacity, and variance
+  gates before feature-flagged cutover.
+
+`cxxprobe serve` remains outside the production request path unless it passes
+a separate promotion review for authentication, idempotency, durable recovery,
+provenance, bind policy, request/report limits, and CORS. No gate authorizes a
+mid-contest engine or bundle change.

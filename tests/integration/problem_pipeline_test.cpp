@@ -134,6 +134,14 @@ TEST_F(ProblemPipelineTest, FullRoundTripPassesAtBaseline) {
     json j = json::parse(r.stdout_text);
     EXPECT_EQ(j["overall"], "PASS");
     EXPECT_EQ(j["tests"]["behavior"]["status"], "PASS");
+    EXPECT_EQ(j["execution"]["compiler"]["cxx"], "g++");
+    EXPECT_EQ(j["execution"]["compiler"]["std_flag"], "c++23");
+    EXPECT_EQ(j["execution"]["compiler"]["flags"], json::array({"-O2", "-Wall"}));
+    EXPECT_EQ(j["execution"]["compiler"]["extra_sources"], json::array());
+    EXPECT_EQ(j["execution"]["limits"]["memory_bytes"], 256ULL * 1024 * 1024);
+    EXPECT_EQ(j["execution"]["limits"]["cpu_time_ms"], 5000);
+    EXPECT_EQ(j["execution"]["limits"]["wall_time_ms"], 10000);
+    EXPECT_EQ(j["execution"]["limits"]["max_pids"], 64);
 }
 
 TEST_F(ProblemPipelineTest, ManualTestFailureReportedIndependently) {
@@ -204,4 +212,35 @@ TEST_F(ProblemPipelineTest, SubmissionOverrideGradesDifferentFile) {
     EXPECT_EQ(j["overall"], "PASS");
     std::string submission = j["submission"].get<std::string>();
     EXPECT_NE(submission.find("other.cpp"), std::string::npos);
+}
+
+TEST(BundleCliTest, ValidateEmitsJsonManifest) {
+    const fs::path base = fs::temp_directory_path() /
+                          std::format("cxxprobe-bundle-cli-{}", static_cast<long>(::getpid()));
+    fs::remove_all(base);
+    fs::create_directories(base / "contest/a-problem");
+    write_file(base / "contest/contest.yaml", "version: 1\nname: \"Contest\"\n");
+    write_file(base / "contest/a-problem/problem.yaml",
+               "version: 1\nname: \"A Problem\"\nstatement: problem.md\n"
+               "solution:\n  file: solution.cpp\nsymbolic:\n  must_include: [\"main\"]\n");
+    write_file(base / "contest/a-problem/problem.md", "# A Problem\n");
+    write_file(base / "contest/a-problem/solution.cpp", "int main() {}\n");
+
+    const auto result = run_cli({"bundle", "validate", "contest", "--json"}, base);
+    fs::remove_all(base);
+
+    ASSERT_EQ(result.exit_code, 0) << result.stdout_text;
+    const auto output = json::parse(result.stdout_text);
+    EXPECT_TRUE(output["valid"].get<bool>());
+    EXPECT_EQ(output["contract"], "cxxprobe.problem-bundle");
+    EXPECT_EQ(output["file_count"], 4);
+    EXPECT_EQ(output["problems"][0]["execution"]["compiler"]["cxx"], "g++");
+    EXPECT_EQ(output["problems"][0]["execution"]["compiler"]["std_flag"], "c++23");
+    EXPECT_EQ(output["problems"][0]["execution"]["compiler"]["flags"],
+              json::array({"-O2", "-Wall"}));
+    EXPECT_EQ(output["problems"][0]["execution"]["compiler"]["extra_sources"], json::array());
+    EXPECT_EQ(output["problems"][0]["execution"]["limits"]["memory_bytes"], 268435456);
+    EXPECT_EQ(output["problems"][0]["execution"]["limits"]["cpu_time_ms"], 5000);
+    EXPECT_EQ(output["problems"][0]["execution"]["limits"]["wall_time_ms"], 10000);
+    EXPECT_EQ(output["problems"][0]["execution"]["limits"]["max_pids"], 64);
 }

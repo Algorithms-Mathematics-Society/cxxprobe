@@ -2,6 +2,13 @@
 
 namespace cxxprobe::judge {
 
+EngineProvenance engine_provenance() {
+    return {.name = "cxxprobe",
+            .version = CXXPROBE_VERSION,
+            .commit = CXXPROBE_GIT_COMMIT,
+            .dirty = CXXPROBE_GIT_DIRTY};
+}
+
 namespace {
 
 using Json = nlohmann::ordered_json;
@@ -57,6 +64,33 @@ Json gtest_case_to_json(const cxxprobe::gtest_report::CaseResult& c) {
 
 Json to_json(const JudgeReport& report) {
     Json j;
+    j["report_schema_version"] = kJudgeReportSchemaVersion;
+
+    const EngineProvenance provenance = engine_provenance();
+    Json engine;
+    engine["name"] = provenance.name;
+    engine["version"] = provenance.version;
+    engine["commit"] = provenance.commit;
+    engine["dirty"] = provenance.dirty;
+    j["engine"] = std::move(engine);
+
+    Json compiler;
+    compiler["cxx"] = report.execution.compiler.cxx;
+    compiler["std_flag"] = report.execution.compiler.std_flag;
+    compiler["flags"] = report.execution.compiler.flags;
+    compiler["extra_sources"] = report.execution.compiler.extra_sources;
+
+    Json limits;
+    limits["memory_bytes"] = report.execution.limits.memory_bytes;
+    limits["cpu_time_ms"] = report.execution.limits.cpu_time_ms;
+    limits["wall_time_ms"] = report.execution.limits.wall_time_ms;
+    limits["max_pids"] = report.execution.limits.max_pids;
+
+    Json execution;
+    execution["compiler"] = std::move(compiler);
+    execution["limits"] = std::move(limits);
+    j["execution"] = std::move(execution);
+
     j["problem"] = report.problem_name;
     j["slug"] = report.slug;
     j["submission"] = report.submission_path;

@@ -13,6 +13,7 @@ add_library(
   gtest_report/gtest_report.cpp
   compile/compile.cpp
   cases/cases.cpp
+  bundle/bundle.cpp
   judge/judge.cpp
   judge/judge_json.cpp)
 
@@ -37,6 +38,9 @@ find_package(GTest REQUIRED)
 target_compile_definitions(
   cxxprobe
   PRIVATE
+    CXXPROBE_VERSION="${PROJECT_VERSION}"
+    CXXPROBE_GIT_COMMIT="${CXXPROBE_GIT_COMMIT}"
+    CXXPROBE_GIT_DIRTY=${CXXPROBE_GIT_DIRTY}
     CXXPROBE_GTEST_INCLUDE_DIR="$<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>"
     CXXPROBE_GTEST_LIB_DIR="$<TARGET_PROPERTY:GTest::gtest,INTERFACE_LINK_DIRECTORIES>"
 )

@@ -14,6 +14,23 @@
 
 namespace cxxprobe::judge {
 
+// Increment only when a consumer-breaking change is made to the canonical
+// JudgeReport JSON shape. Additive fields do not require a new schema version.
+inline constexpr std::uint32_t kJudgeReportSchemaVersion{1};
+
+struct EngineProvenance {
+    std::string name;
+    std::string version;
+    std::string commit;
+    bool dirty{false};
+};
+
+// Provenance of the cxxprobe build that produces JudgeReport JSON. `commit` is
+// the 40-character Git HEAD captured at configure time, or "unknown" for
+// source archives whose packager did not set CXXPROBE_GIT_COMMIT. `dirty` is
+// true when the source tree differs from that commit or cannot be verified.
+EngineProvenance engine_provenance();
+
 enum class Status : std::uint8_t { Pass, Fail, Skipped, Error };
 
 const char* status_str(Status s);
@@ -53,6 +70,25 @@ struct CompileStepReport {
     std::string diagnostics;
 };
 
+struct CompilerExecution {
+    std::string cxx;
+    std::string std_flag;
+    std::vector<std::string> flags;
+    std::vector<std::string> extra_sources;
+};
+
+struct LimitsExecution {
+    std::size_t memory_bytes{0};
+    long cpu_time_ms{0};
+    long wall_time_ms{0};
+    unsigned max_pids{0};
+};
+
+struct ExecutionProvenance {
+    CompilerExecution compiler;
+    LimitsExecution limits;
+};
+
 struct JudgeReport {
     std::string problem_name;
     std::string slug;
@@ -63,6 +99,7 @@ struct JudgeReport {
     BehaviorReport behavior;
     CompileStepReport solution_compile;
     CompileStepReport behavior_compile;
+    ExecutionProvenance execution;
 };
 
 // Compiles submission_override (or, if unset, config.solution_file) and
@@ -76,9 +113,10 @@ JudgeReport run_problem(
     const cxxprobe::problem::ProjectDefaults& defaults,
     const std::optional<std::filesystem::path>& submission_override = std::nullopt);
 
-// Canonical JSON shape for a JudgeReport — the single source of truth used
-// by both `cxxprobe test problem --json` and `cxxprobe serve`'s HTTP API.
-// Field order matches insertion order (ordered_json), not alphabetical.
+// Canonical, versioned JSON shape for a JudgeReport — the single source of
+// truth used by both `cxxprobe test problem --json` and `cxxprobe serve`'s
+// HTTP API. Field order matches insertion order (ordered_json), not
+// alphabetical.
 nlohmann::ordered_json to_json(const JudgeReport& report);
 
 }  // namespace cxxprobe::judge

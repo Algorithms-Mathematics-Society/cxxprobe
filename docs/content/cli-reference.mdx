@@ -11,9 +11,10 @@ import { Callout } from 'nextra/components'
 cxxprobe <subcommand> [OPTIONS] ...
 ```
 
-cxxprobe has five subcommands: [`run`](#run) (sandbox a program directly),
+cxxprobe has six subcommands: [`run`](#run) (sandbox a program directly),
 [`new contest`](#new-contest--new-problem) / [`new problem`](#new-contest--new-problem)
-(scaffolding), [`test problem`](#test-problem) (judging), and
+(scaffolding), [`test problem`](#test-problem) (judging),
+[`bundle validate`](#bundle-validate) (deterministic bundle validation), and
 [`serve`](#serve) (the HTTP judging service). `-V`/`--version` works at the
 top level without a subcommand.
 
@@ -159,6 +160,64 @@ cxxprobe new problem "Name" [-C/--dir CONTEST_DIR]
 See [Folder Structure](/architecture/folder-structure) for exactly what gets
 generated and why, and [Contest Workflows](/guides/contest-workflows) for the
 end-to-end authoring flow.
+
+---
+
+## `bundle validate`
+
+Validates one publishable question, materialized as a minimal contest tree,
+and emits its immutable content identity. Version 1 requires exactly one
+direct-child problem directory; this keeps the digest question-scoped while
+remaining directly usable with `cxxprobe test problem -C`.
+
+```text
+cxxprobe bundle validate CONTEST_DIR [--json]
+```
+
+The validator loads `contest.yaml` and every direct-child `problem.yaml`, then
+recursively hashes every regular file. Paths are normalized to relative UTF-8
+with `/` separators and sorted bytewise. Symlinks, special files, unsafe or
+Windows-reserved names, ASCII case collisions, traversal references, symbolic
+links, hard links, and trees over the conservative file/size/path limits are
+rejected.
+
+The bundle SHA-256 is the SHA-256 of the compact, ordered schema-v1 JSON
+manifest with only its `bundle_sha256` self-digest field omitted. That canonical
+content includes sorted file paths, sizes, per-file SHA-256 values, and the
+problem's resolved `execution.compiler` (`cxx`, `std_flag`, `flags`, and
+`extra_sources`) and `execution.limits` (`memory_bytes`, `cpu_time_ms`,
+`wall_time_ms`, and `max_pids`). Resolution uses the same cxxprobe problem
+defaults and overrides as judging, so effective execution changes are part of
+problem identity. It deliberately does not include archive/compression
+metadata, mtimes, ownership, or permission bits. Referenced statement,
+solution, checker, and enabled test resources must exist inside the problem
+directory. `--json` emits the ordered manifest. A publishable question must
+enable at least one manual, symbolic, or behavior check. Successful validation
+exits `0`; invalid input exits `2`.
+
+Each problem entry in the JSON manifest exposes the exact effective execution
+configuration that is covered by `bundle_sha256`:
+
+```json
+{
+  "slug": "a-problem",
+  "name": "A Problem",
+  "execution": {
+    "compiler": {
+      "cxx": "g++",
+      "std_flag": "c++23",
+      "flags": ["-O2", "-Wall"],
+      "extra_sources": []
+    },
+    "limits": {
+      "memory_bytes": 268435456,
+      "cpu_time_ms": 5000,
+      "wall_time_ms": 10000,
+      "max_pids": 64
+    }
+  }
+}
+```
 
 ---
 
