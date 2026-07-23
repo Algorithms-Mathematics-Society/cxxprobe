@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.8.1...v0.9.0) (2026-07-23)
+
+
+### Features
+
+* **bundle:** add versioned AMS integration contract ([fdcedcc](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/fdcedcc4c1aaee04788069e7c4aac32e629f052b))
+
 ## [0.8.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.8.0...v0.8.1) (2026-07-22)
 
 
