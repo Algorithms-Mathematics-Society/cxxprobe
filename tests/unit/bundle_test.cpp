@@ -115,6 +115,13 @@ TEST_F(BundleTest, VersionTwoCanonicalizesExplicitPublicFilesAndCoversThemByDige
     const auto json = cxxprobe::bundle::to_json(before);
     EXPECT_EQ(before.bundle_sha256,
               "620c9971335896b972e4be3b34a5f13d701e88728776d4d694a6592e60ca3b31");
+
+    std::ifstream golden_file{fs::path{__FILE__}.parent_path().parent_path() /
+                              "fixtures/bundle_manifest_v2.golden.json"};
+    ASSERT_TRUE(golden_file.is_open());
+    nlohmann::ordered_json golden;
+    golden_file >> golden;
+    EXPECT_EQ(json, golden);
     const auto& public_json = json["problems"][0]["public"];
     EXPECT_EQ(public_json["statement"], "a-problem/problem.md");
     ASSERT_EQ(public_json["assets"].size(), 2U);

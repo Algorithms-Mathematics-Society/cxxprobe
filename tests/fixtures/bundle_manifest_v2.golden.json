@@ -1,0 +1,86 @@
+{
+  "contract": "cxxprobe.problem-bundle",
+  "schema_version": 2,
+  "valid": true,
+  "hash_algorithm": "sha256",
+  "bundle_sha256": "620c9971335896b972e4be3b34a5f13d701e88728776d4d694a6592e60ca3b31",
+  "file_count": 7,
+  "total_bytes": 407,
+  "problems": [
+    {
+      "slug": "a-problem",
+      "name": "A Problem",
+      "public": {
+        "statement": "a-problem/problem.md",
+        "assets": [
+          {
+            "path": "a-problem/public/a.jpg",
+            "media_type": "image/jpeg"
+          },
+          {
+            "path": "a-problem/public/z.png",
+            "media_type": "image/png"
+          }
+        ],
+        "starter": {
+          "path": "a-problem/public/starter.cpp",
+          "language": "cpp"
+        }
+      },
+      "execution": {
+        "compiler": {
+          "cxx": "g++",
+          "std_flag": "c++23",
+          "flags": [
+            "-O2",
+            "-Wall"
+          ],
+          "extra_sources": []
+        },
+        "limits": {
+          "memory_bytes": 268435456,
+          "cpu_time_ms": 5000,
+          "wall_time_ms": 10000,
+          "max_pids": 64
+        }
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "a-problem/problem.md",
+      "size_bytes": 12,
+      "sha256": "d3ec5d7506b2761adc61abb6a0f83e1e6b1dfdf5cfd509ae780541bbb71ee946"
+    },
+    {
+      "path": "a-problem/problem.yaml",
+      "size_bytes": 318,
+      "sha256": "95575fb411c58bb7b3907699b348e74ee86cb42862c3440d359e0767f7e89b88"
+    },
+    {
+      "path": "a-problem/public/a.jpg",
+      "size_bytes": 3,
+      "sha256": "6e568e1f67fba258184c78181539e5e8fdee447e49bb706fc0ea34fbf12336a5"
+    },
+    {
+      "path": "a-problem/public/starter.cpp",
+      "size_bytes": 25,
+      "sha256": "deac66ccb79f6d31c0fa7d358de48e083c15c02ff50ec1ebd4b64314b9e6e196"
+    },
+    {
+      "path": "a-problem/public/z.png",
+      "size_bytes": 8,
+      "sha256": "4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6"
+    },
+    {
+      "path": "a-problem/solution.cpp",
+      "size_bytes": 14,
+      "sha256": "bc8bb8e433bf65214540115414c821c904b2a30d60a3ac0424bf9b77a00024b7"
+    },
+    {
+      "path": "contest.yaml",
+      "size_bytes": 27,
+      "sha256": "76dd86fde798b89c559d1af33611e44b7f29e1c15d2003f3d0d4c6a9d35d91f6"
+    }
+  ]
+}
