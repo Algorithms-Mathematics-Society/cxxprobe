@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.0...v0.10.0) (2026-07-24)
+
+
+### Features
+
+* **bundle:** add public projection schema ([56ac877](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/56ac877dd8d2313986a5832100676c694c1fc943))
+
 # [0.9.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.8.1...v0.9.0) (2026-07-23)
 
 
