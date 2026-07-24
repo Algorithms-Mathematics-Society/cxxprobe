@@ -153,6 +153,19 @@ security label: publication must use an allowlist manifest, not “copy all
 files except known secrets.” cxxprobe's `/problems` response is not the AMS
 candidate API.
 
+The authoritative projection is the digest-covered `public` object in bundle
+manifest schema 2. Authors opt in through `problem.yaml` version 2 with
+`public.statement`, an explicit `public.assets` list, and an optional
+`public.starter`; omission means private. cxxprobe returns canonical
+slug-prefixed paths, declared raster media types, and starter language. It
+rejects private execution resources, paths outside `public/` for assets and
+starter, unsafe text, unsupported or mismatched raster files, and configured
+size/count limits. Go must copy only the paths named by this object from the
+already digest-verified bundle. It must not rescan the tree or infer visibility
+from a filename. Schema 1 remains accepted for immutable compatibility but has
+no public projection and therefore cannot be published to candidates without a
+separate migration to a schema-2 bundle.
+
 ## Submission contract
 
 The desktop client submits source and a Go question/session identifier to Go.
@@ -267,6 +280,12 @@ Every stored result records these independent identities:
 - cxxprobe semantic version, Git commit, and binary digest;
 - worker image digest; and
 - raw-report `report_schema_version`.
+
+Before accepting a bundle or attempt, the Go worker invokes `cxxprobe identity
+--json` and verifies the versioned `cxxprobe.engine-identity` object against its
+pinned semantic version, full Git commit, dirty-state policy, and independently
+computed binary SHA-256. The identity command reports only values embedded at
+build time; `commit: "unknown"` is always dirty and is not production-eligible.
 
 The Phase 1 canonical report adds these required top-level provenance keys to
 the judging payload used by both CLI and HTTP transports:

@@ -53,8 +53,8 @@ cxxprobe new problem "A: FileReader RAII"
 
 | File / folder | Purpose |
 |---|---|
-| `problem.yaml` | Config: compiler/limits overrides, and the 3 consolidated test type settings — see [CLI Reference](/cli-reference#test-problem) |
-| `problem.md` | Human-readable statement — not read by cxxprobe |
+| `problem.yaml` | Version-2 config: private-by-default public projection, compiler/limits overrides, and the 3 consolidated test type settings — see [CLI Reference](/cli-reference#public-projection-schema-2) |
+| `problem.md` | Human-readable statement; candidate-visible only when `public.statement: true` |
 | `solution_template.cpp` | Copy to `solution.cpp` and fill in — the reference solution |
 | `checker_gtest.cpp` | GTest `TEST()` cases exercising the submission directly (consolidated type 3) |
 | `tests/` | `.in`/`.ans` pairs (consolidated type 1) — empty until you add cases |
@@ -71,6 +71,11 @@ tests and symbolic checks are inferred **disabled** until you actually add
 the placeholder `TEST()` in `checker_gtest.cpp` passes trivially, so the
 pipeline itself is verified working before you've written a line of the
 actual solution.
+
+The scaffold declares an empty `public` allowlist. To publish raster assets or
+a starter, create paths such as `public/diagram.png` and
+`public/starter.cpp`, then list them explicitly in `public.assets` or
+`public.starter`. Merely placing a file in `public/` does not expose it.
 
 <Callout type="warning">
   `checker_gtest.cpp` includes the submission via the `CXXPROBE_SOLUTION_FILE`

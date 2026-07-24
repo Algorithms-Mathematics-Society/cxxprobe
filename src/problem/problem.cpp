@@ -6,6 +6,7 @@
 #include <cctype>
 #include <chrono>
 #include <format>
+#include <initializer_list>
 #include <stdexcept>
 
 namespace cxxprobe::problem {
@@ -231,6 +232,68 @@ BehaviorConfig parse_behavior_section(const YAML::Node& doc,
     return behavior;
 }
 
+void require_only_keys(const YAML::Node& node,
+                       std::initializer_list<std::string_view> allowed,
+                       std::string_view section) {
+    if (!node.IsMap()) {
+        throw std::runtime_error{std::format("problem.yaml {} must be a mapping", section)};
+    }
+    for (const auto& entry : node) {
+        if (!entry.first.IsScalar()) {
+            throw std::runtime_error{
+                std::format("problem.yaml {} contains a non-string key", section)};
+        }
+        const std::string key = entry.first.as<std::string>();
+        if (std::ranges::find(allowed, key) == allowed.end()) {
+            throw std::runtime_error{
+                std::format("problem.yaml {} contains unknown key '{}'", section, key)};
+        }
+    }
+}
+
+PublicConfig parse_public_section(const YAML::Node& doc, std::uint32_t version) {
+    PublicConfig public_files;
+    YAML::Node p = doc["public"];
+    if (!p) {
+        return public_files;
+    }
+    if (version != 2) {
+        throw std::runtime_error{"problem.yaml public requires version 2"};
+    }
+    require_only_keys(p, {"statement", "assets", "starter"}, "public");
+
+    if (p["statement"]) {
+        public_files.statement = p["statement"].as<bool>();
+    }
+    if (p["assets"]) {
+        if (!p["assets"].IsSequence()) {
+            throw std::runtime_error{"problem.yaml public.assets must be a sequence"};
+        }
+        for (const auto& entry : p["assets"]) {
+            require_only_keys(entry, {"path", "media_type"}, "public.assets[]");
+            if (!entry["path"] || !entry["media_type"]) {
+                throw std::runtime_error{
+                    "problem.yaml public asset requires path and media_type"};
+            }
+            public_files.assets.push_back({.path = entry["path"].as<std::string>(),
+                                           .media_type =
+                                               entry["media_type"].as<std::string>()});
+        }
+    }
+    if (p["starter"] && !p["starter"].IsNull()) {
+        YAML::Node starter = p["starter"];
+        require_only_keys(starter, {"path", "language"}, "public.starter");
+        if (!starter["path"] || !starter["language"]) {
+            throw std::runtime_error{
+                "problem.yaml public.starter requires path and language"};
+        }
+        public_files.starter = PublicStarterConfig{
+            .path = starter["path"].as<std::string>(),
+            .language = starter["language"].as<std::string>()};
+    }
+    return public_files;
+}
+
 }  // namespace
 
 std::string slugify(std::string_view title) {
@@ -264,15 +327,16 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     }
 
     int version = doc["version"] ? doc["version"].as<int>() : 0;
-    if (version != 1) {
+    if (version != 1 && version != 2) {
         throw std::runtime_error{
-            std::format("unsupported problem.yaml version {} (expected 1)", version)};
+            std::format("unsupported problem.yaml version {} (expected 1 or 2)", version)};
     }
     if (!doc["name"]) {
         throw std::runtime_error{"problem.yaml missing required 'name'"};
     }
 
     ProblemConfig cfg;
+    cfg.version = static_cast<std::uint32_t>(version);
     cfg.problem_dir = std::filesystem::absolute(problem_yaml_path.parent_path());
     cfg.slug = cfg.problem_dir.filename().string();
     cfg.name = doc["name"].as<std::string>();
@@ -289,6 +353,7 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     cfg.tests = parse_tests_section(doc, cfg.problem_dir);
     cfg.symbolic = parse_symbolic_section(doc);
     cfg.behavior = parse_behavior_section(doc, cfg.problem_dir);
+    cfg.public_files = parse_public_section(doc, cfg.version);
 
     return cfg;
 }

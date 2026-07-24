@@ -47,12 +47,16 @@ name: "Test Problem"
 TEST_F(ProblemConfigTest, MinimalConfigParsesWithDefaults) {
     write("problem.yaml", kMinimalYaml);
     auto cfg = load_from_dir(dir_);
+    EXPECT_EQ(cfg.version, 1U);
     EXPECT_EQ(cfg.name, "Test Problem");
     EXPECT_EQ(cfg.solution_file, "solution.cpp");
     EXPECT_EQ(cfg.statement, "problem.md");
     EXPECT_FALSE(cfg.tests.enabled);     // no tests/ dir with .in files
     EXPECT_FALSE(cfg.symbolic.enabled);  // no must_include/must_not_include
     EXPECT_FALSE(cfg.behavior.enabled);  // no checker_gtest.cpp on disk
+    EXPECT_FALSE(cfg.public_files.statement);
+    EXPECT_TRUE(cfg.public_files.assets.empty());
+    EXPECT_FALSE(cfg.public_files.starter);
 }
 
 TEST_F(ProblemConfigTest, MissingNameThrows) {
@@ -61,7 +65,57 @@ TEST_F(ProblemConfigTest, MissingNameThrows) {
 }
 
 TEST_F(ProblemConfigTest, UnknownVersionThrows) {
-    write("problem.yaml", "version: 2\nname: \"x\"\n");
+    write("problem.yaml", "version: 99\nname: \"x\"\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, VersionTwoPublicProjectionParses) {
+    write("problem.yaml", R"YAML(version: 2
+name: "Public Problem"
+public:
+  statement: true
+  assets:
+    - path: public/diagram.png
+      media_type: image/png
+  starter:
+    path: public/starter.cpp
+    language: cpp
+)YAML");
+
+    const auto cfg = load_from_dir(dir_);
+    EXPECT_EQ(cfg.version, 2U);
+    EXPECT_TRUE(cfg.public_files.statement);
+    ASSERT_EQ(cfg.public_files.assets.size(), 1U);
+    EXPECT_EQ(cfg.public_files.assets[0].path, "public/diagram.png");
+    EXPECT_EQ(cfg.public_files.assets[0].media_type, "image/png");
+    ASSERT_TRUE(cfg.public_files.starter);
+    EXPECT_EQ(cfg.public_files.starter->path, "public/starter.cpp");
+    EXPECT_EQ(cfg.public_files.starter->language, "cpp");
+}
+
+TEST_F(ProblemConfigTest, VersionTwoDefaultsToNoPublicFiles) {
+    write("problem.yaml", "version: 2\nname: \"Private Problem\"\n");
+    const auto cfg = load_from_dir(dir_);
+    EXPECT_FALSE(cfg.public_files.statement);
+    EXPECT_TRUE(cfg.public_files.assets.empty());
+    EXPECT_FALSE(cfg.public_files.starter);
+}
+
+TEST_F(ProblemConfigTest, VersionOneCannotDeclarePublicFiles) {
+    write("problem.yaml",
+          "version: 1\nname: \"x\"\npublic:\n  statement: true\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+
+    write("problem.yaml", "version: 1\nname: \"x\"\npublic: null\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, PublicProjectionRejectsUnknownKeysAndIncompleteEntries) {
+    write("problem.yaml", "version: 2\nname: \"x\"\npublic:\n  expose_all: true\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+
+    write("problem.yaml",
+          "version: 2\nname: \"x\"\npublic:\n  assets:\n    - path: public/a.png\n");
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
 }
 

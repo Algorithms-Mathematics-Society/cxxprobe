@@ -39,6 +39,13 @@ protected:
         output << content;
     }
 
+    void use_v2(std::string_view public_yaml) {
+        write("a-problem/problem.yaml",
+              std::string{"version: 2\nname: \"A Problem\"\nstatement: problem.md\n"} +
+                  std::string{public_yaml} +
+                  "solution:\n  file: solution.cpp\nsymbolic:\n  must_include: [\"main\"]\n");
+    }
+
     fs::path dir_;
 };
 
@@ -49,6 +56,7 @@ TEST_F(BundleTest, ProducesGoldenCanonicalManifest) {
     ASSERT_EQ(json["files"].size(), 4U);
     EXPECT_EQ(json["contract"], "cxxprobe.problem-bundle");
     EXPECT_EQ(json["schema_version"], 1);
+    EXPECT_FALSE(json["problems"][0].contains("public"));
     EXPECT_EQ(json["bundle_sha256"],
               "5c2115f6bdbcc10b460946c3009f32df0f0fd35ed840eaa4560ec8fb62cd3ce9");
     EXPECT_EQ(json["files"][0]["path"], "a-problem/problem.md");
@@ -74,6 +82,107 @@ TEST_F(BundleTest, ProducesGoldenCanonicalManifest) {
     EXPECT_EQ(json["problems"][0]["execution"]["limits"]["cpu_time_ms"], 5000);
     EXPECT_EQ(json["problems"][0]["execution"]["limits"]["wall_time_ms"], 10000);
     EXPECT_EQ(json["problems"][0]["execution"]["limits"]["max_pids"], 64);
+}
+
+TEST_F(BundleTest, VersionTwoIsPrivateByDefault) {
+    use_v2("");
+    const auto manifest = cxxprobe::bundle::validate(dir_);
+    const auto json = cxxprobe::bundle::to_json(manifest);
+
+    EXPECT_EQ(json["schema_version"], 2);
+    EXPECT_TRUE(json["problems"][0]["public"]["statement"].is_null());
+    EXPECT_EQ(json["problems"][0]["public"]["assets"], nlohmann::json::array());
+    EXPECT_TRUE(json["problems"][0]["public"]["starter"].is_null());
+}
+
+TEST_F(BundleTest, VersionTwoCanonicalizesExplicitPublicFilesAndCoversThemByDigest) {
+    use_v2(R"YAML(public:
+  statement: true
+  assets:
+    - path: public/z.png
+      media_type: image/png
+    - path: public/a.jpg
+      media_type: image/jpeg
+  starter:
+    path: public/starter.cpp
+    language: cpp
+)YAML");
+    write("a-problem/public/z.png", std::string{"\x89PNG\r\n\x1a\n", 8});
+    write("a-problem/public/a.jpg", std::string{"\xff\xd8\xff", 3});
+    write("a-problem/public/starter.cpp", "int main() { return 0; }\n");
+
+    const auto before = cxxprobe::bundle::validate(dir_);
+    const auto json = cxxprobe::bundle::to_json(before);
+    EXPECT_EQ(before.bundle_sha256,
+              "620c9971335896b972e4be3b34a5f13d701e88728776d4d694a6592e60ca3b31");
+    const auto& public_json = json["problems"][0]["public"];
+    EXPECT_EQ(public_json["statement"], "a-problem/problem.md");
+    ASSERT_EQ(public_json["assets"].size(), 2U);
+    EXPECT_EQ(public_json["assets"][0]["path"], "a-problem/public/a.jpg");
+    EXPECT_EQ(public_json["assets"][0]["media_type"], "image/jpeg");
+    EXPECT_EQ(public_json["assets"][1]["path"], "a-problem/public/z.png");
+    EXPECT_EQ(public_json["starter"]["path"], "a-problem/public/starter.cpp");
+    EXPECT_EQ(public_json["starter"]["language"], "cpp");
+
+    use_v2("");
+    EXPECT_NE(cxxprobe::bundle::validate(dir_).bundle_sha256, before.bundle_sha256);
+}
+
+TEST_F(BundleTest, RejectsPublicProjectionOfPrivateExecutionFiles) {
+    use_v2(R"YAML(public:
+  starter:
+    path: solution.cpp
+    language: cpp
+)YAML");
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_), std::runtime_error);
+}
+
+TEST_F(BundleTest, RejectsTestsDirectoryEvenWithSeparateManifest) {
+    use_v2(R"YAML(public:
+  starter:
+    path: tests/starter.cpp
+    language: cpp
+tests:
+  manifest: cases.yaml
+)YAML");
+    write("a-problem/tests/starter.cpp", "int main() {}\n");
+    write("a-problem/cases.yaml", "[]\n");
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_), std::runtime_error);
+}
+
+TEST_F(BundleTest, RejectsUnsafeOrMismatchedPublicAssets) {
+    use_v2(R"YAML(public:
+  assets:
+    - path: public/diagram.png
+      media_type: image/png
+)YAML");
+    write("a-problem/public/diagram.png", "not a png");
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_), std::runtime_error);
+
+    use_v2(R"YAML(public:
+  assets:
+    - path: diagram.png
+      media_type: image/png
+)YAML");
+    write("a-problem/diagram.png", std::string{"\x89PNG\r\n\x1a\n", 8});
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_), std::runtime_error);
+}
+
+TEST_F(BundleTest, RejectsInvalidOrOversizedPublicText) {
+    use_v2("public:\n  statement: true\n");
+    write("a-problem/problem.md", std::string{"bad\xff", 4});
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_), std::runtime_error);
+
+    write("a-problem/problem.md", "too long");
+    ValidationLimits limits;
+    limits.max_public_statement_bytes = 3;
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_, limits), std::runtime_error);
+}
+
+TEST_F(BundleTest, RejectsC1ControlsInPublicText) {
+    use_v2("public:\n  statement: true\n");
+    write("a-problem/problem.md", std::string{"control: \xc2\x80\n", 12});
+    EXPECT_THROW(cxxprobe::bundle::validate(dir_), std::runtime_error);
 }
 
 TEST_F(BundleTest, ResolvedExecutionIsDigestCovered) {

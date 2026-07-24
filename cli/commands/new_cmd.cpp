@@ -33,10 +33,17 @@ std::optional<fs::path> find_contest_dir(const fs::path& start) {
     }
 }
 
-constexpr std::string_view kProblemYamlTemplate = R"YAML(version: 1
+constexpr std::string_view kProblemYamlTemplate = R"YAML(version: 2
 name: "{}"
 description: ""
 statement: problem.md
+
+# Candidate-visible material is opt-in. All files remain private until named
+# here; paths do not become public because of their filename or directory.
+public:
+  statement: false
+  assets: []
+  starter: null
 
 solution:
   file: solution.cpp

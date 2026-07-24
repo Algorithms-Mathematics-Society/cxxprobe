@@ -8,6 +8,7 @@ add_executable(
   common/text_utils.cpp
   common/json_io.cpp
   commands/run_cmd.cpp
+  commands/identity_cmd.cpp
   commands/new_cmd.cpp
   commands/bundle_cmd.cpp
   commands/test_cmd.cpp)
@@ -21,8 +22,11 @@ if(TARGET cxxprobe-server-lib)
   target_compile_definitions(cxxprobe-cli PRIVATE CXXPROBE_SERVE_ENABLED)
 endif()
 
-target_compile_definitions(cxxprobe-cli
-                           PRIVATE CXXPROBE_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(
+  cxxprobe-cli
+  PRIVATE CXXPROBE_VERSION="${PROJECT_VERSION}"
+          CXXPROBE_GIT_COMMIT="${CXXPROBE_GIT_COMMIT}"
+          CXXPROBE_GIT_DIRTY=${CXXPROBE_GIT_DIRTY})
 
 if(CXXPROBE_STATIC_LINK)
   target_link_options(cxxprobe-cli PRIVATE -static-libgcc -static-libstdc++)

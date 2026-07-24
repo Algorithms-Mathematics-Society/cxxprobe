@@ -3,6 +3,7 @@
 // NOLINTEND(misc-include-cleaner)
 
 #include "commands/bundle_cmd.hpp"
+#include "commands/identity_cmd.hpp"
 #include "commands/new_cmd.hpp"
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
@@ -21,6 +22,7 @@ int main(int argc, char* argv[]) {
     app.require_subcommand(1);
 
     cxxprobe::cli::RunCommand run_cmd{app};
+    cxxprobe::cli::IdentityCommand identity_cmd{app};
     cxxprobe::cli::NewCommand new_cmd{app};
     cxxprobe::cli::BundleCommand bundle_cmd{app};
     cxxprobe::cli::TestCommand test_cmd{app};
@@ -32,6 +34,9 @@ int main(int argc, char* argv[]) {
 
     if (run_cmd.invoked()) {
         return run_cmd.execute();
+    }
+    if (identity_cmd.invoked()) {
+        return identity_cmd.execute();
     }
     if (new_cmd.contest_invoked() || new_cmd.problem_invoked()) {
         return new_cmd.execute();

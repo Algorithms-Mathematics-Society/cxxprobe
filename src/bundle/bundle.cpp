@@ -394,7 +394,264 @@ void validate_problem_references(const problem::ProblemConfig& config,
     }
 }
 
+bool is_valid_public_text(std::string_view text) {
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        const auto first = static_cast<unsigned char>(text[pos]);
+        std::size_t count = 0;
+        std::uint32_t codepoint = 0;
+        if (first <= 0x7f) {
+            count = 1;
+            codepoint = first;
+        } else if ((first & 0xe0) == 0xc0) {
+            count = 2;
+            codepoint = first & 0x1f;
+        } else if ((first & 0xf0) == 0xe0) {
+            count = 3;
+            codepoint = first & 0x0f;
+        } else if ((first & 0xf8) == 0xf0) {
+            count = 4;
+            codepoint = first & 0x07;
+        } else {
+            return false;
+        }
+        if (pos + count > text.size()) {
+            return false;
+        }
+        for (std::size_t i = 1; i < count; ++i) {
+            const auto byte = static_cast<unsigned char>(text[pos + i]);
+            if ((byte & 0xc0) != 0x80) {
+                return false;
+            }
+            codepoint = (codepoint << 6) | (byte & 0x3f);
+        }
+        const bool overlong = (count == 2 && codepoint < 0x80) ||
+                              (count == 3 && codepoint < 0x800) ||
+                              (count == 4 && codepoint < 0x10000);
+        const bool disallowed_control =
+            (codepoint < 0x20 && codepoint != '\t' && codepoint != '\n' && codepoint != '\r') ||
+            (codepoint >= 0x80 && codepoint <= 0x9f);
+        if (overlong || codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff) ||
+            disallowed_control || codepoint == 0x7f) {
+            return false;
+        }
+        pos += count;
+    }
+    return true;
+}
+
+std::string read_public_file(const fs::path& path, std::uint64_t max_bytes,
+                             std::string_view field) {
+    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) {
+        throw std::runtime_error{
+            std::format("cannot open public {} '{}': {}", field, path.string(),
+                        std::strerror(errno))};
+    }
+    struct FdGuard {
+        int fd;
+        ~FdGuard() { ::close(fd); }
+    } guard{fd};
+
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size < 0 ||
+        info.st_nlink != 1) {
+        throw std::runtime_error{
+            std::format("public {} is not a single-linked regular file: '{}'", field,
+                        path.string())};
+    }
+    const auto size = static_cast<std::uint64_t>(info.st_size);
+    if (size == 0 || size > max_bytes) {
+        throw std::runtime_error{std::format("public {} must contain 1..{} bytes: '{}'", field,
+                                             max_bytes, path.string())};
+    }
+    std::string content(static_cast<std::size_t>(size), '\0');
+    std::size_t consumed = 0;
+    while (consumed < content.size()) {
+        const ssize_t count = ::read(fd, content.data() + consumed, content.size() - consumed);
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        if (count <= 0) {
+            throw std::runtime_error{
+                std::format("cannot read complete public {} '{}'", field, path.string())};
+        }
+        consumed += static_cast<std::size_t>(count);
+    }
+    struct stat final_info {};
+    if (::fstat(fd, &final_info) != 0 || final_info.st_dev != info.st_dev ||
+        final_info.st_ino != info.st_ino || final_info.st_size != info.st_size ||
+        final_info.st_nlink != 1) {
+        throw std::runtime_error{
+            std::format("public {} changed while reading: '{}'", field, path.string())};
+    }
+    return content;
+}
+
+bool same_or_child_path(std::string_view path, std::string_view parent) {
+    return path == parent ||
+           (path.size() > parent.size() && path.starts_with(parent) &&
+            path[parent.size()] == '/');
+}
+
+void reject_private_overlap(const problem::ProblemConfig& config, std::string_view path,
+                            std::string_view role) {
+    auto reject_exact = [&](std::string_view secret, std::string_view label) {
+        if (!secret.empty() && path == secret) {
+            throw std::runtime_error{std::format("public {} '{}' overlaps private {}", role, path,
+                                                 label)};
+        }
+    };
+    reject_exact("problem.yaml", "problem configuration");
+    reject_exact(config.solution_file, "solution.file");
+    for (const auto& source : config.compiler.extra_sources) {
+        reject_exact(source, "compiler.extra_sources");
+    }
+    if (config.tests.manifest) {
+        reject_exact(*config.tests.manifest, "tests.manifest");
+    }
+    if (same_or_child_path(path, config.tests.dir)) {
+        throw std::runtime_error{
+            std::format("public {} '{}' overlaps private tests.dir", role, path)};
+    }
+    if (config.tests.checker) {
+        reject_exact(*config.tests.checker, "tests.checker");
+    }
+    reject_exact(config.behavior.checker_file, "behavior.checker_file");
+}
+
+const FileRecord& require_manifest_file(const Manifest& manifest, std::string_view path,
+                                        std::string_view role) {
+    const auto found = std::ranges::find(manifest.files, path, &FileRecord::path);
+    if (found == manifest.files.end()) {
+        throw std::runtime_error{
+            std::format("public {} is not an included bundle file: '{}'", role, path)};
+    }
+    return *found;
+}
+
+std::string bundle_path(const problem::ProblemConfig& config, std::string_view relative) {
+    return config.slug + "/" + std::string{relative};
+}
+
+void require_public_subpath(std::string_view path, std::string_view role) {
+    if (!path.starts_with("public/") || path.size() == std::string_view{"public/"}.size()) {
+        throw std::runtime_error{
+            std::format("public {} must be stored under the public/ directory: '{}'", role, path)};
+    }
+}
+
+void validate_raster_asset(std::string_view path, std::string_view media_type,
+                           std::string_view content) {
+    const std::string extension = fs::path{path}.extension().string();
+    bool matches = false;
+    if (media_type == "image/png" && extension == ".png") {
+        constexpr std::array<unsigned char, 8> signature{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a,
+                                                         0x0a};
+        matches = content.size() >= signature.size() &&
+                  std::equal(signature.begin(), signature.end(), content.begin(),
+                             [](unsigned char expected, char actual) {
+                                 return expected == static_cast<unsigned char>(actual);
+                             });
+    } else if (media_type == "image/jpeg" &&
+               (extension == ".jpg" || extension == ".jpeg")) {
+        matches = content.size() >= 3 && static_cast<unsigned char>(content[0]) == 0xff &&
+                  static_cast<unsigned char>(content[1]) == 0xd8 &&
+                  static_cast<unsigned char>(content[2]) == 0xff;
+    } else if (media_type == "image/webp" && extension == ".webp") {
+        matches = content.size() >= 12 && content.substr(0, 4) == "RIFF" &&
+                  content.substr(8, 4) == "WEBP";
+    }
+    if (!matches) {
+        throw std::runtime_error{std::format(
+            "public asset '{}' has unsupported or mismatched media type '{}'", path, media_type)};
+    }
+}
+
+PublicRecord validate_public_files(const problem::ProblemConfig& config, const Manifest& manifest,
+                                   const ValidationLimits& limits) {
+    PublicRecord result;
+    if (config.version == 1) {
+        return result;
+    }
+
+    if (config.public_files.assets.size() > limits.max_public_assets) {
+        throw std::runtime_error{std::format("public assets exceed maximum count {}",
+                                             limits.max_public_assets)};
+    }
+    std::set<std::string> roles;
+    std::uint64_t total = 0;
+    auto account = [&](const FileRecord& file, std::string_view role) {
+        if (file.size_bytes > limits.max_public_total_bytes - total) {
+            throw std::runtime_error{std::format("public files exceed maximum total size {} bytes",
+                                                 limits.max_public_total_bytes)};
+        }
+        total += file.size_bytes;
+        if (!roles.insert(ascii_lower(file.path)).second) {
+            throw std::runtime_error{
+                std::format("bundle file has multiple public roles: '{}'", file.path)};
+        }
+        (void)role;
+    };
+
+    if (config.public_files.statement) {
+        reject_private_overlap(config, config.statement, "statement");
+        const std::string path = bundle_path(config, config.statement);
+        const FileRecord& file = require_manifest_file(manifest, path, "statement");
+        const std::string content = read_public_file(config.problem_dir / config.statement,
+                                                     limits.max_public_statement_bytes,
+                                                     "statement");
+        if (!is_valid_public_text(content)) {
+            throw std::runtime_error{"public statement must be valid UTF-8 text"};
+        }
+        account(file, "statement");
+        result.statement = path;
+    }
+
+    for (const auto& asset : config.public_files.assets) {
+        validate_reference(asset.path, limits, "public.assets.path");
+        require_public_subpath(asset.path, "asset");
+        reject_private_overlap(config, asset.path, "asset");
+        require_regular_file(config.problem_dir, asset.path, "public.assets.path");
+        const std::string path = bundle_path(config, asset.path);
+        const FileRecord& file = require_manifest_file(manifest, path, "asset");
+        const std::string content = read_public_file(config.problem_dir / asset.path,
+                                                     limits.max_public_asset_bytes, "asset");
+        validate_raster_asset(asset.path, asset.media_type, content);
+        account(file, "asset");
+        result.assets.push_back({.path = path, .media_type = asset.media_type});
+    }
+    std::ranges::sort(result.assets, {}, &PublicAssetRecord::path);
+
+    if (config.public_files.starter) {
+        const auto& starter = *config.public_files.starter;
+        validate_reference(starter.path, limits, "public.starter.path");
+        require_public_subpath(starter.path, "starter");
+        reject_private_overlap(config, starter.path, "starter");
+        if (starter.language != "cpp" || fs::path{starter.path}.extension() != ".cpp") {
+            throw std::runtime_error{
+                "public starter must use language 'cpp' and a lowercase .cpp path"};
+        }
+        require_regular_file(config.problem_dir, starter.path, "public.starter.path");
+        const std::string path = bundle_path(config, starter.path);
+        const FileRecord& file = require_manifest_file(manifest, path, "starter");
+        const std::string content = read_public_file(config.problem_dir / starter.path,
+                                                     limits.max_public_starter_bytes, "starter");
+        if (!is_valid_public_text(content)) {
+            throw std::runtime_error{"public starter must be valid UTF-8 text"};
+        }
+        account(file, "starter");
+        result.starter = PublicStarterRecord{.path = path, .language = starter.language};
+    }
+    return result;
+}
+
 nlohmann::ordered_json manifest_json(const Manifest& manifest, bool include_digest) {
+    if (manifest.schema_version != kSchemaVersionV1 &&
+        manifest.schema_version != kSchemaVersionV2) {
+        throw std::runtime_error{
+            std::format("unsupported bundle manifest schema {}", manifest.schema_version)};
+    }
     nlohmann::ordered_json problems = nlohmann::ordered_json::array();
     for (const auto& problem : manifest.problems) {
         nlohmann::ordered_json compiler{
@@ -406,10 +663,29 @@ nlohmann::ordered_json manifest_json(const Manifest& manifest, bool include_dige
                                       {"cpu_time_ms", problem.execution.limits.cpu_time_ms},
                                       {"wall_time_ms", problem.execution.limits.wall_time_ms},
                                       {"max_pids", problem.execution.limits.max_pids}};
-        problems.push_back(
-            {{"slug", problem.slug},
-             {"name", problem.name},
-             {"execution", {{"compiler", std::move(compiler)}, {"limits", std::move(limits)}}}});
+        nlohmann::ordered_json problem_json{{"slug", problem.slug}, {"name", problem.name}};
+        if (manifest.schema_version == kSchemaVersionV2) {
+            nlohmann::ordered_json assets = nlohmann::ordered_json::array();
+            for (const auto& asset : problem.public_files.assets) {
+                assets.push_back({{"path", asset.path}, {"media_type", asset.media_type}});
+            }
+            nlohmann::ordered_json public_json;
+            public_json["statement"] = problem.public_files.statement
+                                           ? nlohmann::ordered_json(*problem.public_files.statement)
+                                           : nlohmann::ordered_json(nullptr);
+            public_json["assets"] = std::move(assets);
+            if (problem.public_files.starter) {
+                public_json["starter"] =
+                    {{"path", problem.public_files.starter->path},
+                     {"language", problem.public_files.starter->language}};
+            } else {
+                public_json["starter"] = nullptr;
+            }
+            problem_json["public"] = std::move(public_json);
+        }
+        problem_json["execution"] =
+            {{"compiler", std::move(compiler)}, {"limits", std::move(limits)}};
+        problems.push_back(std::move(problem_json));
     }
     nlohmann::ordered_json files = nlohmann::ordered_json::array();
     for (const auto& file : manifest.files) {
@@ -417,7 +693,7 @@ nlohmann::ordered_json manifest_json(const Manifest& manifest, bool include_dige
             {{"path", file.path}, {"size_bytes", file.size_bytes}, {"sha256", file.sha256}});
     }
     nlohmann::ordered_json result{{"contract", kContract},
-                                  {"schema_version", kSchemaVersion},
+                                  {"schema_version", manifest.schema_version},
                                   {"valid", true},
                                   {"hash_algorithm", "sha256"}};
     if (include_digest) {
@@ -434,7 +710,10 @@ nlohmann::ordered_json manifest_json(const Manifest& manifest, bool include_dige
 
 Manifest validate(const fs::path& contest_dir, const ValidationLimits& limits) {
     if (limits.max_files == 0 || limits.max_file_bytes == 0 || limits.max_total_bytes == 0 ||
-        limits.max_path_bytes == 0 || limits.max_component_bytes == 0 || limits.max_depth == 0) {
+        limits.max_path_bytes == 0 || limits.max_component_bytes == 0 || limits.max_depth == 0 ||
+        limits.max_public_assets == 0 || limits.max_public_statement_bytes == 0 ||
+        limits.max_public_starter_bytes == 0 || limits.max_public_asset_bytes == 0 ||
+        limits.max_public_total_bytes == 0) {
         throw std::runtime_error{"bundle validation limits must be non-zero"};
     }
 
@@ -519,6 +798,9 @@ Manifest validate(const fs::path& contest_dir, const ValidationLimits& limits) {
         }
         problem::ProblemConfig config = problem::load_from_dir(root / relative.parent_path());
         validate_problem_references(config, limits);
+        manifest.schema_version =
+            config.version == 2 ? kSchemaVersionV2 : kSchemaVersionV1;
+        PublicRecord public_files = validate_public_files(config, manifest, limits);
         if (!config.tests.enabled && !config.symbolic.enabled && !config.behavior.enabled) {
             throw std::runtime_error{
                 "publishable question must enable at least one manual, symbolic, or behavior "
@@ -532,6 +814,7 @@ Manifest validate(const fs::path& contest_dir, const ValidationLimits& limits) {
         manifest.problems.push_back(
             {.slug = config.slug,
              .name = config.name,
+             .public_files = std::move(public_files),
              .execution = {.compiler = {.cxx = compiler.cxx,
                                         .std_flag = compiler.std_flag,
                                         .flags = compiler.flags,

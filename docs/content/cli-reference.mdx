@@ -11,12 +11,36 @@ import { Callout } from 'nextra/components'
 cxxprobe <subcommand> [OPTIONS] ...
 ```
 
-cxxprobe has six subcommands: [`run`](#run) (sandbox a program directly),
+cxxprobe has seven subcommands: [`identity`](#identity) (machine-readable build
+provenance), [`run`](#run) (sandbox a program directly),
 [`new contest`](#new-contest--new-problem) / [`new problem`](#new-contest--new-problem)
 (scaffolding), [`test problem`](#test-problem) (judging),
 [`bundle validate`](#bundle-validate) (deterministic bundle validation), and
 [`serve`](#serve) (the HTTP judging service). `-V`/`--version` works at the
 top level without a subcommand.
+
+## `identity`
+
+Prints the exact engine identity embedded at build time. The machine-readable
+form is intended for deployment startup checks and durable validation
+provenance:
+
+```text
+cxxprobe identity --json
+```
+
+It emits exactly one compact JSON object followed by a newline:
+
+```json
+{"contract":"cxxprobe.engine-identity","schema_version":1,"name":"cxxprobe","version":"0.9.0","commit":"0123456789abcdef0123456789abcdef01234567","dirty":false}
+```
+
+`commit` is either the full 40-character lowercase Git commit embedded by the
+build or `unknown`. An unknown commit is always marked dirty. Production
+consumers must compare every field with their pinned artifact identity and
+reject `dirty=true`; this command does not inspect or guess repository state at
+runtime. Without `--json`, the same values are printed as a human-readable
+single line. The existing `-V`/`--version` output remains unchanged.
 
 ## `run`
 
@@ -166,7 +190,7 @@ end-to-end authoring flow.
 ## `bundle validate`
 
 Validates one publishable question, materialized as a minimal contest tree,
-and emits its immutable content identity. Version 1 requires exactly one
+and emits its immutable content identity. A bundle requires exactly one
 direct-child problem directory; this keeps the digest question-scoped while
 remaining directly usable with `cxxprobe test problem -C`.
 
@@ -181,19 +205,65 @@ Windows-reserved names, ASCII case collisions, traversal references, symbolic
 links, hard links, and trees over the conservative file/size/path limits are
 rejected.
 
-The bundle SHA-256 is the SHA-256 of the compact, ordered schema-v1 JSON
-manifest with only its `bundle_sha256` self-digest field omitted. That canonical
-content includes sorted file paths, sizes, per-file SHA-256 values, and the
-problem's resolved `execution.compiler` (`cxx`, `std_flag`, `flags`, and
-`extra_sources`) and `execution.limits` (`memory_bytes`, `cpu_time_ms`,
+The bundle SHA-256 is the SHA-256 of the compact, ordered JSON manifest with
+only its `bundle_sha256` self-digest field omitted. `problem.yaml` version 1
+continues to emit schema 1 byte-for-byte, including its established digest.
+Version 2 emits schema 2 and adds the canonical `public` object described
+below. Both schemas include sorted file paths, sizes, per-file SHA-256 values,
+and the problem's resolved `execution.compiler` (`cxx`, `std_flag`, `flags`,
+and `extra_sources`) and `execution.limits` (`memory_bytes`, `cpu_time_ms`,
 `wall_time_ms`, and `max_pids`). Resolution uses the same cxxprobe problem
-defaults and overrides as judging, so effective execution changes are part of
-problem identity. It deliberately does not include archive/compression
-metadata, mtimes, ownership, or permission bits. Referenced statement,
-solution, checker, and enabled test resources must exist inside the problem
-directory. `--json` emits the ordered manifest. A publishable question must
-enable at least one manual, symbolic, or behavior check. Successful validation
-exits `0`; invalid input exits `2`.
+defaults and overrides as judging, so effective execution and public-projection
+changes are part of problem identity. The identity deliberately excludes
+archive/compression metadata, mtimes, ownership, and permission bits.
+Referenced statement, solution, checker, and enabled test resources must exist
+inside the problem directory. `--json` emits the ordered manifest. A
+publishable question must enable at least one manual, symbolic, or behavior
+check. Successful validation exits `0`; invalid input exits `2`.
+
+### Public projection (schema 2)
+
+Candidate visibility is an explicit allowlist in `problem.yaml` version 2:
+
+```yaml
+version: 2
+statement: problem.md
+public:
+  statement: true
+  assets:
+    - path: public/diagram.png
+      media_type: image/png
+  starter:
+    path: public/starter.cpp
+    language: cpp
+```
+
+If `public` or one of its fields is omitted, the corresponding value is
+private. `statement: true` exposes only the configured statement. Assets and
+the optional starter must be under `public/`; assets are limited to bounded
+PNG, JPEG, or WebP files whose lowercase extension, declared media type, and
+file signature agree. Statement and starter files must be bounded UTF-8 text,
+and the starter must be a lowercase `.cpp` file with language `cpp`.
+Execution resources are always private: the reference solution, compiler extra
+sources, test directory/manifest/checker, behavior checker, and
+`problem.yaml` cannot be assigned a public role. The manifest uses
+problem-relative paths prefixed by the slug and sorts assets bytewise:
+
+```json
+{
+  "public": {
+    "statement": "a-problem/problem.md",
+    "assets": [
+      {"path": "a-problem/public/diagram.png", "media_type": "image/png"}
+    ],
+    "starter": {"path": "a-problem/public/starter.cpp", "language": "cpp"}
+  }
+}
+```
+
+An entirely private v2 projection is always serialized as `statement: null`,
+`assets: []`, and `starter: null`. A v1 file that defines `public` is rejected,
+including `public: null`, so an older manifest cannot accidentally opt in.
 
 Each problem entry in the JSON manifest exposes the exact effective execution
 configuration that is covered by `bundle_sha256`:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -51,7 +52,27 @@ struct BehaviorConfig {
     std::vector<std::string> extra_flags;
 };
 
+struct PublicAssetConfig {
+    std::string path;
+    std::string media_type;
+};
+
+struct PublicStarterConfig {
+    std::string path;
+    std::string language;
+};
+
+// Candidate-visible files are opt-in. The ordinary statement and every other
+// bundle file remain private unless problem.yaml version 2 designates them
+// here; filenames never imply publication.
+struct PublicConfig {
+    bool statement{false};
+    std::vector<PublicAssetConfig> assets;
+    std::optional<PublicStarterConfig> starter;
+};
+
 struct ProblemConfig {
+    std::uint32_t version{1};
     std::filesystem::path problem_dir;  // absolute, set by the loader (not from YAML)
     std::string name;
     std::string slug;  // derived from problem_dir's folder name
@@ -62,6 +83,7 @@ struct ProblemConfig {
     ManualTestsConfig tests;
     SymbolicConfig symbolic;
     BehaviorConfig behavior;
+    PublicConfig public_files;
 };
 
 // Project-wide fallback used to resolve any field a problem.yaml leaves unset.

@@ -58,6 +58,7 @@ if(NOT CXXPROBE_GIT_COMMIT STREQUAL "unknown")
         "CXXPROBE_GIT_COMMIT must be a full 40-character Git commit or 'unknown'"
     )
   endif()
+  string(TOLOWER "${CXXPROBE_GIT_COMMIT}" CXXPROBE_GIT_COMMIT)
 endif()
 
 if(CXXPROBE_GIT_DIRTY STREQUAL "")
@@ -87,6 +88,11 @@ endif()
 if(NOT CXXPROBE_GIT_DIRTY STREQUAL "true" AND NOT CXXPROBE_GIT_DIRTY STREQUAL
                                               "false")
   message(FATAL_ERROR "CXXPROBE_GIT_DIRTY must be 'true' or 'false'")
+endif()
+
+if(CXXPROBE_GIT_COMMIT STREQUAL "unknown" AND CXXPROBE_GIT_DIRTY STREQUAL
+                                              "false")
+  message(FATAL_ERROR "an unknown CXXPROBE_GIT_COMMIT must be marked dirty")
 endif()
 
 set(CMAKE_CXX_STANDARD 23)
