@@ -50,6 +50,19 @@
 * **cli:** add cxxprobe judge — worker-facing single-shot judge entry point ([54b37f2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/54b37f2270467baa04483baf56b17edc3642569f))
 * **pack:** add cxxprobe pack/unpack commands ([73921a3](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/73921a32ead84d8748c51247de214ada4655abaa))
 
+# [0.9.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.8.0...v0.9.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* **server:** fix clang-tidy failure breaking CI and release asset builds ([128d4a5](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/128d4a5187a089e8f20c95941853e64de7c89ccf))
+
+
+### Features
+
+* **cli:** add cxxprobe judge — worker-facing single-shot judge entry point ([54b37f2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/54b37f2270467baa04483baf56b17edc3642569f))
+* **pack:** add cxxprobe pack/unpack commands ([73921a3](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/73921a32ead84d8748c51247de214ada4655abaa))
+
 # [0.8.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.7.1...v0.8.0) (2026-07-21)
 
 
