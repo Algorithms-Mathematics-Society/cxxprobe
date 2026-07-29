@@ -161,14 +161,16 @@ It talks to the API through the exact same public endpoints any other
 client would use — see [Running the HTTP Judging
 Service](/guides/http-judging-service#the-optional-developer-ui).
 
-### Why is `cxxprobe serve --ui` one binary with no Node.js involved?
+### Does `cxxprobe serve --ui` need Node.js installed?
 
-The UI is vanilla JS + [Alpine.js](https://alpinejs.dev/) +
-[htmx](https://htmx.org/) + [CodeMirror 5](https://codemirror.net/5/),
-vendored as plain committed static files — no bundler, no build step, ever.
-A small Python script embeds every asset file into the C++ binary at build
-time as a byte array + lookup table, so there's no runtime filesystem
-dependency and nothing extra to install or ship alongside `cxxprobe-cli`.
+Only if you're building `cxxprobe-cli` from source. The UI is a React 19 +
+TypeScript + Vite app (with Monaco as the code editor) that gets compiled to
+static `dist/` output during the CMake build — a small Python script then
+embeds every built asset file into the C++ binary as a byte array + lookup
+table. Node is a **build-time-only** dependency: the resulting
+`cxxprobe-cli` binary has no runtime filesystem or Node dependency at all.
+If you install via the release binary or the `curl | sh` installer, you
+never need Node — it's already baked in.
 
 <Callout type="info">
   Didn't find your question here? Open an issue on

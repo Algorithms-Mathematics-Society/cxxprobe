@@ -2,6 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <string_view>
+
+#include "server/ui/embedded_assets.hpp"
+
 namespace beast_http = cxxprobe::server::router::beast_http;
 using cxxprobe::server::handlers::UiAssetHandler;
 using cxxprobe::server::router::Request;
@@ -48,7 +53,18 @@ TEST(UiAssetHandlerTest, SubstitutesApiBaseIntoIndexHtmlWithoutCorruptingTheGlob
 
 TEST(UiAssetHandlerTest, ServesAssetsWithCorrectContentType) {
     UiAssetHandler handler("http://localhost:8191");
-    Request req = make_get_request("/css/app.css");
+    // The React build's asset filenames are content-hashed by Vite, so we
+    // can't hardcode one — find whichever embedded .css asset exists.
+    std::string css_path;
+    for (const auto& asset : cxxprobe::server::ui::all_embedded_assets()) {
+        if (std::string_view(asset.path).ends_with(".css")) {
+            css_path = asset.path;
+            break;
+        }
+    }
+    ASSERT_FALSE(css_path.empty()) << "no embedded .css asset found";
+
+    Request req = make_get_request(css_path);
     Response res;
     handler.serve(req, res);
 
@@ -58,13 +74,22 @@ TEST(UiAssetHandlerTest, ServesAssetsWithCorrectContentType) {
 
 TEST(UiAssetHandlerTest, ServesJavaScriptAssetsUnmodified) {
     UiAssetHandler handler("http://localhost:8191");
-    Request req = make_get_request("/js/app.js");
+    std::string js_path;
+    for (const auto& asset : cxxprobe::server::ui::all_embedded_assets()) {
+        if (std::string_view(asset.path).ends_with(".js")) {
+            js_path = asset.path;
+            break;
+        }
+    }
+    ASSERT_FALSE(js_path.empty()) << "no embedded .js asset found";
+
+    Request req = make_get_request(js_path);
     Response res;
     handler.serve(req, res);
 
     EXPECT_EQ(res.raw().result_int(), 200);
-    // js/app.js has no substitution — must never contain the raw
-    // placeholder token verbatim (that would mean it got embedded wrong).
+    // Non-index.html assets have no substitution — must never contain the
+    // raw placeholder token verbatim (that would mean it got embedded wrong).
     EXPECT_EQ(res.raw().body().find("%%CXXPROBE_API_BASE%%"), std::string::npos);
 }
 

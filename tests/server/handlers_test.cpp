@@ -90,6 +90,41 @@ TEST_F(HandlersTest, ProblemDetailIncludesStatementMarkdown) {
     EXPECT_EQ(j["language"], "cpp");
 }
 
+TEST_F(HandlersTest, ProblemDetailWithNoTestsHasEmptySampleTests) {
+    cxxprobe::server::handlers::ProblemsHandler handler(catalog_);
+    Request req = make_request(beast_http::verb::get, "/problems/a-warmup");
+    req.set_path_params({{"slug", "a-warmup"}});
+    Response res;
+    handler.get(req, res);
+
+    json j = json::parse(res.raw().body());
+    ASSERT_TRUE(j["sample_tests"].is_array());
+    EXPECT_TRUE(j["sample_tests"].empty());
+}
+
+TEST_F(HandlersTest, ProblemDetailExposesManualTestsAsSampleTests) {
+    fs::path problem_dir = base_dir_ / "b-with-tests";
+    fs::create_directories(problem_dir / "tests");
+    std::ofstream(problem_dir / "problem.yaml")
+        << "version: 1\nname: \"B: With Tests\"\ndescription: \"\"\nstatement: problem.md\n"
+           "solution:\n  file: solution.cpp\n";
+    std::ofstream(problem_dir / "problem.md") << "# B\n";
+    std::ofstream(problem_dir / "tests" / "1.in") << "3 4\n";
+    std::ofstream(problem_dir / "tests" / "1.ans") << "7\n";
+    catalog_->load();
+
+    cxxprobe::server::handlers::ProblemsHandler handler(catalog_);
+    Request req = make_request(beast_http::verb::get, "/problems/b-with-tests");
+    req.set_path_params({{"slug", "b-with-tests"}});
+    Response res;
+    handler.get(req, res);
+
+    json j = json::parse(res.raw().body());
+    ASSERT_EQ(j["sample_tests"].size(), 1U);
+    EXPECT_EQ(j["sample_tests"][0]["input"], "3 4\n");
+    EXPECT_EQ(j["sample_tests"][0]["expected_output"], "7\n");
+}
+
 TEST_F(HandlersTest, ProblemDetailThrowsForUnknownSlug) {
     cxxprobe::server::handlers::ProblemsHandler handler(catalog_);
     Request req = make_request(beast_http::verb::get, "/problems/does-not-exist");

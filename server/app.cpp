@@ -14,6 +14,7 @@
 #include <thread>
 #include <utility>
 
+#include "server/api/dto.hpp"
 #include "server/events/local_event_bus.hpp"
 #include "server/handlers/events_handler.hpp"
 #include "server/handlers/health_handler.hpp"
@@ -199,6 +200,22 @@ int run_server(const ServerConfig& config) {
     handlers::EventsHandler events_handler(bus);
 
     router::Router router;
+    // A bare GET / has no real resource behind it — this is just a
+    // friendlier landing point than a raw 404 for anyone opening the API
+    // port directly in a browser (curl/scripts should hit the real
+    // endpoints below, not this one).
+    router.add_route(beast_http::verb::get, "/", [](router::Request&, router::Response& res) {
+        api::Json j;
+        j["service"] = "cxxprobe serve";
+        j["endpoints"] = {"GET /health",          "GET /metrics",      "GET /problems",
+                          "GET /problems/{slug}", "POST /submissions", "GET /submissions/{id}",
+                          "GET /submissions",     "GET /events"};
+        j["docs"] =
+            "https://algorithms-mathematics-society.github.io/cxxprobe/guides/"
+            "http-judging-service";
+        res.set_status(200);
+        res.set_json_body(j.dump());
+    });
     router.add_route(
         beast_http::verb::get, "/health",
         [&](router::Request& req, router::Response& res) { health_handler.get(req, res); });

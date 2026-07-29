@@ -18,6 +18,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/ui/frontend/package-lock.json
+
       - name: Install Conan
         run: pip install conan
 

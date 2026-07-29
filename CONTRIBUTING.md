@@ -9,6 +9,12 @@ Example: `feat(sandbox): add cgroup v2 resource limits`
 
 ## Environment Setup
 
+Building from source requires Node.js 22+ on `PATH` in addition to a C++
+compiler — `cmake --build` shells out to `npm ci && npm run build` in
+`server/ui/frontend/` to build the developer UI (React + Vite + Monaco)
+before embedding it into the binary. Node is build-time-only: the resulting
+binary has no Node/runtime dependency.
+
 ```bash
 git clone https://github.com/your-org/cxxprobe.git
 cd cxxprobe

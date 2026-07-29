@@ -66,8 +66,9 @@ for a full worked walkthrough.
 - **Runs as an HTTP service too.** `cxxprobe serve` exposes the same
   judging pipeline over a queued, worker-pooled REST + SSE API — for a
   contest platform to submit against instead of shelling out per
-  submission. `cxxprobe serve --ui` adds a small embedded developer UI
-  (zero Node.js, one binary) for trying it by hand.
+  submission. `cxxprobe serve --ui` adds a small embedded React + Monaco
+  developer UI (one binary at runtime — Node is only needed to build from
+  source) for trying it by hand.
 
 ## Requirements
 

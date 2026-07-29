@@ -128,16 +128,22 @@ its own port (`--ui-port`, default 8181, vs. the API's own `--port`, default
 **not** a replacement for a real contest platform; it exists for local
 testing, debugging a problem's checks, and trying the API by hand.
 
-- **Zero Node.js, ever** — not at runtime, not at build time. The UI is
-  vanilla JS + [Alpine.js](https://alpinejs.dev/) (reactive state) +
-  [htmx](https://htmx.org/) (used for the metrics page's periodic
-  plain-text refresh) + [CodeMirror 5](https://codemirror.net/5/) (the
-  source editor), all vendored as plain committed files — no bundler step.
-- **Embedded into the binary at C++ build time.** A small Python script
-  (`server/ui/generate_embedded_assets.py`) turns every file under
-  `server/ui/assets/` into a byte array + `{path, content_type, data}`
-  table, compiled directly into `cxxprobe-cli` — no runtime filesystem
-  access, so the UI keeps working even from a relocated or read-only binary.
+- **React 19 + TypeScript + Vite, with Monaco as the source editor.** The
+  UI lives in `server/ui/frontend/` as a proper npm-managed project
+  (`@monaco-editor/react`, React Query for data fetching/polling,
+  `react-router-dom` (`HashRouter`), `react-markdown` for statement
+  rendering, Tailwind CSS v4). Node is a **build-time-only** dependency —
+  never at runtime. `curl | sh` installs and prebuilt release binaries
+  never touch Node at all; it's only needed if you're building
+  `cxxprobe-cli` from source.
+- **Embedded into the binary at C++ build time.** CMake's build for
+  `server/ui/` first runs `npm ci && npm run build` inside
+  `server/ui/frontend/` (producing static `dist/` output), then a small
+  Python script (`server/ui/generate_embedded_assets.py`) turns every file
+  under `dist/` into a byte array + `{path, content_type, data}` table,
+  compiled directly into `cxxprobe-cli` — no runtime filesystem access, so
+  the UI keeps working even from a relocated or read-only binary. CI
+  installs Node (via `actions/setup-node`) purely to run this build step.
 - **Talks exclusively through the public REST/SSE API.** The UI's `fetch()`/
   `EventSource` calls hit the exact same endpoints an external integrator
   would — there is no special/privileged path from the UI into server

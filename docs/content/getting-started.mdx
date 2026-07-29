@@ -119,7 +119,10 @@ gets scaffolded, see [Folder Structure](/architecture/folder-structure).
 
 For contributing to cxxprobe, tracking an unreleased fix, or running on an
 architecture without a prebuilt binary. Takes a few minutes with CMake +
-Conan.
+Conan. You'll also need Node.js 22+ on `PATH` — the build shells out to
+`npm` to compile the `cxxprobe serve --ui` developer UI (React + Vite +
+Monaco) before embedding it into the binary. Node is build-time-only; the
+resulting binary has no Node/runtime dependency.
 
 <Steps>
 

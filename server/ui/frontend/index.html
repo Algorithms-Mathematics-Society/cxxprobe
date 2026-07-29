@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cxxprobe</title>
+    <script>
+      // Substituted server-side (UiAssetHandler) with the real API base URL
+      // — the only piece of this page that isn't a byte-for-byte static
+      // asset. A distinct token from the JS global name it's assigned to,
+      // since a naive string-replace using the same text would also
+      // corrupt that identifier (see server/handlers/ui_asset_handler.cpp).
+      window.__CXXPROBE_API_BASE__ = "%%CXXPROBE_API_BASE%%";
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
