@@ -4,6 +4,17 @@ on:
   push:
     branches: [main]
 
+# Serializes overlapping Release runs — a burst of pushes landing on main
+# close together (e.g. several commits pushed at once) can otherwise spawn
+# multiple concurrent semantic-release invocations that race for the same
+# version tag; the losers fail but had already pushed a release commit,
+# which (without [skip ci] on that commit) would re-trigger this workflow
+# and repeat indefinitely. cancel-in-progress stays false so a legitimate
+# in-flight release is queued behind, never killed mid-release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-24.04
