@@ -10,13 +10,7 @@
 #include "cxxprobe/cases.hpp"
 #include "cxxprobe/compile.hpp"
 #include "cxxprobe/sandbox.hpp"
-
-#ifndef CXXPROBE_GTEST_INCLUDE_DIR
-#error "CXXPROBE_GTEST_INCLUDE_DIR not defined — check src/CMakeLists.txt"
-#endif
-#ifndef CXXPROBE_GTEST_LIB_DIR
-#error "CXXPROBE_GTEST_LIB_DIR not defined — check src/CMakeLists.txt"
-#endif
+#include "embedded_gtest/gtest_paths.hpp"
 
 namespace cxxprobe::judge {
 
@@ -37,21 +31,6 @@ const char* status_str(Status s) {
 }
 
 namespace {
-
-std::vector<std::string> split_semicolon(std::string_view s) {
-    std::vector<std::string> out;
-    std::size_t start = 0;
-    while (start <= s.size()) {
-        std::size_t pos = s.find(';', start);
-        if (pos == std::string_view::npos) {
-            out.emplace_back(s.substr(start));
-            break;
-        }
-        out.emplace_back(s.substr(start, pos - start));
-        start = pos + 1;
-    }
-    return out;
-}
 
 fs::path make_temp_path(std::string_view prefix) {
     static std::atomic<unsigned long> counter{0};
@@ -143,17 +122,11 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
 
     fs::path binary_out = make_temp_path("cxxprobe-behavior");
 
+    cxxprobe::embedded_gtest::ResolvedPaths gtest_paths = cxxprobe::embedded_gtest::resolve();
+
     std::vector<std::string> extra_flags;
-    for (const auto& dir : split_semicolon(CXXPROBE_GTEST_INCLUDE_DIR)) {
-        if (!dir.empty()) {
-            extra_flags.push_back("-I" + dir);
-        }
-    }
-    for (const auto& dir : split_semicolon(CXXPROBE_GTEST_LIB_DIR)) {
-        if (!dir.empty()) {
-            extra_flags.push_back("-L" + dir);
-        }
-    }
+    extra_flags.push_back("-I" + gtest_paths.include_dir.string());
+    extra_flags.push_back("-L" + gtest_paths.lib_dir.string());
     for (const auto& f : config.behavior.extra_flags) {
         extra_flags.push_back(f);
     }
