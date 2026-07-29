@@ -15,16 +15,9 @@ void ProblemCatalogService::load() {
     }
 
     problems_.clear();
-    for (const auto& entry : fs::directory_iterator(contest_dir_)) {
-        if (!entry.is_directory()) {
-            continue;
-        }
-        fs::path yaml = entry.path() / "problem.yaml";
-        if (!fs::exists(yaml)) {
-            continue;
-        }
+    for (const auto& dir : cxxprobe::problem::find_problem_dirs(contest_dir_)) {
         try {
-            problems_.push_back(cxxprobe::problem::load_from_dir(entry.path()));
+            problems_.push_back(cxxprobe::problem::load_from_dir(dir));
         } catch (const std::exception&) {
             // Skip problems with broken config rather than failing the
             // whole server startup over one bad problem.yaml.

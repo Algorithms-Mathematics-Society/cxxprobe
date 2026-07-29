@@ -325,4 +325,17 @@ cxxprobe::sandbox::Limits resolve_limits(const LimitsOverride& override_cfg,
     return limits;
 }
 
+std::vector<std::filesystem::path> find_problem_dirs(const std::filesystem::path& contest_dir) {
+    std::vector<std::filesystem::path> dirs;
+    for (const auto& entry : std::filesystem::directory_iterator(contest_dir)) {
+        if (!entry.is_directory()) {
+            continue;
+        }
+        if (std::filesystem::exists(entry.path() / "problem.yaml")) {
+            dirs.push_back(entry.path());
+        }
+    }
+    return dirs;
+}
+
 }  // namespace cxxprobe::problem

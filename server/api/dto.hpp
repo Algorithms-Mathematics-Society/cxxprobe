@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "cxxprobe/problem.hpp"
 #include "server/repository/submission_record.hpp"
 #include "server/services/problem_catalog_service.hpp"
 #include "server/services/submission_service.hpp"
@@ -30,13 +29,6 @@ Json health_to_json(bool ok, std::size_t active_workers, std::size_t total_worke
 
 Json problem_summary_to_json(const cxxprobe::server::services::ProblemSummary& p);
 Json problems_list_to_json(const std::vector<cxxprobe::server::services::ProblemSummary>& list);
-
-// statement_markdown is the already-read contents of the problem's
-// statement file (config.statement) — reading it is the handler's job,
-// not this DTO layer's.
-Json problem_detail_to_json(const cxxprobe::problem::ProblemConfig& config,
-                            const cxxprobe::problem::ProjectDefaults& defaults,
-                            const std::string& statement_markdown);
 
 Json submission_accepted_to_json(const cxxprobe::server::services::SubmissionAccepted& accepted);
 

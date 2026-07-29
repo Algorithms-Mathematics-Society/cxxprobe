@@ -34,26 +34,6 @@ Json problems_list_to_json(const std::vector<cxxprobe::server::services::Problem
     return j;
 }
 
-Json problem_detail_to_json(const cxxprobe::problem::ProblemConfig& config,
-                            const cxxprobe::problem::ProjectDefaults& defaults,
-                            const std::string& statement_markdown) {
-    Json j;
-    j["slug"] = config.slug;
-    j["name"] = config.name;
-    j["statement_markdown"] = statement_markdown;
-
-    cxxprobe::sandbox::Limits limits = cxxprobe::problem::resolve_limits(config.limits, defaults);
-    Json limits_json;
-    limits_json["memory_mb"] = limits.memory_bytes / (1024 * 1024);
-    limits_json["cpu_ms"] = limits.cpu.count();
-    limits_json["wall_ms"] = limits.wall.count();
-    j["limits"] = std::move(limits_json);
-
-    // v1 is C++-only judging (see UnsupportedLanguageError) — always "cpp".
-    j["language"] = "cpp";
-    return j;
-}
-
 Json submission_accepted_to_json(const cxxprobe::server::services::SubmissionAccepted& accepted) {
     Json j;
     j["id"] = accepted.id;

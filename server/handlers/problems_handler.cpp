@@ -1,9 +1,8 @@
 #include "server/handlers/problems_handler.hpp"
 
-#include <fstream>
-#include <sstream>
 #include <utility>
 
+#include "cxxprobe/problem.hpp"
 #include "server/api/dto.hpp"
 #include "server/services/submission_service.hpp"
 
@@ -28,16 +27,8 @@ void ProblemsHandler::get(cxxprobe::server::router::Request& req,
         throw cxxprobe::server::services::ProblemNotFoundError(slug);
     }
 
-    std::string statement;
-    std::ifstream ifs(config->problem_dir / config->statement, std::ios::binary);
-    if (ifs) {
-        std::ostringstream ss;
-        ss << ifs.rdbuf();
-        statement = ss.str();
-    }
-
     cxxprobe::server::api::Json j =
-        cxxprobe::server::api::problem_detail_to_json(*config, catalog_->defaults(), statement);
+        cxxprobe::problem::preview_to_json(*config, catalog_->defaults());
     res.set_status(200);
     res.set_json_body(j.dump());
 }

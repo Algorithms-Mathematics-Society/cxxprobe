@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -85,6 +86,24 @@ struct ResolvedCompiler {
 // (missing checker_file / no manual tests present / empty symbolic lists).
 ProblemConfig load(const std::filesystem::path& problem_yaml_path);
 ProblemConfig load_from_dir(const std::filesystem::path& problem_dir);
+
+// Immediate child directories of contest_dir containing a problem.yaml
+// (existence check only — does not parse). Order is filesystem-iteration
+// order; callers needing a stable order should sort the result themselves.
+std::vector<std::filesystem::path> find_problem_dirs(const std::filesystem::path& contest_dir);
+
+struct PreviewOptions {
+    std::size_t max_sample_tests{5};
+};
+
+// Builds the same preview JSON shape GET /problems/{slug} returns: slug,
+// name, statement_markdown (read from config.statement, empty string if
+// missing/unreadable), limits, language, and up to
+// opts.max_sample_tests manual test cases (empty if tests are disabled or
+// fail to load — a malformed dataset shouldn't break a preview). Never
+// throws.
+nlohmann::ordered_json preview_to_json(const ProblemConfig& config, const ProjectDefaults& defaults,
+                                       const PreviewOptions& opts = {});
 
 // Merges CompilerConfig/LimitsOverride onto ProjectDefaults, field by field.
 ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg,
