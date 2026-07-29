@@ -40,6 +40,13 @@ void EventsHandler::serve(boost::beast::tcp_stream& stream,
     header.set(beast_http::field::content_type, "text/event-stream");
     header.set(beast_http::field::cache_control, "no-cache");
     header.set(beast_http::field::connection, "keep-alive");
+    // This handler is special-cased in server/app.cpp to bypass
+    // Router::dispatch/the middleware chain entirely (SSE doesn't fit the
+    // generic Request-in/Response-out Handler signature), so it never gets
+    // CorsMiddleware's Access-Control-Allow-Origin header — without it,
+    // the browser's Same-Origin Policy blocks EventSource from reading the
+    // stream even though the GET itself needs no preflight.
+    header.set(beast_http::field::access_control_allow_origin, "*");
     header.chunked(true);
 
     boost::beast::error_code ec;

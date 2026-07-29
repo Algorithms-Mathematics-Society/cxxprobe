@@ -8,7 +8,8 @@ add_executable(
   middleware_test.cpp
   dto_test.cpp
   handlers_test.cpp
-  ui_asset_handler_test.cpp)
+  ui_asset_handler_test.cpp
+  submission_service_test.cpp)
 
 target_link_libraries(cxxprobe-server-unit-tests PRIVATE cxxprobe-server-lib
                                                          GTest::gtest_main)

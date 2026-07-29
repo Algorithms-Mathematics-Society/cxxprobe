@@ -15,12 +15,18 @@ SubmissionService::SubmissionService(
     std::shared_ptr<cxxprobe::server::queue::ISubmissionQueue> queue,
     std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository> repo,
     std::shared_ptr<cxxprobe::server::events::IEventBus> bus,
-    std::shared_ptr<ProblemCatalogService> catalog, std::filesystem::path work_dir)
+    std::shared_ptr<ProblemCatalogService> catalog, const std::filesystem::path& work_dir)
     : queue_(std::move(queue)),
       repo_(std::move(repo)),
       bus_(std::move(bus)),
       catalog_(std::move(catalog)),
-      work_dir_(std::move(work_dir)) {
+      // Resolved to absolute here, once, so every submission_source_path
+      // derived from it stays valid regardless of what cwd a downstream
+      // compile step runs the compiler with (compile::compile() re-anchors
+      // any relative source path against its own working_dir — the
+      // problem directory — not the server's launch directory, so a
+      // relative path here would silently resolve to the wrong file).
+      work_dir_(fs::absolute(work_dir)) {
     fs::create_directories(work_dir_);
 }
 

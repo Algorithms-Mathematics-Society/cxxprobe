@@ -59,7 +59,7 @@ public:
                       std::shared_ptr<cxxprobe::server::repository::ISubmissionRepository> repo,
                       std::shared_ptr<cxxprobe::server::events::IEventBus> bus,
                       std::shared_ptr<ProblemCatalogService> catalog,
-                      std::filesystem::path work_dir);
+                      const std::filesystem::path& work_dir);
 
     // Throws ProblemNotFoundError / UnsupportedLanguageError / QueueFullError.
     [[nodiscard]] SubmissionAccepted submit(const SubmitRequest& req);
