@@ -160,3 +160,42 @@ If you're not using the scaffolded checks at all and just want raw
 `.in`/`.ans` judging against a pre-built binary per contestant, the
 lower-level `cxxprobe run --cases` loop from [Batch
 Mode](/guides/batch-mode) still works identically.
+
+## Packing for import
+
+```bash
+cxxprobe pack
+```
+
+<FileTree>
+  <FileTree.File name="ams-ascent.zip" />
+</FileTree>
+
+`cxxprobe pack` bundles a contest directory's problems into a zip for
+import into another system — a contest platform's admin UI, or a judge
+host that will run `cxxprobe serve --contest-dir` against the unpacked
+result. The zip is flat at the root:
+
+```text
+manifest.json          # preview index — same JSON shape GET /problems/{slug} returns
+contest.yaml            # verbatim copy
+a-filereader-raii/      # verbatim copy of the whole problem directory
+  problem.yaml
+  problem.md
+  solution.cpp
+  checker_gtest.cpp
+  tests/
+b-graph-diameter/
+  ...
+```
+
+Any standard `unzip` works — `cxxprobe unpack <zip>` is a thin convenience
+wrapper that also validates `manifest.json`'s `format_version` and refuses
+to silently clobber an existing contest directory (`--force` to override).
+Each problem directory is copied whole, filtered through a small fixed
+denylist (`.git`, `build/`, `*.o`, `a.out`, editor swap files) rather than
+enumerating every file a `problem.yaml` might reference — `pack` is
+deliberately a plain archiver, not a validator. See [Packing &
+Import](/guides/packing-and-import) for the full workflow, including
+`--problems` to pack a subset and `cxxprobe judge` for judging a single
+packed problem directly.

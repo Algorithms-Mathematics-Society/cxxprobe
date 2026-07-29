@@ -11,9 +11,11 @@ import { Callout } from 'nextra/components'
 cxxprobe <subcommand> [OPTIONS] ...
 ```
 
-cxxprobe has five subcommands: [`run`](#run) (sandbox a program directly),
+cxxprobe has eight subcommands: [`run`](#run) (sandbox a program directly),
 [`new contest`](#new-contest--new-problem) / [`new problem`](#new-contest--new-problem)
-(scaffolding), [`test problem`](#test-problem) (judging), and
+(scaffolding), [`test problem`](#test-problem) (judging), [`pack`](#pack) /
+[`unpack`](#unpack) (bundle a contest's problems for import elsewhere),
+[`judge`](#judge) (single-shot, worker-facing judging), and
 [`serve`](#serve) (the HTTP judging service). `-V`/`--version` works at the
 top level without a subcommand.
 
@@ -212,6 +214,92 @@ compile error) as opposed to a genuine test failure.
   passed/was skipped)
 - `1` — overall `FAIL` (at least one enabled section failed)
 - `2` — overall `ERROR` (compile failure, missing problem, config error)
+
+---
+
+## `pack`
+
+Bundles a contest directory's problems into a portable zip — statement,
+tests, checkers, and reference solution, verbatim — for import into another
+system (e.g. a contest platform's own admin UI). See [Packing &
+Import](/guides/packing-and-import) for a full walkthrough.
+
+```text
+cxxprobe pack [OPTIONS]
+```
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--dir PATH` | `-C` | auto-detect via `contest.yaml` | Contest directory to pack |
+| `--problems LIST` | | (empty = all) | Comma-separated problem slugs to include |
+| `--out PATH` | `-o` | `<contest-dir-basename>.zip` in cwd | Output zip path |
+
+The zip is flat at the root (`manifest.json`, `contest.yaml`, one directory
+per packed problem) — any standard `unzip` works, and the result is
+immediately usable as a `--contest-dir`. `manifest.json` carries a
+`format_version`, `packed_at` timestamp, and a JSON preview of every packed
+problem (statement, limits, sample tests) — the same shape `GET
+/problems/{slug}` returns. A small fixed denylist (`.git`, `build/`, `*.o`,
+`a.out`, editor swap files) is excluded; everything else in each problem
+directory — including the reference solution — is included as-is.
+
+---
+
+## `unpack`
+
+Extracts a zip produced by `pack` back into a directly-servable contest
+directory.
+
+```text
+cxxprobe unpack <zip> [OPTIONS]
+```
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `<zip>` (positional) | | required | Path to the pack zip |
+| `--dir PATH` | `-C` | current directory | Destination directory |
+| `--force` | | off | Overwrite even if the destination already has a `contest.yaml` |
+
+Refuses a pack whose `manifest.json` `format_version` is newer than this
+build understands, rather than failing confusingly deep inside problem
+loading.
+
+---
+
+## `judge`
+
+A minimal, worker-facing single-shot judge entry point: given exactly one
+problem and one submission file, runs the full three-way judge and reports
+the result. Unlike `test problem`, it never walks up looking for a
+`contest.yaml` or resolves a problem by name — it's meant to be shelled out
+to per job by an external orchestrator (e.g. a queue-polling worker), not
+run interactively.
+
+```text
+cxxprobe judge (--problem-dir PATH | --package ZIP) --submission FILE [OPTIONS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--problem-dir PATH` | — | A directory containing `problem.yaml` directly. Exactly one of this or `--package` is required |
+| `--package ZIP` | — | A `pack` zip containing exactly one problem — unpacked internally to a temp directory, then judged the same way |
+| `--submission FILE` | required | Submission source file to grade |
+| `--output PATH` | — | Write the JSON report to this file |
+| `--json` | off | Also print the JSON report to stdout |
+
+<Callout type="info">
+  A produced report — including a legitimate `overall: ERROR` verdict, e.g. a
+  compile failure — means judging genuinely ran to completion. Only an
+  exception before judging starts (a bad `--problem-dir`, corrupt
+  `problem.yaml`, or a `--package` zip containing anything other than
+  exactly one problem) produces **no** output file at all. That distinction,
+  not the process exit code alone, is what a job orchestrator should key its
+  retry logic off of.
+</Callout>
+
+Exit codes match `test problem`'s convention (`0` pass, `1` fail, `2` error
+— including a `--package`/`--problem-dir` resolution failure before judging
+even starts).
 
 ---
 

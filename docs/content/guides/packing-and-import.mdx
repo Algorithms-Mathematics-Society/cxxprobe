@@ -1,0 +1,140 @@
+---
+title: Packing & Import
+description: Bundle a contest's problems into a zip with `cxxprobe pack`, and judge single problems with `cxxprobe judge`.
+---
+
+import { Steps, Callout } from 'nextra/components'
+
+# Packing & Import
+
+`cxxprobe pack` bundles a contest directory's problems — statement, tests,
+checkers, reference solution — into a portable zip. `cxxprobe unpack`
+extracts one back into a directly-servable contest directory. Together
+they're the transport format between wherever problems get authored and
+wherever they get judged, with zero new parsing on the receiving end: an
+unpacked pack is byte-identical to what `cxxprobe test problem` and
+`cxxprobe serve` already understand.
+
+<Callout type="info">
+  This is a transport format for a separate system (e.g. a contest
+  platform's admin UI, or a fleet of judge hosts) to import problems from —
+  not a new contest concept inside cxxprobe itself. cxxprobe's own contest
+  directory format is unchanged; `pack`/`unpack` just move it around.
+</Callout>
+
+<Steps>
+
+### Pack a contest
+
+Run this from inside a contest directory (or pass `-C/--dir` explicitly):
+
+```bash
+cd ams-ascent
+cxxprobe pack
+```
+
+```text
+Packed 3 problem(s) into /path/to/ams-ascent/ams-ascent.zip
+  a-beet-cast  (A: beet_cast)
+  b-pokemon-raii  (B: Pokemon RAII)
+  c-build-your-own-vector  (C: Build Your Own Vector)
+```
+
+Useful flags:
+
+- `--problems a-beet-cast,b-pokemon-raii` — pack a subset by slug instead of
+  every problem in the contest
+- `-o path/to/output.zip` — control the output path (default:
+  `<contest-dir-basename>.zip` in the current directory)
+
+### Inspect the manifest
+
+The zip's `manifest.json` is a preview index — the same JSON shape `GET
+/problems/{slug}` returns for every packed problem (statement, limits,
+sample tests) — meant for an importing system's UI to show a preview
+without unpacking and parsing cxxprobe's own YAML schema:
+
+```bash
+unzip -p ams-ascent.zip manifest.json | jq .
+```
+
+```json
+{
+  "format_version": 1,
+  "packed_at": "2026-07-29T18:03:11Z",
+  "cxxprobe_version": "0.8.0",
+  "contest": { "name": "ams-ascent" },
+  "problems": [
+    {
+      "slug": "a-beet-cast",
+      "name": "A: beet_cast",
+      "statement_markdown": "# A: beet cast\n...",
+      "limits": { "memory_mb": 256, "cpu_ms": 5000, "wall_ms": 10000 },
+      "language": "cpp",
+      "sample_tests": [{ "label": "1", "input": "...", "expected_output": "..." }]
+    }
+  ]
+}
+```
+
+The rest of the zip is a verbatim, denylist-filtered copy of each problem
+directory — see [Folder Structure](/architecture/folder-structure#packing-for-import)
+for the exact layout.
+
+### Unpack and serve
+
+```bash
+cxxprobe unpack ams-ascent.zip -C /srv/judge/ams-ascent
+cxxprobe serve --contest-dir /srv/judge/ams-ascent --ui
+```
+
+No transformation step needed — the unpacked directory is a normal contest
+directory. `unpack` refuses to overwrite an existing `contest.yaml` at the
+destination unless you pass `--force`, and refuses a pack whose
+`manifest.json` `format_version` is newer than the running cxxprobe build
+understands.
+
+### Judge a single problem directly
+
+For judging outside a full `cxxprobe serve` deployment — e.g. a worker
+process that receives one packed problem and one submission per job —
+`cxxprobe judge` skips contest-dir resolution entirely:
+
+```bash
+cxxprobe judge --package a-beet-cast.zip --submission contestant.cpp --output result.json
+```
+
+```text
+a-beet-cast: PASS
+```
+
+`--package` must point at a zip containing exactly one problem (pack it
+with `--problems <slug>` to guarantee that); `--problem-dir` works the same
+way against an already-unpacked directory. `--output` writes the full
+`JudgeReport` JSON to a file — useful for a wrapper script that shouldn't
+have to parse captured stdout.
+
+<Callout type="warning">
+  A produced report — even one with `overall: ERROR` (e.g. a compile
+  failure) — means judging genuinely ran to completion; that's a real
+  judged outcome to store, not retry. Only an exception before judging
+  starts (a bad `--problem-dir`, a corrupt `problem.yaml`, or a `--package`
+  zip with anything other than exactly one problem) produces **no** output
+  file at all. A job-processing wrapper around `cxxprobe judge` should key
+  its retry logic off *that* distinction, not the process exit code alone.
+</Callout>
+
+</Steps>
+
+## What doesn't ship in a pack
+
+- **Absolute-path checker/manifest references.** `problem.yaml`'s
+  `tests.checker`/`tests.manifest` can in principle point at an absolute
+  path outside the problem directory; `pack` prints a warning for this
+  (it's a static check, not judging) but the referenced file still won't be
+  in the zip. Keep checkers and manifests inside the problem directory.
+- **Anything matched by the denylist** — `.git`, `build/`, `*.o`, `a.out`,
+  editor swap files. `pack` is a plain archiver, not a validator; it
+  doesn't run the reference solution or check that the problem actually
+  passes before packing. Run `cxxprobe test problem <name>` yourself first
+  if you want that guarantee.
