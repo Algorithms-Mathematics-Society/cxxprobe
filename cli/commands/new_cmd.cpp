@@ -4,8 +4,8 @@
 #include <format>
 #include <fstream>
 #include <iostream>
-#include <optional>
 
+#include "../common/contest_dir.hpp"
 #include "cxxprobe/problem.hpp"
 
 namespace cxxprobe::cli {
@@ -17,20 +17,6 @@ namespace {
 void write_file(const fs::path& path, std::string_view content) {
     std::ofstream ofs{path, std::ios::binary};
     ofs << content;
-}
-
-std::optional<fs::path> find_contest_dir(const fs::path& start) {
-    fs::path cur = fs::absolute(start);
-    while (true) {
-        if (fs::exists(cur / "contest.yaml")) {
-            return cur;
-        }
-        fs::path parent = cur.parent_path();
-        if (parent == cur) {
-            return std::nullopt;
-        }
-        cur = parent;
-    }
 }
 
 constexpr std::string_view kProblemYamlTemplate = R"YAML(version: 1

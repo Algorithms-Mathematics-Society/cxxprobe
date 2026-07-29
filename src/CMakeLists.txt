@@ -1,5 +1,6 @@
 find_package(nlohmann_json REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(libzip REQUIRED)
 
 add_library(
   cxxprobe STATIC
@@ -9,12 +10,15 @@ add_library(
   sandbox/detail/cgroup.cpp
   sandbox/detail/child.cpp
   problem/problem.cpp
+  problem/problem_preview.cpp
   symbolic/symbolic.cpp
   gtest_report/gtest_report.cpp
   compile/compile.cpp
   cases/cases.cpp
   judge/judge.cpp
-  judge/judge_json.cpp)
+  judge/judge_json.cpp
+  pack/pack.cpp
+  pack/detail/zip_archive.cpp)
 
 add_library(cxxprobe::cxxprobe ALIAS cxxprobe)
 
@@ -23,7 +27,13 @@ target_include_directories(
                   $<INSTALL_INTERFACE:include>)
 
 target_link_libraries(cxxprobe PUBLIC nlohmann_json::nlohmann_json
-                                      yaml-cpp::yaml-cpp)
+                                      yaml-cpp::yaml-cpp libzip::zip)
+
+# manifest.json's cxxprobe_version field — cxxprobe-cli defines this same macro
+# independently (cli/CMakeLists.txt) for --version; pack.cpp lives in this core
+# library target instead, so it needs its own definition.
+target_compile_definitions(cxxprobe
+                           PRIVATE CXXPROBE_VERSION="${PROJECT_VERSION}")
 
 find_package(GTest REQUIRED)
 # The behavior checker (cxxprobe::judge) compiles a fresh checker+solution

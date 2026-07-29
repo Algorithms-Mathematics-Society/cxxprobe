@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "../common/color.hpp"
+#include "../common/contest_dir.hpp"
 #include "../common/json_io.hpp"
 #include "cxxprobe/judge.hpp"
 #include "cxxprobe/problem.hpp"
@@ -20,20 +21,6 @@ namespace {
 
 using cxxprobe::judge::Status;
 using cxxprobe::judge::status_str;
-
-std::optional<fs::path> find_contest_dir(const fs::path& start) {
-    fs::path cur = fs::absolute(start);
-    while (true) {
-        if (fs::exists(cur / "contest.yaml")) {
-            return cur;
-        }
-        fs::path parent = cur.parent_path();
-        if (parent == cur) {
-            return std::nullopt;
-        }
-        cur = parent;
-    }
-}
 
 // Resolves a problem by slug (matching a sibling directory name) or by its
 // problem.yaml `name:` field (exact match) — so both the exact title and

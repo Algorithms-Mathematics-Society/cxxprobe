@@ -2,32 +2,14 @@
 
 #include <filesystem>
 #include <iostream>
-#include <optional>
 
+#include "../common/contest_dir.hpp"
 #include "server/app.hpp"
 #include "server/config/server_config.hpp"
 
 namespace cxxprobe::cli {
 
 namespace fs = std::filesystem;
-
-namespace {
-
-std::optional<fs::path> find_contest_dir(const fs::path& start) {
-    fs::path cur = fs::absolute(start);
-    while (true) {
-        if (fs::exists(cur / "contest.yaml")) {
-            return cur;
-        }
-        fs::path parent = cur.parent_path();
-        if (parent == cur) {
-            return std::nullopt;
-        }
-        cur = parent;
-    }
-}
-
-}  // namespace
 
 ServeCommand::ServeCommand(CLI::App& parent) {
     app_ = parent.add_subcommand("serve", "Start the HTTP judging service");

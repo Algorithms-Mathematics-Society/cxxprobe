@@ -3,6 +3,7 @@
 // NOLINTEND(misc-include-cleaner)
 
 #include "commands/new_cmd.hpp"
+#include "commands/pack_cmd.hpp"
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
 #ifdef CXXPROBE_SERVE_ENABLED
@@ -22,6 +23,7 @@ int main(int argc, char* argv[]) {
     cxxprobe::cli::RunCommand run_cmd{app};
     cxxprobe::cli::NewCommand new_cmd{app};
     cxxprobe::cli::TestCommand test_cmd{app};
+    cxxprobe::cli::PackCommand pack_cmd{app};
 #ifdef CXXPROBE_SERVE_ENABLED
     cxxprobe::cli::ServeCommand serve_cmd{app};
 #endif
@@ -36,6 +38,9 @@ int main(int argc, char* argv[]) {
     }
     if (test_cmd.problem_invoked()) {
         return test_cmd.execute();
+    }
+    if (pack_cmd.pack_invoked() || pack_cmd.unpack_invoked()) {
+        return pack_cmd.execute();
     }
 #ifdef CXXPROBE_SERVE_ENABLED
     if (serve_cmd.invoked()) {
