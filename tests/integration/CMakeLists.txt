@@ -15,7 +15,8 @@ target_compile_definitions(
 # black-box scaffold -> author -> judge round trip, so it only makes sense to
 # build when the CLI itself is being built (CXXPROBE_BUILD_CLI).
 if(TARGET cxxprobe-cli)
-  target_sources(cxxprobe-integration-tests PRIVATE problem_pipeline_test.cpp)
+  target_sources(cxxprobe-integration-tests PRIVATE problem_pipeline_test.cpp
+                                                    pack_pipeline_test.cpp)
   target_compile_definitions(
     cxxprobe-integration-tests
     PRIVATE CXXPROBE_CLI_PATH="$<TARGET_FILE:cxxprobe-cli>")
