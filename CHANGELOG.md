@@ -1,3 +1,10 @@
+## [0.9.2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.1...v0.9.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* **judge:** embed GTest headers/libs instead of baking in the build machine's Conan path ([6338ea2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/6338ea230a0023c8a2e27a8714c33c4f66cfece5))
+
 ## [0.9.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.0...v0.9.1) (2026-07-29)
 
 
