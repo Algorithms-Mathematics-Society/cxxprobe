@@ -1,3 +1,10 @@
+## [0.9.1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.0...v0.9.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **server:** answer CORS preflight OPTIONS requests directly ([1e09e3d](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/1e09e3d7210def5d74b3b50de8bc9723a643b0e8))
+
 # [0.9.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.8.0...v0.9.0) (2026-07-29)
 
 
