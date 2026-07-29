@@ -1,3 +1,10 @@
+## [0.9.3](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.2...v0.9.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **server:** CORS on the SSE endpoint, and a relative submission path bug ([b8f33b1](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/b8f33b1ae0a6042d1dfbf7164236cc37e0e2c5ff))
+
 ## [0.9.2](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.1...v0.9.2) (2026-07-29)
 
 
