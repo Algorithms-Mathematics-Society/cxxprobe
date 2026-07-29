@@ -78,6 +78,31 @@ TEST(CorsMiddlewareTest, SetsAccessControlAllowOriginHeader) {
     EXPECT_EQ(res.raw()[beast_http::field::access_control_allow_origin], "*");
 }
 
+TEST(CorsMiddlewareTest, AnswersOptionsPreflightDirectlyWithout404OrFallthrough) {
+    // The dev UI (ui_port) and API (api_port) are different origins, so any
+    // fetch() carrying a non-"simple" header (e.g. the UI client's JSON
+    // Content-Type on every call) triggers a preflight OPTIONS request
+    // first. Router::dispatch has no OPTIONS route registered for
+    // anything, so this must be answered here, not passed through.
+    CorsMiddleware mw;
+    cxxprobe::server::router::BeastRequest raw;
+    raw.method(beast_http::verb::options);
+    raw.target("/problems");
+    Request req(raw);
+    Response res;
+
+    bool reached_next = false;
+    mw.handle(req, res, [&] { reached_next = true; });
+
+    EXPECT_FALSE(reached_next) << "a preflight must be answered directly, never forwarded";
+    EXPECT_EQ(res.raw().result_int(), 204);
+    EXPECT_EQ(res.raw()[beast_http::field::access_control_allow_origin], "*");
+    EXPECT_NE(res.raw()[beast_http::field::access_control_allow_methods].find("GET"),
+              std::string_view::npos);
+    EXPECT_NE(res.raw()[beast_http::field::access_control_allow_headers].find("Content-Type"),
+              std::string_view::npos);
+}
+
 TEST(ErrorMappingMiddlewareTest, MapsProblemNotFoundTo404) {
     ErrorMappingMiddleware mw;
     Request req = make_get_request("/submissions");
