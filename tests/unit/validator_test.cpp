@@ -23,20 +23,20 @@ namespace {
 // unless it's in [1, 100].
 constexpr std::string_view kValidatorSrc = R"CPP(
 #include <cstdio>
-int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
-    int x = 0;
-    if (std::scanf("%d", &x) != 1) {
-        std::fprintf(stderr, "expected an integer\n");
-        return 1;
+    int main(int argc, char** argv) {
+        (void)argc;
+        (void)argv;
+        int x = 0;
+        if (std::scanf("%d", &x) != 1) {
+            std::fprintf(stderr, "expected an integer\n");
+            return 1;
+        }
+        if (x < 1 || x > 100) {
+            std::fprintf(stderr, "value %d out of range [1, 100]\n", x);
+            return 1;
+        }
+        return 0;
     }
-    if (x < 1 || x > 100) {
-        std::fprintf(stderr, "value %d out of range [1, 100]\n", x);
-        return 1;
-    }
-    return 0;
-}
 )CPP";
 
 void write_file(const fs::path& p, std::string_view content) {

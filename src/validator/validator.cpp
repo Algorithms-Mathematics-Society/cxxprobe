@@ -60,9 +60,9 @@ CompileResult compile(const cxxprobe::problem::ProblemConfig& config,
 }
 
 Report run(const cxxprobe::problem::ProblemConfig& config,
-          const cxxprobe::problem::ProjectDefaults& defaults,
-          const std::vector<cxxprobe::cases::TestCase>& test_cases,
-          const std::optional<fs::path>& binary_hint) {
+           const cxxprobe::problem::ProjectDefaults& defaults,
+           const std::vector<cxxprobe::cases::TestCase>& test_cases,
+           const std::optional<fs::path>& binary_hint) {
     Report report;
     report.ran = true;
 

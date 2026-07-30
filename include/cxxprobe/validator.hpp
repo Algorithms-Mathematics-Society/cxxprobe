@@ -57,9 +57,9 @@ struct Report {
 // step failure being unreachable due to config.validator.enabled being
 // false (see compile()).
 Report run(const cxxprobe::problem::ProblemConfig& config,
-          const cxxprobe::problem::ProjectDefaults& defaults,
-          const std::vector<cxxprobe::cases::TestCase>& test_cases,
-          const std::optional<std::filesystem::path>& binary_hint = std::nullopt);
+           const cxxprobe::problem::ProjectDefaults& defaults,
+           const std::vector<cxxprobe::cases::TestCase>& test_cases,
+           const std::optional<std::filesystem::path>& binary_hint = std::nullopt);
 
 nlohmann::ordered_json to_json(const Report& report);
 

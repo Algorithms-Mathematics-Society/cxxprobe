@@ -7,6 +7,7 @@
 #include "commands/pack_cmd.hpp"
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
+#include "commands/validate_cmd.hpp"
 #ifdef CXXPROBE_SERVE_ENABLED
 #include "commands/serve_cmd.hpp"
 #endif
@@ -26,6 +27,7 @@ int main(int argc, char* argv[]) {
     cxxprobe::cli::TestCommand test_cmd{app};
     cxxprobe::cli::PackCommand pack_cmd{app};
     cxxprobe::cli::JudgeCommand judge_cmd{app};
+    cxxprobe::cli::ValidateCommand validate_cmd{app};
 #ifdef CXXPROBE_SERVE_ENABLED
     cxxprobe::cli::ServeCommand serve_cmd{app};
 #endif
@@ -46,6 +48,9 @@ int main(int argc, char* argv[]) {
     }
     if (judge_cmd.invoked()) {
         return judge_cmd.execute();
+    }
+    if (validate_cmd.invoked()) {
+        return validate_cmd.execute();
     }
 #ifdef CXXPROBE_SERVE_ENABLED
     if (serve_cmd.invoked()) {
