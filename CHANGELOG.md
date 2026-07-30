@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.3...v0.10.0) (2026-07-30)
+
+
+### Features
+
+* **validator:** add the Validator Engine library ([124d8d4](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/124d8d4f71917c6e52609455da5af037bed16cdc))
+
 ## [0.9.3](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.2...v0.9.3) (2026-07-29)
 
 
