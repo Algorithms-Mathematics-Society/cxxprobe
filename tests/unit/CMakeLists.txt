@@ -9,6 +9,7 @@ add_executable(
   problem_preview_test.cpp
   pack_test.cpp
   pack_zip_archive_test.cpp
+  validator_test.cpp
   ${PROJECT_SOURCE_DIR}/cli/common/text_utils.cpp)
 
 target_link_libraries(cxxprobe-unit-tests PRIVATE cxxprobe GTest::gtest_main)

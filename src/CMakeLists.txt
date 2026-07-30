@@ -56,7 +56,9 @@ add_library(
   judge/judge_json.cpp
   pack/pack.cpp
   pack/detail/zip_archive.cpp
-  embedded_gtest/gtest_paths.cpp)
+  embedded_gtest/gtest_paths.cpp
+  validator/validator.cpp
+  validator/validator_json.cpp)
 
 add_library(cxxprobe::cxxprobe ALIAS cxxprobe)
 
