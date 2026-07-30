@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.10.0...v0.11.0) (2026-07-30)
+
+
+### Features
+
+* **cli:** add cxxprobe validate ([841759b](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/841759b86474f62cb12ea62026d532b99a8310e3))
+
 # [0.10.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.9.3...v0.10.0) (2026-07-30)
 
 
