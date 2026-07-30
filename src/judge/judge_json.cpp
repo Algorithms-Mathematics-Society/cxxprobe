@@ -26,6 +26,9 @@ Json case_detail_to_json(const CaseDetail& c) {
     j["cpu_time_ms"] = c.cpu_time_ms;
     j["wall_time_ms"] = c.wall_time_ms;
     j["peak_memory_bytes"] = c.peak_memory_bytes;
+    if (!c.checker_diagnostics.empty()) {
+        j["checker_diagnostics"] = c.checker_diagnostics;
+    }
     return j;
 }
 

@@ -90,10 +90,11 @@ ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& confi
 
         if (tc.answer_data) {
             ++judged_total;
-            bool ok =
+            cxxprobe::cases::CheckerOutcome outcome =
                 cxxprobe::cases::check_output(checker_bin, tc.input_data, res, *tc.answer_data);
-            auto verdict = cxxprobe::cases::compute_verdict(res, limits, ok);
+            auto verdict = cxxprobe::cases::compute_verdict(res, limits, outcome.ac);
             detail.verdict = cxxprobe::cases::verdict_str(verdict);
+            detail.checker_diagnostics = outcome.diagnostics;
             if (verdict == cxxprobe::cases::Verdict::AC) {
                 ++report.passed;
             }

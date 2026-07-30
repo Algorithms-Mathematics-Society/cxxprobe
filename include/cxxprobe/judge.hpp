@@ -25,6 +25,7 @@ struct CaseDetail {
     long cpu_time_ms{0};
     long wall_time_ms{0};
     std::size_t peak_memory_bytes{0};
+    std::string checker_diagnostics;  // the checker's stderr, if any
 };
 
 struct ManualTestsReport {

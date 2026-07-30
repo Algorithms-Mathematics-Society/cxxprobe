@@ -37,11 +37,27 @@ std::vector<TestCase> load_cases(const std::filesystem::path& path);
 // Default checker: whitespace-tokenized string equality.
 bool token_equal(std::string_view a, std::string_view b);
 
+// Generous defaults for running a checker binary — setter-authored tooling,
+// not a submission, so this is deliberately decoupled from the problem's
+// contestant-facing limits (a checker shouldn't false-positive TLE against
+// a tight submission time limit): 512 MiB, 10s CPU, 15s wall, 16 PIDs.
+cxxprobe::sandbox::Limits default_checker_limits();
+
+struct CheckerOutcome {
+    bool ac{false};
+    std::string diagnostics;  // the checker's stderr, if any
+};
+
 // Runs a testlib-ABI checker binary (checker <input> <output> <answer>,
-// exit 0 = AC). If checker_bin is empty, falls back to token_equal against
-// result.stdout_data.
-bool check_output(const std::string& checker_bin, const std::string& input_data,
-                  const cxxprobe::sandbox::Result& result, const std::string& answer_data);
+// exit 0 = AC) through cxxprobe::sandbox::run() — the checker is sandboxed
+// and resource-limited exactly like compile/solution execution already
+// are, and its stderr is captured rather than inherited straight to the
+// terminal. If checker_bin is empty, falls back to token_equal against
+// result.stdout_data (diagnostics stays empty in that case).
+CheckerOutcome check_output(
+    const std::string& checker_bin, const std::string& input_data,
+    const cxxprobe::sandbox::Result& result, const std::string& answer_data,
+    const cxxprobe::sandbox::Limits& checker_limits = default_checker_limits());
 
 // Verdict priority when multiple conditions trigger: TLE > MLE > OLE > RE > WA/AC.
 Verdict compute_verdict(const cxxprobe::sandbox::Result& result,

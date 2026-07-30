@@ -1,19 +1,19 @@
 #include "cxxprobe/cases.hpp"
 
-#include <fcntl.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <fstream>
 #include <stdexcept>
 #include <utility>
+
+#include "cxxprobe/sandbox.hpp"
 
 namespace cxxprobe::cases {
 
@@ -105,33 +105,12 @@ struct TempFile {
     TempFile& operator=(TempFile&&) = delete;
 };
 
-bool run_checker(const std::string& checker_bin, const std::string& input_path,
-                 const std::string& output_path, const std::string& answer_path) {
-    pid_t pid = ::fork();
-    if (pid < 0) {
-        throw std::runtime_error{std::format("fork: {}", std::strerror(errno))};
-    }
-    if (pid == 0) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-        int devnull = ::open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            ::dup2(devnull, STDOUT_FILENO);
-            ::close(devnull);
-        }
-        std::array<const char*, 5> exec_argv{
-            checker_bin.c_str(),
-            input_path.c_str(),
-            output_path.c_str(),
-            answer_path.c_str(),
-            nullptr,
-        };
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        ::execv(checker_bin.c_str(), const_cast<char* const*>(exec_argv.data()));
-        ::_exit(127);
-    }
-    int wstatus = 0;
-    ::waitpid(pid, &wstatus, 0);
-    return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0;
+CheckerOutcome run_checker(const std::string& checker_bin, const std::string& input_path,
+                           const std::string& output_path, const std::string& answer_path,
+                           const cxxprobe::sandbox::Limits& checker_limits) {
+    std::vector<std::string> argv{checker_bin, input_path, output_path, answer_path};
+    cxxprobe::sandbox::Result res = cxxprobe::sandbox::run(argv, "", checker_limits);
+    return CheckerOutcome{.ac = res.exit_code == 0, .diagnostics = res.stderr_data};
 }
 
 }  // namespace
@@ -255,15 +234,27 @@ std::vector<TestCase> load_cases(const fs::path& path) {
     return load_cases_dir(path);
 }
 
-bool check_output(const std::string& checker_bin, const std::string& input_data,
-                  const cxxprobe::sandbox::Result& result, const std::string& answer_data) {
+cxxprobe::sandbox::Limits default_checker_limits() {
+    return cxxprobe::sandbox::Limits{
+        .memory_bytes = 512ULL * 1024 * 1024,
+        .cpu = std::chrono::milliseconds{10000},
+        .wall = std::chrono::milliseconds{15000},
+        .max_pids = 16,
+    };
+}
+
+CheckerOutcome check_output(const std::string& checker_bin, const std::string& input_data,
+                            const cxxprobe::sandbox::Result& result, const std::string& answer_data,
+                            const cxxprobe::sandbox::Limits& checker_limits) {
     if (checker_bin.empty()) {
-        return token_equal(result.stdout_data, answer_data);
+        return CheckerOutcome{.ac = token_equal(result.stdout_data, answer_data),
+                              .diagnostics = {}};
     }
     TempFile input_tmp{input_data};
     TempFile output_tmp{result.stdout_data};
     TempFile answer_tmp{answer_data};
-    return run_checker(checker_bin, input_tmp.path, output_tmp.path, answer_tmp.path);
+    return run_checker(checker_bin, input_tmp.path, output_tmp.path, answer_tmp.path,
+                       checker_limits);
 }
 
 Verdict compute_verdict(const cxxprobe::sandbox::Result& result,

@@ -152,9 +152,9 @@ int run_batch(const std::vector<std::string>& argv, const std::string& cases_pat
         try {
             result = cxxprobe::sandbox::run(argv, tc.input_data, limits);
             if (tc.answer_data) {
-                bool ok = cxxprobe::cases::check_output(checker_bin, tc.input_data, *result,
-                                                        *tc.answer_data);
-                verdict = cxxprobe::cases::compute_verdict(*result, limits, ok);
+                auto outcome = cxxprobe::cases::check_output(checker_bin, tc.input_data, *result,
+                                                             *tc.answer_data);
+                verdict = cxxprobe::cases::compute_verdict(*result, limits, outcome.ac);
                 any_verdict = true;
                 if (*verdict == Verdict::AC) {
                     ++passed;
@@ -249,8 +249,8 @@ int run_single(const std::vector<std::string>& argv, const std::string& input_fi
             } catch (...) {
             }
         }
-        bool ok = cxxprobe::cases::check_output(checker_bin, in_for_checker, res, answer);
-        verdict = cxxprobe::cases::compute_verdict(res, limits, ok);
+        auto outcome = cxxprobe::cases::check_output(checker_bin, in_for_checker, res, answer);
+        verdict = cxxprobe::cases::compute_verdict(res, limits, outcome.ac);
     }
 
     if (json_output) {
