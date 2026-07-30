@@ -27,7 +27,7 @@ protected:
         std::ofstream(dir_ / "contest" / "contest.yaml")
             << "version: 1\nname: \"Test\"\ndescription: \"\"\n";
         std::ofstream(dir_ / "contest" / "a-slug" / "problem.yaml")
-            << "version: 1\nname: \"A: Test\"\n";
+            << "version: 2\nname: \"A: Test\"\n";
         std::ofstream(dir_ / "contest" / "a-slug" / "problem.md") << "# statement\n";
         std::ofstream(dir_ / "contest" / "a-slug" / "tests" / "1.in") << "1 2\n";
         std::ofstream(dir_ / "contest" / "a-slug" / "tests" / "1.ans") << "3\n";
@@ -66,7 +66,7 @@ TEST_F(PackTest, DenylistedJunkIsExcluded) {
 TEST_F(PackTest, ProblemsFilterIncludesOnlyRequestedSlugs) {
     std::filesystem::create_directories(dir_ / "contest" / "b-slug");
     std::ofstream(dir_ / "contest" / "b-slug" / "problem.yaml")
-        << "version: 1\nname: \"B: Test\"\n";
+        << "version: 2\nname: \"B: Test\"\n";
 
     PackOptions opts;
     opts.problem_slugs = {"a-slug"};

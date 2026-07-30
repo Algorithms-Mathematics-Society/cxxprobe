@@ -79,6 +79,34 @@ bool dir_has_case_files(const std::filesystem::path& dir) {
                                [](const auto& entry) { return entry.path().extension() == ".in"; });
 }
 
+std::vector<std::string> cpp_files_in(const std::filesystem::path& dir) {
+    std::vector<std::string> files;
+    if (!std::filesystem::is_directory(dir)) {
+        return files;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (entry.path().extension() == ".cpp") {
+            files.push_back(entry.path().filename().string());
+        }
+    }
+    std::ranges::sort(files);
+    return files;
+}
+
+StatementConfig parse_statement_section(const YAML::Node& doc) {
+    StatementConfig statement;
+    YAML::Node s = doc["statement"];
+    if (s) {
+        if (s["dir"]) {
+            statement.dir = s["dir"].as<std::string>();
+        }
+        if (s["entry"]) {
+            statement.entry = s["entry"].as<std::string>();
+        }
+    }
+    return statement;
+}
+
 CompilerConfig parse_compiler_section(const YAML::Node& doc) {
     CompilerConfig compiler;
     YAML::Node c = doc["compiler"];
@@ -144,9 +172,6 @@ ManualTestsConfig parse_tests_section(const YAML::Node& doc,
         if (t["manifest"] && !t["manifest"].IsNull()) {
             tests.manifest = t["manifest"].as<std::string>();
         }
-        if (t["checker"] && !t["checker"].IsNull()) {
-            tests.checker = t["checker"].as<std::string>();
-        }
         if (t["dir"] && t["manifest"] && !t["manifest"].IsNull()) {
             throw std::runtime_error{
                 "problem.yaml: tests.dir and tests.manifest are mutually exclusive"};
@@ -196,19 +221,51 @@ SymbolicConfig parse_symbolic_section(const YAML::Node& doc) {
     return symbolic;
 }
 
-// Throws if behavior.enabled is explicitly true but checker_file doesn't
-// exist on disk.
-BehaviorConfig parse_behavior_section(const YAML::Node& doc,
-                                      const std::filesystem::path& problem_dir) {
+// Throws if enabled is explicitly true but checker.dir/entry doesn't exist.
+IoCheckerConfig parse_checker_io_section(const YAML::Node& c, const std::string& checker_dir,
+                                         const std::filesystem::path& problem_dir) {
+    IoCheckerConfig io_cfg;
+    std::optional<bool> enabled_explicit;
+    if (c && c["io"]) {
+        YAML::Node io = c["io"];
+        if (io["enabled"] && !io["enabled"].IsNull()) {
+            enabled_explicit = io["enabled"].as<bool>();
+        }
+        if (io["entry"]) {
+            io_cfg.entry = io["entry"].as<std::string>();
+        }
+        if (io["extra_flags"]) {
+            for (const auto& f : io["extra_flags"]) {
+                io_cfg.extra_flags.push_back(f.as<std::string>());
+            }
+        }
+    }
+    bool present = std::filesystem::exists(problem_dir / checker_dir / io_cfg.entry);
+    if (enabled_explicit) {
+        if (*enabled_explicit && !present) {
+            throw std::runtime_error{
+                std::format("problem.yaml: checker.io.enabled is true but '{}/{}' does not exist",
+                            checker_dir, io_cfg.entry)};
+        }
+        io_cfg.enabled = *enabled_explicit;
+    } else {
+        io_cfg.enabled = present;
+    }
+    return io_cfg;
+}
+
+// Throws if enabled is explicitly true but checker.dir/entry doesn't exist.
+BehaviorConfig parse_checker_behavior_section(const YAML::Node& c, const std::string& checker_dir,
+                                              const std::filesystem::path& problem_dir) {
     BehaviorConfig behavior;
     std::optional<bool> enabled_explicit;
-    YAML::Node b = doc["behavior"];
-    if (b) {
-        if (b["enabled"]) {
+    if (c && c["behavior"]) {
+        YAML::Node b = c["behavior"];
+        if (b["enabled"] && !b["enabled"].IsNull()) {
             enabled_explicit = b["enabled"].as<bool>();
         }
-        if (b["checker_file"]) {
-            behavior.checker_file = b["checker_file"].as<std::string>();
+        if (b["entry"]) {
+            behavior.entry = b["entry"].as<std::string>();
         }
         if (b["extra_flags"]) {
             for (const auto& f : b["extra_flags"]) {
@@ -216,19 +273,165 @@ BehaviorConfig parse_behavior_section(const YAML::Node& doc,
             }
         }
     }
-
-    bool checker_present = std::filesystem::exists(problem_dir / behavior.checker_file);
+    bool present = std::filesystem::exists(problem_dir / checker_dir / behavior.entry);
     if (enabled_explicit) {
-        if (*enabled_explicit && !checker_present) {
+        if (*enabled_explicit && !present) {
             throw std::runtime_error{std::format(
-                "problem.yaml: behavior.enabled is true but checker_file '{}' does not exist",
-                behavior.checker_file)};
+                "problem.yaml: checker.behavior.enabled is true but '{}/{}' does not exist",
+                checker_dir, behavior.entry)};
         }
         behavior.enabled = *enabled_explicit;
     } else {
-        behavior.enabled = checker_present;
+        behavior.enabled = present;
     }
     return behavior;
+}
+
+CheckerConfig parse_checker_section(const YAML::Node& doc,
+                                    const std::filesystem::path& problem_dir) {
+    CheckerConfig checker;
+    YAML::Node c = doc["checker"];
+    if (c && c["dir"]) {
+        checker.dir = c["dir"].as<std::string>();
+    }
+    checker.io = parse_checker_io_section(c, checker.dir, problem_dir);
+    checker.behavior = parse_checker_behavior_section(c, checker.dir, problem_dir);
+    return checker;
+}
+
+// Throws if validator.enabled is explicitly true but validator.dir/entry
+// doesn't exist.
+ValidatorConfig parse_validator_section(const YAML::Node& doc,
+                                        const std::filesystem::path& problem_dir) {
+    ValidatorConfig validator;
+    std::optional<bool> enabled_explicit;
+    YAML::Node v = doc["validator"];
+    if (v) {
+        if (v["enabled"] && !v["enabled"].IsNull()) {
+            enabled_explicit = v["enabled"].as<bool>();
+        }
+        if (v["dir"]) {
+            validator.dir = v["dir"].as<std::string>();
+        }
+        if (v["entry"]) {
+            validator.entry = v["entry"].as<std::string>();
+        }
+        if (v["extra_flags"]) {
+            for (const auto& f : v["extra_flags"]) {
+                validator.extra_flags.push_back(f.as<std::string>());
+            }
+        }
+    }
+    bool present = std::filesystem::exists(problem_dir / validator.dir / validator.entry);
+    if (enabled_explicit) {
+        if (*enabled_explicit && !present) {
+            throw std::runtime_error{
+                std::format("problem.yaml: validator.enabled is true but '{}/{}' does not exist",
+                            validator.dir, validator.entry)};
+        }
+        validator.enabled = *enabled_explicit;
+    } else {
+        validator.enabled = present;
+    }
+    return validator;
+}
+
+GeneratorsConfig parse_generators_section(const YAML::Node& doc) {
+    GeneratorsConfig generators;
+    YAML::Node g = doc["generators"];
+    if (g) {
+        if (g["dir"]) {
+            generators.dir = g["dir"].as<std::string>();
+        }
+        if (g["plan"]) {
+            generators.plan = g["plan"].as<std::string>();
+        }
+    }
+    return generators;
+}
+
+// Throws on a missing 'file', an unknown expected_verdict string, or >1
+// entry with no single entry marked primary: true.
+std::vector<SolutionEntry> parse_declared_solution_entries(const YAML::Node& entries_node) {
+    std::vector<SolutionEntry> entries;
+    for (const auto& e : entries_node) {
+        if (!e["file"]) {
+            throw std::runtime_error{"problem.yaml: solutions.entries[] entry missing 'file'"};
+        }
+        SolutionEntry entry;
+        entry.file = e["file"].as<std::string>();
+        if (e["expected_verdict"]) {
+            auto raw = e["expected_verdict"].as<std::string>();
+            auto v = cxxprobe::cases::verdict_from_str(raw);
+            if (!v) {
+                throw std::runtime_error{
+                    std::format("problem.yaml: unknown expected_verdict '{}'", raw)};
+            }
+            entry.expected_verdict = *v;
+        }
+        entry.primary = e["primary"] && e["primary"].as<bool>();
+        entries.push_back(std::move(entry));
+    }
+
+    if (entries.size() == 1) {
+        entries[0].primary = true;
+    } else {
+        auto primary_count =
+            std::ranges::count_if(entries, [](const SolutionEntry& e) { return e.primary; });
+        if (primary_count != 1) {
+            throw std::runtime_error{
+                "problem.yaml: solutions.entries has multiple entries — exactly one must set "
+                "primary: true"};
+        }
+    }
+    return entries;
+}
+
+// Infers a single, primary entry from the sole *.cpp file under dir. Throws
+// if >1 *.cpp file exists (ambiguous primary solution); returns empty if
+// none exist (deferred to whatever actually tries to compile a solution).
+std::vector<SolutionEntry> infer_solution_entries(const std::filesystem::path& dir,
+                                                  const std::string& dir_label) {
+    std::vector<std::string> cpp_files = cpp_files_in(dir);
+    if (cpp_files.size() > 1) {
+        throw std::runtime_error{std::format(
+            "problem.yaml: multiple .cpp files under '{}' and no solutions.entries declared — "
+            "ambiguous primary solution",
+            dir_label)};
+    }
+    if (cpp_files.empty()) {
+        return {};
+    }
+    return {SolutionEntry{
+        .file = cpp_files.front(),
+        .expected_verdict = cxxprobe::cases::Verdict::AC,
+        .primary = true,
+    }};
+}
+
+SolutionsConfig parse_solutions_section(const YAML::Node& doc,
+                                        const std::filesystem::path& problem_dir) {
+    SolutionsConfig solutions;
+    YAML::Node s = doc["solutions"];
+    if (s && s["dir"]) {
+        solutions.dir = s["dir"].as<std::string>();
+    }
+
+    bool has_declared_entries =
+        s && s["entries"] && s["entries"].IsSequence() && s["entries"].size() > 0;
+    solutions.entries = has_declared_entries
+                            ? parse_declared_solution_entries(s["entries"])
+                            : infer_solution_entries(problem_dir / solutions.dir, solutions.dir);
+    return solutions;
+}
+
+AttachmentsConfig parse_attachments_section(const YAML::Node& doc) {
+    AttachmentsConfig attachments;
+    YAML::Node a = doc["attachments"];
+    if (a && a["dir"]) {
+        attachments.dir = a["dir"].as<std::string>();
+    }
+    return attachments;
 }
 
 }  // namespace
@@ -264,9 +467,9 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     }
 
     int version = doc["version"] ? doc["version"].as<int>() : 0;
-    if (version != 1) {
+    if (version != 2) {
         throw std::runtime_error{
-            std::format("unsupported problem.yaml version {} (expected 1)", version)};
+            std::format("unsupported problem.yaml version {} (expected 2)", version)};
     }
     if (!doc["name"]) {
         throw std::runtime_error{"problem.yaml missing required 'name'"};
@@ -277,24 +480,34 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     cfg.slug = cfg.problem_dir.filename().string();
     cfg.name = doc["name"].as<std::string>();
 
-    if (doc["statement"]) {
-        cfg.statement = doc["statement"].as<std::string>();
-    }
-    if (doc["solution"] && doc["solution"]["file"]) {
-        cfg.solution_file = doc["solution"]["file"].as<std::string>();
-    }
-
+    cfg.statement = parse_statement_section(doc);
     cfg.compiler = parse_compiler_section(doc);
     cfg.limits = parse_limits_section(doc);
     cfg.tests = parse_tests_section(doc, cfg.problem_dir);
+    cfg.checker = parse_checker_section(doc, cfg.problem_dir);
+    cfg.validator = parse_validator_section(doc, cfg.problem_dir);
+    cfg.generators = parse_generators_section(doc);
+    cfg.solutions = parse_solutions_section(doc, cfg.problem_dir);
     cfg.symbolic = parse_symbolic_section(doc);
-    cfg.behavior = parse_behavior_section(doc, cfg.problem_dir);
+    cfg.attachments = parse_attachments_section(doc);
 
     return cfg;
 }
 
 ProblemConfig load_from_dir(const std::filesystem::path& problem_dir) {
     return load(problem_dir / "problem.yaml");
+}
+
+const SolutionEntry& primary_solution(const SolutionsConfig& solutions) {
+    if (solutions.entries.empty()) {
+        throw std::runtime_error{"no solutions declared"};
+    }
+    auto it =
+        std::ranges::find_if(solutions.entries, [](const SolutionEntry& e) { return e.primary; });
+    if (it == solutions.entries.end()) {
+        throw std::runtime_error{"no solutions entry marked primary"};
+    }
+    return *it;
 }
 
 ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg,

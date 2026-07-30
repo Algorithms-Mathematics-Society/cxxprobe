@@ -112,7 +112,7 @@ protected:
             throw std::runtime_error{"new problem failed: " + r2.stdout_text};
         }
         fs::path problem_dir = contest_dir / "sum-two-numbers";
-        write_file(problem_dir / "solution.cpp", kCorrectSolution);
+        write_file(problem_dir / "solutions" / "main.cpp", kCorrectSolution);
         return problem_dir;
     }
 
@@ -157,7 +157,7 @@ TEST_F(ProblemPipelineTest, SymbolicCheckFailureReportedIndependently) {
     // duplicate YAML mapping keys with implementation-defined behavior.
     write_file(
         problem_dir / "problem.yaml",
-        "version: 1\nname: \"Sum Two Numbers\"\nsymbolic:\n  must_include: [\"std::bit_cast\"]\n");
+        "version: 2\nname: \"Sum Two Numbers\"\nsymbolic:\n  must_include: [\"std::bit_cast\"]\n");
 
     auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
     EXPECT_EQ(r.exit_code, 1);
@@ -170,7 +170,8 @@ TEST_F(ProblemPipelineTest, SymbolicCheckFailureReportedIndependently) {
 
 TEST_F(ProblemPipelineTest, BehaviorCheckFailureReportedIndependently) {
     fs::path problem_dir = scaffold_baseline();
-    write_file(problem_dir / "checker_gtest.cpp", "TEST(Extra, AlwaysFails) { EXPECT_EQ(1, 2); }\n",
+    write_file(problem_dir / "checker" / "behavior_gtest.cpp",
+               "TEST(Extra, AlwaysFails) { EXPECT_EQ(1, 2); }\n",
                /*append=*/true);
 
     auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
@@ -184,7 +185,7 @@ TEST_F(ProblemPipelineTest, BehaviorCheckFailureReportedIndependently) {
 
 TEST_F(ProblemPipelineTest, CompileFailureReportsErrorNotFail) {
     fs::path problem_dir = scaffold_baseline();
-    write_file(problem_dir / "solution.cpp", "int main() { this is not valid C++\n");
+    write_file(problem_dir / "solutions" / "main.cpp", "int main() { this is not valid C++\n");
 
     auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
     EXPECT_EQ(r.exit_code, 2);

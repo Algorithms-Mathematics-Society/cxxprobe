@@ -21,6 +21,15 @@ enum class Verdict : std::uint8_t { AC, WA, TLE, MLE, OLE, RE };
 
 const char* verdict_str(Verdict v);
 
+// Inverse of verdict_str(); nullopt for anything not one of the 6 exact
+// strings "AC"/"WA"/"TLE"/"MLE"/"OLE"/"RE".
+std::optional<Verdict> verdict_from_str(std::string_view s);
+
+// Reduces a set of already-computed per-case verdicts to the single worst
+// one, same TLE > MLE > OLE > RE > WA > AC priority compute_verdict() uses.
+// Returns AC for an empty input.
+Verdict worst_verdict(const std::vector<Verdict>& verdicts);
+
 // Loads a directory of <label>.in / <label>.ans(.out) pairs, sorted
 // numerically by label (so "10" sorts after "2"). A case without a matching
 // answer file is still returned, just with answer_data unset.

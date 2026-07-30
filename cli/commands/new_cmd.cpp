@@ -19,13 +19,12 @@ void write_file(const fs::path& path, std::string_view content) {
     ofs << content;
 }
 
-constexpr std::string_view kProblemYamlTemplate = R"YAML(version: 1
+constexpr std::string_view kProblemYamlTemplate = R"YAML(version: 2
 name: "{}"
-description: ""
-statement: problem.md
 
-solution:
-  file: solution.cpp
+statement:
+  dir: statement
+  entry: problem.md
 
 # All fields below are optional and fall back to project-wide defaults
 # (compiler: g++, std: c++23, flags: -O2 -Wall) when left unset.
@@ -51,7 +50,37 @@ limits:
 tests:
   dir: tests
   manifest: null
-  checker: null
+
+# checker.io (checker/checker.cpp, testlib-ABI I/O checking) and
+# checker.behavior (checker/behavior_gtest.cpp, GTest-linked) are both left
+# uninferred/disabled until the corresponding file exists.
+checker:
+  dir: checker
+  io:
+    entry: checker.cpp
+    extra_flags: []
+  behavior:
+    entry: behavior_gtest.cpp
+    extra_flags: []
+
+# testlib-protocol validator (validator/validator.cpp) — left
+# uninferred/disabled until the file exists.
+validator:
+  dir: validator
+  entry: validator.cpp
+  extra_flags: []
+
+generators:
+  dir: generators
+  plan: plan.yaml
+
+# The primary solution is inferred automatically as long as exactly one
+# *.cpp file lives under solutions/. Add more entries here (with
+# expected_verdict + primary: true on exactly one) to also verify
+# deliberately-wrong reference solutions via `cxxprobe test problem`.
+solutions:
+  dir: solutions
+  entries: []
 
 # Consolidated test type 2: source-level requirements, e.g.
 #   must_include: ["std::bit_cast"]
@@ -61,10 +90,8 @@ symbolic:
   must_include: []
   must_not_include: []
 
-# Consolidated test type 3: GTest-linked behavior checker.
-behavior:
-  checker_file: checker_gtest.cpp
-  extra_flags: []
+attachments:
+  dir: attachments
 )YAML";
 
 constexpr std::string_view kProblemMdTemplate = R"MD(# {}
@@ -207,16 +234,19 @@ int NewCommand::execute_new_problem() {
     }
 
     fs::create_directories(dir / "tests");
+    fs::create_directories(dir / "statement");
+    fs::create_directories(dir / "solutions");
+    fs::create_directories(dir / "checker");
     write_file(dir / "tests" / ".gitkeep", "");
     write_file(dir / "problem.yaml",
                std::vformat(kProblemYamlTemplate, std::make_format_args(problem_name_)));
-    write_file(dir / "problem.md",
+    write_file(dir / "statement" / "problem.md",
                std::vformat(kProblemMdTemplate, std::make_format_args(problem_name_)));
-    write_file(dir / "solution_template.cpp", kSolutionTemplate);
-    write_file(dir / "checker_gtest.cpp", kCheckerGtestTemplate);
+    write_file(dir / "solutions" / "main.cpp", kSolutionTemplate);
+    write_file(dir / "checker" / "behavior_gtest.cpp", kCheckerGtestTemplate);
 
     std::cout << "Created problem '" << problem_name_ << "' in " << dir.string() << "\n";
-    std::cout << "Next: cp solution_template.cpp solution.cpp, fill it in, then run:\n";
+    std::cout << "Next: fill in solutions/main.cpp, then run:\n";
     std::cout << "  cxxprobe test problem " << slug << "\n";
     return 0;
 }

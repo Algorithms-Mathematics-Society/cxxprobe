@@ -64,10 +64,12 @@ struct JudgeReport {
     BehaviorReport behavior;
     CompileStepReport solution_compile;
     CompileStepReport behavior_compile;
+    CompileStepReport checker_compile;
 };
 
-// Compiles submission_override (or, if unset, config.solution_file) and
-// runs whichever of the 3 consolidated test types are enabled in `config`,
+// Compiles submission_override (or, if unset, the primary declared
+// solutions/ entry) and runs whichever of the 3 consolidated test types are
+// enabled in `config`,
 // aggregating into one report. Never throws for judging failures (a failing
 // check is Status::Fail/Error in the report, not an exception) — only
 // throws for config/filesystem errors that make judging impossible at all

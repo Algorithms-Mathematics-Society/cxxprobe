@@ -5,9 +5,9 @@
 namespace cxxprobe::cli {
 
 // `cxxprobe new contest "Name"` / `cxxprobe new problem "Name"` — scaffolds
-// a contest directory (a `contest.yaml` marker) or a problem directory
-// (problem.yaml, problem.md, solution_template.cpp, checker_gtest.cpp,
-// tests/) inside the current/detected contest.
+// a contest directory (a `contest.yaml` marker) or a v2-layout problem
+// directory (problem.yaml, statement/problem.md, solutions/main.cpp,
+// checker/behavior_gtest.cpp, tests/) inside the current/detected contest.
 class NewCommand {
 public:
     explicit NewCommand(CLI::App& parent);

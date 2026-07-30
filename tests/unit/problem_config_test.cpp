@@ -8,6 +8,7 @@
 
 using cxxprobe::problem::load;
 using cxxprobe::problem::load_from_dir;
+using cxxprobe::problem::primary_solution;
 using cxxprobe::problem::ProjectDefaults;
 using cxxprobe::problem::resolve_compiler;
 using cxxprobe::problem::resolve_limits;
@@ -38,7 +39,7 @@ protected:
 };
 
 constexpr std::string_view kMinimalYaml = R"YAML(
-version: 1
+version: 2
 name: "Test Problem"
 )YAML";
 
@@ -48,20 +49,23 @@ TEST_F(ProblemConfigTest, MinimalConfigParsesWithDefaults) {
     write("problem.yaml", kMinimalYaml);
     auto cfg = load_from_dir(dir_);
     EXPECT_EQ(cfg.name, "Test Problem");
-    EXPECT_EQ(cfg.solution_file, "solution.cpp");
-    EXPECT_EQ(cfg.statement, "problem.md");
-    EXPECT_FALSE(cfg.tests.enabled);     // no tests/ dir with .in files
-    EXPECT_FALSE(cfg.symbolic.enabled);  // no must_include/must_not_include
-    EXPECT_FALSE(cfg.behavior.enabled);  // no checker_gtest.cpp on disk
+    EXPECT_EQ(cfg.statement.dir, "statement");
+    EXPECT_EQ(cfg.statement.entry, "problem.md");
+    EXPECT_TRUE(cfg.solutions.entries.empty());  // no solutions/ dir on disk
+    EXPECT_FALSE(cfg.tests.enabled);             // no tests/ dir with .in files
+    EXPECT_FALSE(cfg.symbolic.enabled);          // no must_include/must_not_include
+    EXPECT_FALSE(cfg.checker.behavior.enabled);  // no behavior_gtest.cpp on disk
+    EXPECT_FALSE(cfg.checker.io.enabled);        // no checker.cpp on disk
+    EXPECT_FALSE(cfg.validator.enabled);         // no validator.cpp on disk
 }
 
 TEST_F(ProblemConfigTest, MissingNameThrows) {
-    write("problem.yaml", "version: 1\n");
+    write("problem.yaml", "version: 2\n");
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
 }
 
 TEST_F(ProblemConfigTest, UnknownVersionThrows) {
-    write("problem.yaml", "version: 2\nname: \"x\"\n");
+    write("problem.yaml", "version: 1\nname: \"x\"\n");
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
 }
 
@@ -128,18 +132,106 @@ TEST_F(ProblemConfigTest, SymbolicExplicitTrueWithEmptyListsThrows) {
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
 }
 
-// ─── behavior (consolidated type 3) ──────────────────────────────────────────
+// ─── checker.behavior (consolidated type 3) ──────────────────────────────────
 
 TEST_F(ProblemConfigTest, BehaviorEnabledInferredFromCheckerFilePresence) {
     write("problem.yaml", kMinimalYaml);
-    write("checker_gtest.cpp", "// checker\n");
+    write("checker/behavior_gtest.cpp", "// checker\n");
     auto cfg = load_from_dir(dir_);
-    EXPECT_TRUE(cfg.behavior.enabled);
+    EXPECT_TRUE(cfg.checker.behavior.enabled);
 }
 
 TEST_F(ProblemConfigTest, BehaviorExplicitTrueWithMissingCheckerThrows) {
-    write("problem.yaml", std::string{kMinimalYaml} + "behavior:\n  enabled: true\n");
+    write("problem.yaml", std::string{kMinimalYaml} + "checker:\n  behavior:\n    enabled: true\n");
     EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+// ─── checker.io ───────────────────────────────────────────────────────────
+
+TEST_F(ProblemConfigTest, IoCheckerEnabledInferredFromEntryPresence) {
+    write("problem.yaml", kMinimalYaml);
+    write("checker/checker.cpp", "// checker\n");
+    auto cfg = load_from_dir(dir_);
+    EXPECT_TRUE(cfg.checker.io.enabled);
+}
+
+TEST_F(ProblemConfigTest, IoCheckerExplicitTrueWithMissingEntryThrows) {
+    write("problem.yaml", std::string{kMinimalYaml} + "checker:\n  io:\n    enabled: true\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+// ─── validator ────────────────────────────────────────────────────────────
+
+TEST_F(ProblemConfigTest, ValidatorEnabledInferredFromEntryPresence) {
+    write("problem.yaml", kMinimalYaml);
+    write("validator/validator.cpp", "// validator\n");
+    auto cfg = load_from_dir(dir_);
+    EXPECT_TRUE(cfg.validator.enabled);
+}
+
+TEST_F(ProblemConfigTest, ValidatorExplicitTrueWithMissingEntryThrows) {
+    write("problem.yaml", std::string{kMinimalYaml} + "validator:\n  enabled: true\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+// ─── solutions ────────────────────────────────────────────────────────────
+
+TEST_F(ProblemConfigTest, SoleCppFileInferredAsPrimarySolution) {
+    write("problem.yaml", kMinimalYaml);
+    write("solutions/main.cpp", "int main() {}\n");
+    auto cfg = load_from_dir(dir_);
+    ASSERT_EQ(cfg.solutions.entries.size(), 1U);
+    EXPECT_EQ(cfg.solutions.entries[0].file, "main.cpp");
+    EXPECT_TRUE(cfg.solutions.entries[0].primary);
+    EXPECT_EQ(cfg.solutions.entries[0].expected_verdict, cxxprobe::cases::Verdict::AC);
+    EXPECT_EQ(primary_solution(cfg.solutions).file, "main.cpp");
+}
+
+TEST_F(ProblemConfigTest, MultipleCppFilesWithNoDeclaredEntriesThrows) {
+    write("problem.yaml", kMinimalYaml);
+    write("solutions/main.cpp", "int main() {}\n");
+    write("solutions/other.cpp", "int main() {}\n");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, DeclaredEntriesParsedWithExplicitPrimaryAndVerdicts) {
+    write("problem.yaml", std::string{kMinimalYaml} + R"YAML(
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: wa_off_by_one.cpp, expected_verdict: WA }
+)YAML");
+    write("solutions/main.cpp", "int main() {}\n");
+    write("solutions/wa_off_by_one.cpp", "int main() {}\n");
+    auto cfg = load_from_dir(dir_);
+    ASSERT_EQ(cfg.solutions.entries.size(), 2U);
+    EXPECT_EQ(primary_solution(cfg.solutions).file, "main.cpp");
+    EXPECT_EQ(cfg.solutions.entries[1].expected_verdict, cxxprobe::cases::Verdict::WA);
+    EXPECT_FALSE(cfg.solutions.entries[1].primary);
+}
+
+TEST_F(ProblemConfigTest, DeclaredEntriesWithNoPrimaryMarkedThrows) {
+    write("problem.yaml", std::string{kMinimalYaml} + R"YAML(
+solutions:
+  entries:
+    - { file: main.cpp }
+    - { file: other.cpp }
+)YAML");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, UnknownExpectedVerdictThrows) {
+    write("problem.yaml", std::string{kMinimalYaml} + R"YAML(
+solutions:
+  entries:
+    - { file: main.cpp, expected_verdict: NOPE }
+)YAML");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, PrimarySolutionThrowsWhenNoEntries) {
+    cxxprobe::problem::SolutionsConfig solutions;
+    EXPECT_THROW(primary_solution(solutions), std::runtime_error);
 }
 
 // ─── resolve_compiler / resolve_limits ───────────────────────────────────────

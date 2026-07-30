@@ -47,15 +47,11 @@ std::string packed_at_now() {
 }
 
 // Warns (does not fail — pack does no validation, per design) when a
-// problem's tests.checker/tests.manifest is an absolute path: operator/
-// silently discards problem_dir for an absolute right-hand side, so the
-// referenced file lives outside the problem directory and won't be
-// included in the pack.
+// problem's tests.manifest is an absolute path: operator/ silently
+// discards problem_dir for an absolute right-hand side, so the referenced
+// file lives outside the problem directory and won't be included in the
+// pack.
 void warn_if_absolute_reference(const cxxprobe::problem::ProblemConfig& config) {
-    if (config.tests.checker && fs::path(*config.tests.checker).is_absolute()) {
-        std::cerr << "cxxprobe: warning: problem '" << config.slug
-                  << "': tests.checker is an absolute path and will not be included in the pack\n";
-    }
     if (config.tests.manifest && fs::path(*config.tests.manifest).is_absolute()) {
         std::cerr << "cxxprobe: warning: problem '" << config.slug
                   << "': tests.manifest is an absolute path and will not be included in the pack\n";

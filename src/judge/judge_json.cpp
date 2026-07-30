@@ -106,6 +106,9 @@ Json to_json(const JudgeReport& report) {
     if (report.behavior_compile.ran) {
         compile["behavior_binary"] = compile_step_to_json(report.behavior_compile);
     }
+    if (report.checker_compile.ran) {
+        compile["checker_binary"] = compile_step_to_json(report.checker_compile);
+    }
     j["compile"] = std::move(compile);
 
     return j;

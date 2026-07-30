@@ -11,7 +11,8 @@ nlohmann::ordered_json preview_to_json(const ProblemConfig& config, const Projec
     using Json = nlohmann::ordered_json;
 
     std::string statement;
-    std::ifstream ifs(config.problem_dir / config.statement, std::ios::binary);
+    std::ifstream ifs(config.problem_dir / config.statement.dir / config.statement.entry,
+                      std::ios::binary);
     if (ifs) {
         std::ostringstream ss;
         ss << ifs.rdbuf();

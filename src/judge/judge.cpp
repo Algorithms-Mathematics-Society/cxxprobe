@@ -49,7 +49,7 @@ CompileStepReport to_compile_report(const cxxprobe::compile::Result& r) {
 
 ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& config,
                                    const cxxprobe::sandbox::Limits& limits,
-                                   const fs::path& binary_path) {
+                                   const fs::path& binary_path, const std::string& checker_bin) {
     ManualTestsReport report;
 
     std::vector<cxxprobe::cases::TestCase> test_cases;
@@ -61,11 +61,6 @@ ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& confi
     } catch (const std::exception&) {
         report.status = Status::Error;
         return report;
-    }
-
-    std::string checker_bin;
-    if (config.tests.checker) {
-        checker_bin = (config.problem_dir / *config.tests.checker).string();
     }
 
     int judged_total = 0;
@@ -115,7 +110,7 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
                                     CompileStepReport& compile_report_out) {
     BehaviorReport report;
 
-    fs::path checker_src = config.problem_dir / config.behavior.checker_file;
+    fs::path checker_src = config.problem_dir / config.checker.dir / config.checker.behavior.entry;
     if (!fs::exists(checker_src)) {
         report.status = Status::Error;
         return report;
@@ -128,10 +123,10 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
     std::vector<std::string> extra_flags;
     extra_flags.push_back("-I" + gtest_paths.include_dir.string());
     extra_flags.push_back("-L" + gtest_paths.lib_dir.string());
-    for (const auto& f : config.behavior.extra_flags) {
+    for (const auto& f : config.checker.behavior.extra_flags) {
         extra_flags.push_back(f);
     }
-    // checker_gtest.cpp includes the submission via this macro rather than a
+    // behavior_gtest.cpp includes the submission via this macro rather than a
     // hardcoded "solution.cpp", so `--submission <other.cpp>` grades correctly
     // through the behavior checker too, not just the manual/symbolic checks.
     extra_flags.push_back(std::format("-DCXXPROBE_SOLUTION_FILE=\"{}\"", submission_path.string()));
@@ -141,7 +136,7 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
 
     // Only checker_src is compiled as its own translation unit — by
     // convention it #includes the submission itself (see the scaffolded
-    // checker_gtest.cpp template), so passing submission_path as a second,
+    // behavior_gtest.cpp template), so passing submission_path as a second,
     // separate source here would compile it twice and produce duplicate
     // symbols (most visibly a duplicate `main`, since the submission has
     // its own `main()` for the manual-tests build).
@@ -217,6 +212,66 @@ Status worse(Status a, Status b) {
     return rank(b) > rank(a) ? b : a;
 }
 
+// Compiles the submission and, if checker.io is enabled, the I/O checker,
+// then judges the manual test set. Leaves report.manual at Status::Error
+// (with the relevant compile report populated) without attempting to judge
+// anything if either compile step fails.
+void judge_manual_tests_section(const cxxprobe::problem::ProblemConfig& config,
+                                const cxxprobe::problem::ResolvedCompiler& resolved,
+                                const cxxprobe::sandbox::Limits& run_limits,
+                                const fs::path& submission_path, JudgeReport& report) {
+    fs::path solution_binary = make_temp_path("cxxprobe-solution");
+    cxxprobe::compile::Request req;
+    req.sources = {submission_path};
+    for (const auto& extra : resolved.extra_sources) {
+        req.sources.push_back(config.problem_dir / extra);
+    }
+    req.cxx = resolved.cxx;
+    req.std_flag = resolved.std_flag;
+    req.flags = resolved.flags;
+    req.output_binary = solution_binary;
+    req.working_dir = config.problem_dir;
+
+    cxxprobe::compile::Result cres = cxxprobe::compile::compile(req);
+    report.solution_compile = to_compile_report(cres);
+    if (!cres.ok) {
+        report.manual.status = Status::Error;
+        fs::remove(solution_binary);
+        return;
+    }
+
+    std::string checker_bin;
+    fs::path checker_binary;
+    if (config.checker.io.enabled) {
+        checker_binary = make_temp_path("cxxprobe-checker");
+        fs::path checker_src = config.problem_dir / config.checker.dir / config.checker.io.entry;
+        cxxprobe::compile::Request creq;
+        creq.sources = {checker_src};
+        creq.cxx = resolved.cxx;
+        creq.std_flag = resolved.std_flag;
+        creq.flags = resolved.flags;
+        creq.extra_flags = config.checker.io.extra_flags;
+        creq.output_binary = checker_binary;
+        creq.working_dir = config.problem_dir;
+
+        cxxprobe::compile::Result ckres = cxxprobe::compile::compile(creq);
+        report.checker_compile = to_compile_report(ckres);
+        if (!ckres.ok) {
+            report.manual.status = Status::Error;
+            fs::remove(solution_binary);
+            return;
+        }
+        checker_bin = checker_binary.string();
+    }
+
+    report.manual = run_manual_tests(config, run_limits, solution_binary, checker_bin);
+
+    if (!checker_binary.empty()) {
+        fs::remove(checker_binary);
+    }
+    fs::remove(solution_binary);
+}
+
 }  // namespace
 
 JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
@@ -226,8 +281,14 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     report.problem_name = config.name;
     report.slug = config.slug;
 
-    fs::path submission_path =
-        submission_override ? *submission_override : (config.problem_dir / config.solution_file);
+    fs::path submission_path;
+    if (submission_override) {
+        submission_path = *submission_override;
+    } else {
+        const cxxprobe::problem::SolutionEntry& primary =
+            cxxprobe::problem::primary_solution(config.solutions);
+        submission_path = config.problem_dir / config.solutions.dir / primary.file;
+    }
     if (!fs::exists(submission_path)) {
         throw std::runtime_error{
             std::format("submission source not found: {}", submission_path.string())};
@@ -253,29 +314,10 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
         cxxprobe::problem::resolve_limits(config.limits, defaults);
 
     if (config.tests.enabled) {
-        fs::path solution_binary = make_temp_path("cxxprobe-solution");
-        cxxprobe::compile::Request req;
-        req.sources = {submission_path};
-        for (const auto& extra : resolved.extra_sources) {
-            req.sources.push_back(config.problem_dir / extra);
-        }
-        req.cxx = resolved.cxx;
-        req.std_flag = resolved.std_flag;
-        req.flags = resolved.flags;
-        req.output_binary = solution_binary;
-        req.working_dir = config.problem_dir;
-
-        cxxprobe::compile::Result cres = cxxprobe::compile::compile(req);
-        report.solution_compile = to_compile_report(cres);
-        if (!cres.ok) {
-            report.manual.status = Status::Error;
-        } else {
-            report.manual = run_manual_tests(config, run_limits, solution_binary);
-        }
-        fs::remove(solution_binary);
+        judge_manual_tests_section(config, resolved, run_limits, submission_path, report);
     }
 
-    if (config.behavior.enabled) {
+    if (config.checker.behavior.enabled) {
         report.behavior = run_behavior_checker(config, defaults, submission_path, resolved,
                                                report.behavior_compile);
     }

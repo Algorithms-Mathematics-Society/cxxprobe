@@ -25,7 +25,8 @@ protected:
         config_.problem_dir = dir_;
         config_.name = "A: Test";
         config_.slug = "a-test";
-        config_.statement = "problem.md";
+        config_.statement.dir = ".";
+        config_.statement.entry = "problem.md";
     }
 
     void TearDown() override { std::filesystem::remove_all(dir_); }

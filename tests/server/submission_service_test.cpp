@@ -36,7 +36,7 @@ protected:
         // dependency needed, since this test only exercises submit()'s
         // file-write/enqueue path, not actual judging.
         write_file(base_dir_ / "contest" / "a-slug" / "problem.yaml",
-                   "version: 1\nname: \"A: Test\"\n");
+                   "version: 2\nname: \"A: Test\"\n");
     }
 
     void TearDown() override {

@@ -43,11 +43,10 @@ protected:
             fs::temp_directory_path() /
             std::format("cxxprobe-handlers-test-{}-{}", static_cast<long>(::getpid()), counter_++);
         fs::path problem_dir = base_dir_ / "a-warmup";
-        fs::create_directories(problem_dir);
-        std::ofstream(problem_dir / "problem.yaml")
-            << "version: 1\nname: \"A: Warmup\"\ndescription: \"\"\nstatement: problem.md\n"
-               "solution:\n  file: solution.cpp\n";
-        std::ofstream(problem_dir / "problem.md") << "# A: Warmup\n\nSome statement text.\n";
+        fs::create_directories(problem_dir / "statement");
+        std::ofstream(problem_dir / "problem.yaml") << "version: 2\nname: \"A: Warmup\"\n";
+        std::ofstream(problem_dir / "statement" / "problem.md")
+            << "# A: Warmup\n\nSome statement text.\n";
 
         catalog_ = std::make_shared<cxxprobe::server::services::ProblemCatalogService>(base_dir_);
         catalog_->load();
@@ -105,10 +104,9 @@ TEST_F(HandlersTest, ProblemDetailWithNoTestsHasEmptySampleTests) {
 TEST_F(HandlersTest, ProblemDetailExposesManualTestsAsSampleTests) {
     fs::path problem_dir = base_dir_ / "b-with-tests";
     fs::create_directories(problem_dir / "tests");
-    std::ofstream(problem_dir / "problem.yaml")
-        << "version: 1\nname: \"B: With Tests\"\ndescription: \"\"\nstatement: problem.md\n"
-           "solution:\n  file: solution.cpp\n";
-    std::ofstream(problem_dir / "problem.md") << "# B\n";
+    fs::create_directories(problem_dir / "statement");
+    std::ofstream(problem_dir / "problem.yaml") << "version: 2\nname: \"B: With Tests\"\n";
+    std::ofstream(problem_dir / "statement" / "problem.md") << "# B\n";
     std::ofstream(problem_dir / "tests" / "1.in") << "3 4\n";
     std::ofstream(problem_dir / "tests" / "1.ans") << "7\n";
     catalog_->load();

@@ -133,6 +133,58 @@ const char* verdict_str(Verdict v) {
     return "?";
 }
 
+std::optional<Verdict> verdict_from_str(std::string_view s) {
+    if (s == "AC") {
+        return Verdict::AC;
+    }
+    if (s == "WA") {
+        return Verdict::WA;
+    }
+    if (s == "TLE") {
+        return Verdict::TLE;
+    }
+    if (s == "MLE") {
+        return Verdict::MLE;
+    }
+    if (s == "OLE") {
+        return Verdict::OLE;
+    }
+    if (s == "RE") {
+        return Verdict::RE;
+    }
+    return std::nullopt;
+}
+
+namespace {
+int verdict_rank(Verdict v) {
+    switch (v) {
+        case Verdict::AC:
+            return 0;
+        case Verdict::WA:
+            return 1;
+        case Verdict::RE:
+            return 2;
+        case Verdict::OLE:
+            return 3;
+        case Verdict::MLE:
+            return 4;
+        case Verdict::TLE:
+            return 5;
+    }
+    return 0;
+}
+}  // namespace
+
+Verdict worst_verdict(const std::vector<Verdict>& verdicts) {
+    Verdict worst = Verdict::AC;
+    for (Verdict v : verdicts) {
+        if (verdict_rank(v) > verdict_rank(worst)) {
+            worst = v;
+        }
+    }
+    return worst;
+}
+
 bool token_equal(std::string_view a, std::string_view b) {
     auto tokenize = [](std::string_view s) {
         std::vector<std::string_view> toks;
