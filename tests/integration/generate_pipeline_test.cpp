@@ -130,9 +130,9 @@ protected:
         }
         fs::path contest_dir = base_dir_ / "generate-pipeline-contest";
 
-        auto r2 = run_cli({"new", "problem", "Gen Target"}, contest_dir);
+        auto r2 = run_cli({"package", "init", "Gen Target"}, contest_dir);
         if (r2.exit_code != 0) {
-            throw std::runtime_error{"new problem failed: " + r2.stdout_text};
+            throw std::runtime_error{"package init failed: " + r2.stdout_text};
         }
         return contest_dir / "gen-target";
     }

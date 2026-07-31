@@ -5,7 +5,7 @@
 #include "commands/generate_cmd.hpp"
 #include "commands/judge_cmd.hpp"
 #include "commands/new_cmd.hpp"
-#include "commands/pack_cmd.hpp"
+#include "commands/package_cmd.hpp"
 #include "commands/run_cmd.hpp"
 #include "commands/test_cmd.hpp"
 #include "commands/validate_cmd.hpp"
@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
     cxxprobe::cli::RunCommand run_cmd{app};
     cxxprobe::cli::NewCommand new_cmd{app};
     cxxprobe::cli::TestCommand test_cmd{app};
-    cxxprobe::cli::PackCommand pack_cmd{app};
+    cxxprobe::cli::PackageCommand package_cmd{app};
     cxxprobe::cli::JudgeCommand judge_cmd{app};
     cxxprobe::cli::ValidateCommand validate_cmd{app};
     cxxprobe::cli::GenerateCommand generate_cmd{app};
@@ -39,14 +39,14 @@ int main(int argc, char* argv[]) {
     if (run_cmd.invoked()) {
         return run_cmd.execute();
     }
-    if (new_cmd.contest_invoked() || new_cmd.problem_invoked()) {
+    if (new_cmd.contest_invoked()) {
         return new_cmd.execute();
     }
     if (test_cmd.problem_invoked()) {
         return test_cmd.execute();
     }
-    if (pack_cmd.pack_invoked() || pack_cmd.unpack_invoked()) {
-        return pack_cmd.execute();
+    if (package_cmd.invoked()) {
+        return package_cmd.execute();
     }
     if (judge_cmd.invoked()) {
         return judge_cmd.execute();

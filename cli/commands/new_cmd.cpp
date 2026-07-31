@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iostream>
 
-#include "../common/contest_dir.hpp"
 #include "cxxprobe/problem.hpp"
 
 namespace cxxprobe::cli {
@@ -19,168 +18,17 @@ void write_file(const fs::path& path, std::string_view content) {
     ofs << content;
 }
 
-constexpr std::string_view kProblemYamlTemplate = R"YAML(version: 2
-name: "{}"
-
-statement:
-  dir: statement
-  entry: problem.md
-
-# All fields below are optional and fall back to project-wide defaults
-# (compiler: g++, std: c++23, flags: -O2 -Wall) when left unset.
-compiler:
-  cxx: null
-  std: null
-  flags: null
-  extra_sources: []
-
-# Resource limits for this problem; unset fields fall back to sandbox
-# defaults (256 MiB, 5s CPU, 10s wall, 64 PIDs).
-limits:
-  memory_mb: null
-  cpu: null
-  wall: null
-  pids: null
-
-# Consolidated test type 1: manual .in/.out pairs under tests/.
-# Add cases as tests/1.in + tests/1.ans, tests/2.in + tests/2.ans, etc.
-# `enabled` is left unset here on purpose: it's inferred true once tests/
-# actually contains .in files, so a freshly scaffolded problem doesn't fail
-# on an empty tests/ directory.
-tests:
-  dir: tests
-  manifest: null
-
-# checker.io (checker/checker.cpp, testlib-ABI I/O checking) and
-# checker.behavior (checker/behavior_gtest.cpp, GTest-linked) are both left
-# uninferred/disabled until the corresponding file exists.
-checker:
-  dir: checker
-  io:
-    entry: checker.cpp
-    extra_flags: []
-  behavior:
-    entry: behavior_gtest.cpp
-    extra_flags: []
-
-# testlib-protocol validator (validator/validator.cpp) — left
-# uninferred/disabled until the file exists.
-validator:
-  dir: validator
-  entry: validator.cpp
-  extra_flags: []
-
-generators:
-  dir: generators
-  plan: plan.yaml
-
-# The primary solution is inferred automatically as long as exactly one
-# *.cpp file lives under solutions/. Add more entries here (with
-# expected_verdict + primary: true on exactly one) to also verify
-# deliberately-wrong reference solutions via `cxxprobe test problem`.
-solutions:
-  dir: solutions
-  entries: []
-
-# Consolidated test type 2: source-level requirements, e.g.
-#   must_include: ["std::bit_cast"]
-#   must_not_include: [{{pattern: "\\bmemcpy\\s*\\(", regex: true, message: "..."}}]
-# Also left uninferred/disabled until you add at least one entry.
-symbolic:
-  must_include: []
-  must_not_include: []
-
-attachments:
-  dir: attachments
-)YAML";
-
-constexpr std::string_view kProblemMdTemplate = R"MD(# {}
-
-## Statement
-
-<!-- Problem statement goes here. Not read by cxxprobe — for humans only. -->
-
-## Constraints
-
-## Examples
-)MD";
-
-// clang-format off
-// NOTE: the raw-string delimiter is deliberately NOT "CPP"/"CC"/etc. — clang-format
-// recognizes those as a C++-language tag and reformats the embedded text as if it
-// were real source, corrupting these templates. The clang-format off/on guard below
-// is belt-and-suspenders in case a future clang-format version recognizes this tag too.
-constexpr std::string_view kSolutionTemplate = R"TEMPLATE(// Fill this in to implement the solution
-// described in problem.md.
-// Symbolic requirements for this problem are
-// enforced from problem.yaml — see the
-// `symbolic:` section (must_include /
-// must_not_include).
-
-int main() { return 0; }
-)TEMPLATE";
-
-constexpr std::string_view kCheckerGtestTemplate = R"TEMPLATE(#include <gtest/gtest.h>
-
-// This file is compiled together with the
-// submission into one binary (see
-// problem.yaml's `behavior:` section) and
-// run sandboxed; cxxprobe parses named
-// pass/fail results from GTest's own
-// --gtest_output=json. Write TEST() cases
-// here that exercise the submission's
-// implementation directly.
-//
-// CXXPROBE_SOLUTION_FILE is defined by
-// cxxprobe at compile time (it points at
-// whatever is actually being graded —
-// solution.cpp by default, or whatever
-// `--submission` was passed) — don't
-// hardcode "solution.cpp" here, or
-// `--submission` grading will silently
-// test the wrong file.
-//
-// The submission has its own `main()` for
-// the manual .in/.out tests; it's renamed
-// out of the way here so it doesn't
-// collide with GTest's own main (linked in
-// via -lgtest_main).
-#define main solution_main
-#include CXXPROBE_SOLUTION_FILE
-#undef main
-
-TEST(Placeholder, ScaffoldCompiles) {
-    // Replace with real behavior
-    // assertions once solution.cpp is
-    // filled in.
-    SUCCEED();
-}
-)TEMPLATE";
-// clang-format on
-
 }  // namespace
 
 NewCommand::NewCommand(CLI::App& parent) {
-    new_app_ = parent.add_subcommand("new", "Scaffold a contest or problem");
+    new_app_ = parent.add_subcommand("new", "Scaffold a contest");
     new_app_->require_subcommand(1);
 
     contest_app_ = new_app_->add_subcommand("contest", "Create a new contest folder");
     contest_app_->add_option("name", contest_name_, "Contest name")->required();
-
-    problem_app_ =
-        new_app_->add_subcommand("problem", "Create a new problem folder in the current contest");
-    problem_app_->add_option("name", problem_name_, "Problem name")->required();
-    problem_app_->add_option(
-        "-C,--dir", dir_override_,
-        "Contest directory (default: auto-detect via contest.yaml, walking up from cwd)");
 }
 
-int NewCommand::execute() {
-    if (contest_invoked()) {
-        return execute_new_contest();
-    }
-    return execute_new_problem();
-}
+int NewCommand::execute() { return execute_new_contest(); }
 
 int NewCommand::execute_new_contest() {
     std::string slug = cxxprobe::problem::slugify(contest_name_);
@@ -199,55 +47,7 @@ int NewCommand::execute_new_contest() {
                std::format("version: 1\nname: \"{}\"\ndescription: \"\"\n", contest_name_));
 
     std::cout << "Created contest '" << contest_name_ << "' in " << dir.string() << "\n";
-    return 0;
-}
-
-int NewCommand::execute_new_problem() {
-    fs::path contest_dir;
-    if (!dir_override_.empty()) {
-        contest_dir = fs::absolute(dir_override_);
-        if (!fs::exists(contest_dir / "contest.yaml")) {
-            std::cerr << "cxxprobe: '" << contest_dir.string()
-                      << "' is not a contest directory (no contest.yaml)\n";
-            return 2;
-        }
-    } else {
-        auto found = find_contest_dir(fs::current_path());
-        if (!found) {
-            std::cerr
-                << "cxxprobe: no contest.yaml found in the current directory or any ancestor — "
-                   "run inside a contest created with `cxxprobe new contest`, or pass --dir\n";
-            return 2;
-        }
-        contest_dir = *found;
-    }
-
-    std::string slug = cxxprobe::problem::slugify(problem_name_);
-    if (slug.empty()) {
-        std::cerr << "cxxprobe: problem name must contain at least one alphanumeric character\n";
-        return 2;
-    }
-    fs::path dir = contest_dir / slug;
-    if (fs::exists(dir)) {
-        std::cerr << "cxxprobe: '" << dir.string() << "' already exists\n";
-        return 2;
-    }
-
-    fs::create_directories(dir / "tests");
-    fs::create_directories(dir / "statement");
-    fs::create_directories(dir / "solutions");
-    fs::create_directories(dir / "checker");
-    write_file(dir / "tests" / ".gitkeep", "");
-    write_file(dir / "problem.yaml",
-               std::vformat(kProblemYamlTemplate, std::make_format_args(problem_name_)));
-    write_file(dir / "statement" / "problem.md",
-               std::vformat(kProblemMdTemplate, std::make_format_args(problem_name_)));
-    write_file(dir / "solutions" / "main.cpp", kSolutionTemplate);
-    write_file(dir / "checker" / "behavior_gtest.cpp", kCheckerGtestTemplate);
-
-    std::cout << "Created problem '" << problem_name_ << "' in " << dir.string() << "\n";
-    std::cout << "Next: fill in solutions/main.cpp, then run:\n";
-    std::cout << "  cxxprobe test problem " << slug << "\n";
+    std::cout << "Next: cxxprobe package init \"Your Problem Name\"\n";
     return 0;
 }
 

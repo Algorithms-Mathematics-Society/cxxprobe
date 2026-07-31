@@ -152,6 +152,21 @@ ProblemConfig load_from_dir(const std::filesystem::path& problem_dir);
 // entries is empty (no solution could be found or declared).
 const SolutionEntry& primary_solution(const SolutionsConfig& solutions);
 
+// Structural lint of a package directory, distinct from both load() (which
+// throws fail-fast where judging genuinely cannot proceed) and the Validator
+// Engine (which checks *test data* against the problem's constraints). This
+// only asks whether the package is well-formed on disk.
+struct PackageReport {
+    bool ok{false};
+    std::vector<std::string> errors;    // package is broken; judging will fail
+    std::vector<std::string> warnings;  // package works but looks incomplete
+};
+
+// Never throws — a problem.yaml that fails to parse is reported as an error
+// entry, not an exception, so `package validate` can report on a directory
+// that load() would refuse outright.
+PackageReport validate_package(const std::filesystem::path& problem_dir);
+
 // Immediate child directories of contest_dir containing a problem.yaml
 // (existence check only — does not parse). Order is filesystem-iteration
 // order; callers needing a stable order should sort the result themselves.

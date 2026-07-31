@@ -6,6 +6,8 @@
 
 namespace cxxprobe::problem {
 
+namespace fs = std::filesystem;
+
 nlohmann::ordered_json preview_to_json(const ProblemConfig& config, const ProjectDefaults& defaults,
                                        const PreviewOptions& opts) {
     using Json = nlohmann::ordered_json;
@@ -64,6 +66,38 @@ nlohmann::ordered_json preview_to_json(const ProblemConfig& config, const Projec
         samples.push_back(std::move(sample));
     }
     j["sample_tests"] = std::move(samples);
+
+    Json solutions = Json::array();
+    for (const auto& s : config.solutions.entries) {
+        Json entry;
+        entry["file"] = s.file;
+        entry["expected_verdict"] = cxxprobe::cases::verdict_str(s.expected_verdict);
+        entry["primary"] = s.primary;
+        solutions.push_back(std::move(entry));
+    }
+    j["solutions"] = std::move(solutions);
+
+    j["has_validator"] = config.validator.enabled;
+    j["has_checker_io"] = config.checker.io.enabled;
+    j["has_behavior_checker"] = config.checker.behavior.enabled;
+
+    // Counted rather than listed — a preview shouldn't pull a whole plan file
+    // into a contest-wide manifest, and "does this problem have generators"
+    // is the question a preview consumer actually asks.
+    int generator_count = 0;
+    std::error_code ec;
+    fs::path plan = config.problem_dir / config.generators.dir / config.generators.plan;
+    if (fs::exists(plan, ec)) {
+        fs::directory_iterator it{config.problem_dir / config.generators.dir, ec};
+        if (!ec) {
+            for (const auto& entry : it) {
+                if (entry.path().extension() == ".cpp") {
+                    ++generator_count;
+                }
+            }
+        }
+    }
+    j["generator_count"] = generator_count;
 
     return j;
 }

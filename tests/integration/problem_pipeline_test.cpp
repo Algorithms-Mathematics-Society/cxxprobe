@@ -107,9 +107,9 @@ protected:
         }
         fs::path contest_dir = base_dir_ / "pipeline-contest";
 
-        auto r2 = run_cli({"new", "problem", "Sum Two Numbers"}, contest_dir);
+        auto r2 = run_cli({"package", "init", "Sum Two Numbers"}, contest_dir);
         if (r2.exit_code != 0) {
-            throw std::runtime_error{"new problem failed: " + r2.stdout_text};
+            throw std::runtime_error{"package init failed: " + r2.stdout_text};
         }
         fs::path problem_dir = contest_dir / "sum-two-numbers";
         write_file(problem_dir / "solutions" / "main.cpp", kCorrectSolution);

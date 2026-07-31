@@ -92,9 +92,9 @@ protected:
         }
         fs::path contest_dir = base_dir_ / "pack-pipeline-contest";
 
-        auto r2 = run_cli({"new", "problem", "Sum Two Numbers"}, contest_dir);
+        auto r2 = run_cli({"package", "init", "Sum Two Numbers"}, contest_dir);
         if (r2.exit_code != 0) {
-            throw std::runtime_error{"new problem failed: " + r2.stdout_text};
+            throw std::runtime_error{"package init failed: " + r2.stdout_text};
         }
         fs::path problem_dir = contest_dir / "sum-two-numbers";
         write_file(problem_dir / "solution.cpp",
@@ -121,14 +121,14 @@ int PackPipelineTest::counter_ = 0;
 TEST_F(PackPipelineTest, FullRoundTripExcludesJunkAndPreservesContent) {
     fs::path contest_dir = scaffold_contest_with_junk();
 
-    auto pack_result = run_cli({"pack"}, contest_dir);
+    auto pack_result = run_cli({"package", "pack"}, contest_dir);
     ASSERT_EQ(pack_result.exit_code, 0) << pack_result.stdout_text;
     fs::path zip_path = contest_dir / "pack-pipeline-contest.zip";
     ASSERT_TRUE(fs::exists(zip_path));
 
     fs::path unpack_dest = base_dir_ / "unpacked";
     auto unpack_result =
-        run_cli({"unpack", zip_path.string(), "-C", unpack_dest.string()}, base_dir_);
+        run_cli({"package", "unpack", zip_path.string(), "-C", unpack_dest.string()}, base_dir_);
     ASSERT_EQ(unpack_result.exit_code, 0) << unpack_result.stdout_text;
 
     EXPECT_TRUE(fs::exists(unpack_dest / "contest.yaml"));
@@ -156,13 +156,14 @@ TEST_F(PackPipelineTest, PreservesExecutableBitOnCustomChecker) {
                                       fs::perms::others_exec);
     ASSERT_TRUE(permission_bits(checker_path) & 0100);
 
-    auto pack_result = run_cli({"pack"}, contest_dir);
+    auto pack_result = run_cli({"package", "pack"}, contest_dir);
     ASSERT_EQ(pack_result.exit_code, 0) << pack_result.stdout_text;
 
     fs::path unpack_dest = base_dir_ / "unpacked";
-    auto unpack_result = run_cli({"unpack", (contest_dir / "pack-pipeline-contest.zip").string(),
-                                  "-C", unpack_dest.string()},
-                                 base_dir_);
+    auto unpack_result =
+        run_cli({"package", "unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
+                 unpack_dest.string()},
+                base_dir_);
     ASSERT_EQ(unpack_result.exit_code, 0) << unpack_result.stdout_text;
 
     fs::path extracted_checker = unpack_dest / "sum-two-numbers" / "custom_checker";
@@ -173,18 +174,19 @@ TEST_F(PackPipelineTest, PreservesExecutableBitOnCustomChecker) {
 
 TEST_F(PackPipelineTest, ProblemsFilterOnlyIncludesRequestedSlug) {
     fs::path contest_dir = scaffold_contest_with_junk();
-    auto r = run_cli({"new", "problem", "Second Problem"}, contest_dir);
+    auto r = run_cli({"package", "init", "Second Problem"}, contest_dir);
     ASSERT_EQ(r.exit_code, 0) << r.stdout_text;
 
-    auto pack_result =
-        run_cli({"pack", "--problems", "sum-two-numbers", "-o", "filtered.zip"}, contest_dir);
+    auto pack_result = run_cli(
+        {"package", "pack", "--problems", "sum-two-numbers", "-o", "filtered.zip"}, contest_dir);
     ASSERT_EQ(pack_result.exit_code, 0) << pack_result.stdout_text;
     EXPECT_NE(pack_result.stdout_text.find("sum-two-numbers"), std::string::npos);
     EXPECT_EQ(pack_result.stdout_text.find("second-problem"), std::string::npos);
 
     fs::path unpack_dest = base_dir_ / "unpacked";
     auto unpack_result = run_cli(
-        {"unpack", (contest_dir / "filtered.zip").string(), "-C", unpack_dest.string()}, base_dir_);
+        {"package", "unpack", (contest_dir / "filtered.zip").string(), "-C", unpack_dest.string()},
+        base_dir_);
     ASSERT_EQ(unpack_result.exit_code, 0);
     EXPECT_TRUE(fs::exists(unpack_dest / "sum-two-numbers"));
     EXPECT_FALSE(fs::exists(unpack_dest / "second-problem"));
@@ -192,20 +194,22 @@ TEST_F(PackPipelineTest, ProblemsFilterOnlyIncludesRequestedSlug) {
 
 TEST_F(PackPipelineTest, UnpackWithoutForceRefusesExistingContestDir) {
     fs::path contest_dir = scaffold_contest_with_junk();
-    run_cli({"pack"}, contest_dir);
+    run_cli({"package", "pack"}, contest_dir);
     fs::path unpack_dest = base_dir_ / "unpacked";
-    run_cli({"unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
+    run_cli({"package", "unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
              unpack_dest.string()},
             base_dir_);
 
-    auto second = run_cli({"unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
-                           unpack_dest.string()},
-                          base_dir_);
+    auto second =
+        run_cli({"package", "unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
+                 unpack_dest.string()},
+                base_dir_);
     EXPECT_NE(second.exit_code, 0);
 
-    auto forced = run_cli({"unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
-                           unpack_dest.string(), "--force"},
-                          base_dir_);
+    auto forced =
+        run_cli({"package", "unpack", (contest_dir / "pack-pipeline-contest.zip").string(), "-C",
+                 unpack_dest.string(), "--force"},
+                base_dir_);
     EXPECT_EQ(forced.exit_code, 0);
 }
 
@@ -226,8 +230,8 @@ TEST_F(PackPipelineTest, JudgeWithBadProblemDirWritesNoOutputFile) {
 
 TEST_F(PackPipelineTest, JudgeWithPackageZipProducesReportForTheSoleProblem) {
     fs::path contest_dir = scaffold_contest_with_junk();
-    auto pack_result =
-        run_cli({"pack", "--problems", "sum-two-numbers", "-o", "single.zip"}, contest_dir);
+    auto pack_result = run_cli(
+        {"package", "pack", "--problems", "sum-two-numbers", "-o", "single.zip"}, contest_dir);
     ASSERT_EQ(pack_result.exit_code, 0) << pack_result.stdout_text;
 
     fs::path output_path = base_dir_ / "result.json";
@@ -248,8 +252,8 @@ TEST_F(PackPipelineTest, JudgeWithPackageZipProducesReportForTheSoleProblem) {
 
 TEST_F(PackPipelineTest, JudgeWithMultiProblemPackageIsRejectedAsAmbiguous) {
     fs::path contest_dir = scaffold_contest_with_junk();
-    run_cli({"new", "problem", "Second Problem"}, contest_dir);
-    auto pack_result = run_cli({"pack", "-o", "multi.zip"}, contest_dir);
+    run_cli({"package", "init", "Second Problem"}, contest_dir);
+    auto pack_result = run_cli({"package", "pack", "-o", "multi.zip"}, contest_dir);
     ASSERT_EQ(pack_result.exit_code, 0) << pack_result.stdout_text;
 
     fs::path output_path = base_dir_ / "result.json";

@@ -48,6 +48,7 @@ add_library(
   sandbox/detail/child.cpp
   problem/problem.cpp
   problem/problem_preview.cpp
+  problem/problem_validate.cpp
   symbolic/symbolic.cpp
   gtest_report/gtest_report.cpp
   compile/compile.cpp
