@@ -1,3 +1,10 @@
+# [0.14.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.13.0...v0.14.0) (2026-07-31)
+
+
+### Features
+
+* **cli:** verify additional declared solutions in test problem ([3a6420c](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/3a6420c9d8c82c3d0fbc7a6e82c4a059687e6d31))
+
 # [0.13.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.12.0...v0.13.0) (2026-07-31)
 
 
