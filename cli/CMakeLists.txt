@@ -14,7 +14,8 @@ add_executable(
   commands/test_cmd.cpp
   commands/pack_cmd.cpp
   commands/judge_cmd.cpp
-  commands/validate_cmd.cpp)
+  commands/validate_cmd.cpp
+  commands/generate_cmd.cpp)
 
 target_link_libraries(cxxprobe-cli PRIVATE cxxprobe CLI11::CLI11
                                            nlohmann_json::nlohmann_json)

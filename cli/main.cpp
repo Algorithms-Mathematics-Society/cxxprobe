@@ -2,6 +2,7 @@
 #include <CLI/CLI.hpp>
 // NOLINTEND(misc-include-cleaner)
 
+#include "commands/generate_cmd.hpp"
 #include "commands/judge_cmd.hpp"
 #include "commands/new_cmd.hpp"
 #include "commands/pack_cmd.hpp"
@@ -28,6 +29,7 @@ int main(int argc, char* argv[]) {
     cxxprobe::cli::PackCommand pack_cmd{app};
     cxxprobe::cli::JudgeCommand judge_cmd{app};
     cxxprobe::cli::ValidateCommand validate_cmd{app};
+    cxxprobe::cli::GenerateCommand generate_cmd{app};
 #ifdef CXXPROBE_SERVE_ENABLED
     cxxprobe::cli::ServeCommand serve_cmd{app};
 #endif
@@ -51,6 +53,9 @@ int main(int argc, char* argv[]) {
     }
     if (validate_cmd.invoked()) {
         return validate_cmd.execute();
+    }
+    if (generate_cmd.invoked()) {
+        return generate_cmd.execute();
     }
 #ifdef CXXPROBE_SERVE_ENABLED
     if (serve_cmd.invoked()) {
