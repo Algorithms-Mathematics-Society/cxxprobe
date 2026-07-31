@@ -64,18 +64,18 @@ void write_file(const fs::path& p, std::string_view content) {
 
 constexpr std::string_view kRangeValidator = R"CPP(
 #include <cstdio>
-int main() {
-    int x = 0;
-    if (std::scanf("%d", &x) != 1) {
-        std::fprintf(stderr, "expected an integer\n");
-        return 1;
+    int main() {
+        int x = 0;
+        if (std::scanf("%d", &x) != 1) {
+            std::fprintf(stderr, "expected an integer\n");
+            return 1;
+        }
+        if (x < 1 || x > 100) {
+            std::fprintf(stderr, "value %d out of range [1, 100]\n", x);
+            return 1;
+        }
+        return 0;
     }
-    if (x < 1 || x > 100) {
-        std::fprintf(stderr, "value %d out of range [1, 100]\n", x);
-        return 1;
-    }
-    return 0;
-}
 )CPP";
 
 class ValidatePipelineTest : public ::testing::Test {
@@ -95,9 +95,9 @@ protected:
         if (!sandbox_available_) {
             GTEST_SKIP() << "sandbox not available — needs user namespaces + writable cgroup";
         }
-        base_dir_ = fs::temp_directory_path() /
-                    std::format("cxxprobe-validate-pipeline-{}-{}", static_cast<long>(::getpid()),
-                               counter_++);
+        base_dir_ =
+            fs::temp_directory_path() / std::format("cxxprobe-validate-pipeline-{}-{}",
+                                                    static_cast<long>(::getpid()), counter_++);
         fs::create_directories(base_dir_);
     }
 
@@ -167,7 +167,7 @@ TEST_F(ValidatePipelineTest, InvalidCaseFailsWithExitOneAndDiagnostics) {
     ASSERT_EQ(j["cases"].size(), 1U);
     EXPECT_FALSE(j["cases"][0]["valid"]);
     EXPECT_NE(j["cases"][0]["diagnostics"].get<std::string>().find("out of range"),
-             std::string::npos);
+              std::string::npos);
 }
 
 TEST_F(ValidatePipelineTest, ValidatorCompileFailureExitsTwo) {

@@ -111,10 +111,10 @@ int ValidateCommand::execute() {
         if (!tests_override_.empty()) {
             test_cases = cxxprobe::cases::load_cases(fs::absolute(tests_override_));
         } else {
-            test_cases = config.tests.manifest ? cxxprobe::cases::load_cases_manifest(
-                                                     *problem_dir / *config.tests.manifest)
-                                               : cxxprobe::cases::load_cases_dir(*problem_dir /
-                                                                                 config.tests.dir);
+            test_cases =
+                config.tests.manifest
+                    ? cxxprobe::cases::load_cases_manifest(*problem_dir / *config.tests.manifest)
+                    : cxxprobe::cases::load_cases_dir(*problem_dir / config.tests.dir);
         }
     } catch (const std::exception& ex) {
         std::cerr << "cxxprobe: failed to load test cases: " << ex.what() << "\n";
