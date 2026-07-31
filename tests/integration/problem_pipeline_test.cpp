@@ -206,3 +206,71 @@ TEST_F(ProblemPipelineTest, SubmissionOverrideGradesDifferentFile) {
     std::string submission = j["submission"].get<std::string>();
     EXPECT_NE(submission.find("other.cpp"), std::string::npos);
 }
+
+// ─── additional declared solutions ──────────────────────────────────────────
+
+namespace {
+
+constexpr std::string_view kOffByOneSolution =
+    "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<(a+b+1)<<\"\\n\";return "
+    "0;}\n";
+
+// Declares a deliberately-wrong second solution alongside the correct one,
+// so `test problem` can report whether the test data actually catches it.
+void declare_two_solutions(const fs::path& problem_dir, std::string_view expected_verdict) {
+    write_file(problem_dir / "solutions" / "wa_off_by_one.cpp", kOffByOneSolution);
+    write_file(problem_dir / "problem.yaml",
+               std::format("version: 2\nname: \"Sum Two Numbers\"\nsolutions:\n  entries:\n"
+                           "    - {{ file: main.cpp, primary: true }}\n"
+                           "    - {{ file: wa_off_by_one.cpp, expected_verdict: {} }}\n",
+                           expected_verdict));
+}
+
+}  // namespace
+
+TEST_F(ProblemPipelineTest, DeclaredWrongSolutionMatchingItsExpectedVerdictIsReportedOk) {
+    fs::path problem_dir = scaffold_baseline();
+    write_file(problem_dir / "tests" / "1.in", "3 4\n");
+    write_file(problem_dir / "tests" / "1.ans", "7\n");
+    declare_two_solutions(problem_dir, "WA");
+
+    auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
+    json j = json::parse(r.stdout_text);
+    ASSERT_TRUE(j.contains("additional_solutions")) << r.stdout_text;
+    ASSERT_EQ(j["additional_solutions"].size(), 1U);
+    const auto& check = j["additional_solutions"][0];
+    EXPECT_EQ(check["file"], "wa_off_by_one.cpp");
+    EXPECT_EQ(check["expected_verdict"], "WA");
+    EXPECT_EQ(check["actual_verdict"], "WA");
+    EXPECT_TRUE(check["matched"]);
+}
+
+TEST_F(ProblemPipelineTest, DeclaredWrongSolutionThatTestDataFailsToCatchIsReportedAsMismatch) {
+    fs::path problem_dir = scaffold_baseline();
+    // Only case the off-by-one solution happens to get right, so the data is
+    // too weak to earn it the WA its entry declares.
+    write_file(problem_dir / "tests" / "1.in", "3 4\n");
+    write_file(problem_dir / "tests" / "1.ans", "8\n");
+    declare_two_solutions(problem_dir, "WA");
+
+    auto r = run_cli({"test", "problem", "sum-two-numbers", "--json"}, problem_dir);
+    json j = json::parse(r.stdout_text);
+    ASSERT_TRUE(j.contains("additional_solutions")) << r.stdout_text;
+    const auto& check = j["additional_solutions"][0];
+    EXPECT_EQ(check["expected_verdict"], "WA");
+    EXPECT_EQ(check["actual_verdict"], "AC");
+    EXPECT_FALSE(check["matched"]);
+}
+
+TEST_F(ProblemPipelineTest, SubmissionOverrideSkipsAdditionalSolutionVerification) {
+    fs::path problem_dir = scaffold_baseline();
+    write_file(problem_dir / "tests" / "1.in", "3 4\n");
+    write_file(problem_dir / "tests" / "1.ans", "7\n");
+    declare_two_solutions(problem_dir, "WA");
+    write_file(problem_dir / "other.cpp", kCorrectSolution);
+
+    auto r = run_cli({"test", "problem", "sum-two-numbers", "--submission", "other.cpp", "--json"},
+                     problem_dir);
+    json j = json::parse(r.stdout_text);
+    EXPECT_FALSE(j.contains("additional_solutions")) << r.stdout_text;
+}

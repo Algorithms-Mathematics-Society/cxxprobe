@@ -114,4 +114,22 @@ Json to_json(const JudgeReport& report) {
     return j;
 }
 
+Json to_json(const std::vector<SolutionCheck>& checks) {
+    Json arr = Json::array();
+    for (const auto& c : checks) {
+        Json j;
+        j["file"] = c.file;
+        j["expected_verdict"] = c.expected_verdict;
+        if (!c.actual_verdict.empty()) {
+            j["actual_verdict"] = c.actual_verdict;
+        }
+        j["matched"] = c.matched;
+        if (!c.diagnostics.empty()) {
+            j["diagnostics"] = c.diagnostics;
+        }
+        arr.push_back(std::move(j));
+    }
+    return arr;
+}
+
 }  // namespace cxxprobe::judge

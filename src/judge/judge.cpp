@@ -212,6 +212,55 @@ Status worse(Status a, Status b) {
     return rank(b) > rank(a) ? b : a;
 }
 
+// Compiles a single source into a fresh temp binary using the problem's
+// resolved compiler settings, plus any extra_sources it declares.
+cxxprobe::compile::Result compile_source(const cxxprobe::problem::ProblemConfig& config,
+                                         const cxxprobe::problem::ResolvedCompiler& resolved,
+                                         const fs::path& source, const fs::path& output,
+                                         const std::vector<std::string>& extra_flags = {}) {
+    cxxprobe::compile::Request req;
+    req.sources = {source};
+    for (const auto& extra : resolved.extra_sources) {
+        req.sources.push_back(config.problem_dir / extra);
+    }
+    req.cxx = resolved.cxx;
+    req.std_flag = resolved.std_flag;
+    req.flags = resolved.flags;
+    req.extra_flags = extra_flags;
+    req.output_binary = output;
+    req.working_dir = config.problem_dir;
+    return cxxprobe::compile::compile(req);
+}
+
+// Compiles checker/checker.cpp when checker.io is enabled. Returns an empty
+// path (with ok=true) when the problem has no I/O checker, in which case
+// judging falls back to cases::token_equal.
+struct CheckerBuild {
+    bool ok{true};
+    fs::path binary;
+    CompileStepReport report;
+};
+
+CheckerBuild build_io_checker(const cxxprobe::problem::ProblemConfig& config,
+                              const cxxprobe::problem::ResolvedCompiler& resolved) {
+    CheckerBuild build;
+    if (!config.checker.io.enabled) {
+        return build;
+    }
+    fs::path binary = make_temp_path("cxxprobe-checker");
+    fs::path src = config.problem_dir / config.checker.dir / config.checker.io.entry;
+    cxxprobe::compile::Result res =
+        compile_source(config, resolved, src, binary, config.checker.io.extra_flags);
+    build.report = to_compile_report(res);
+    build.ok = res.ok;
+    if (res.ok) {
+        build.binary = binary;
+    } else {
+        fs::remove(binary);
+    }
+    return build;
+}
+
 // Compiles the submission and, if checker.io is enabled, the I/O checker,
 // then judges the manual test set. Leaves report.manual at Status::Error
 // (with the relevant compile report populated) without attempting to judge
@@ -221,18 +270,8 @@ void judge_manual_tests_section(const cxxprobe::problem::ProblemConfig& config,
                                 const cxxprobe::sandbox::Limits& run_limits,
                                 const fs::path& submission_path, JudgeReport& report) {
     fs::path solution_binary = make_temp_path("cxxprobe-solution");
-    cxxprobe::compile::Request req;
-    req.sources = {submission_path};
-    for (const auto& extra : resolved.extra_sources) {
-        req.sources.push_back(config.problem_dir / extra);
-    }
-    req.cxx = resolved.cxx;
-    req.std_flag = resolved.std_flag;
-    req.flags = resolved.flags;
-    req.output_binary = solution_binary;
-    req.working_dir = config.problem_dir;
-
-    cxxprobe::compile::Result cres = cxxprobe::compile::compile(req);
+    cxxprobe::compile::Result cres =
+        compile_source(config, resolved, submission_path, solution_binary);
     report.solution_compile = to_compile_report(cres);
     if (!cres.ok) {
         report.manual.status = Status::Error;
@@ -240,36 +279,59 @@ void judge_manual_tests_section(const cxxprobe::problem::ProblemConfig& config,
         return;
     }
 
-    std::string checker_bin;
-    fs::path checker_binary;
-    if (config.checker.io.enabled) {
-        checker_binary = make_temp_path("cxxprobe-checker");
-        fs::path checker_src = config.problem_dir / config.checker.dir / config.checker.io.entry;
-        cxxprobe::compile::Request creq;
-        creq.sources = {checker_src};
-        creq.cxx = resolved.cxx;
-        creq.std_flag = resolved.std_flag;
-        creq.flags = resolved.flags;
-        creq.extra_flags = config.checker.io.extra_flags;
-        creq.output_binary = checker_binary;
-        creq.working_dir = config.problem_dir;
-
-        cxxprobe::compile::Result ckres = cxxprobe::compile::compile(creq);
-        report.checker_compile = to_compile_report(ckres);
-        if (!ckres.ok) {
-            report.manual.status = Status::Error;
-            fs::remove(solution_binary);
-            return;
-        }
-        checker_bin = checker_binary.string();
+    CheckerBuild checker = build_io_checker(config, resolved);
+    report.checker_compile = checker.report;
+    if (!checker.ok) {
+        report.manual.status = Status::Error;
+        fs::remove(solution_binary);
+        return;
     }
 
-    report.manual = run_manual_tests(config, run_limits, solution_binary, checker_bin);
+    report.manual = run_manual_tests(config, run_limits, solution_binary, checker.binary.string());
 
-    if (!checker_binary.empty()) {
-        fs::remove(checker_binary);
+    if (!checker.binary.empty()) {
+        fs::remove(checker.binary);
     }
     fs::remove(solution_binary);
+}
+
+// Judges one already-declared solution against the manual tests and fills in
+// the verdict it actually earned.
+void check_one_solution(const cxxprobe::problem::ProblemConfig& config,
+                        const cxxprobe::problem::ResolvedCompiler& resolved,
+                        const cxxprobe::sandbox::Limits& run_limits, const std::string& checker_bin,
+                        const cxxprobe::problem::SolutionEntry& entry, SolutionCheck& out) {
+    fs::path source = config.problem_dir / config.solutions.dir / entry.file;
+    if (!fs::exists(source)) {
+        out.diagnostics = std::format("solution source not found: {}", source.string());
+        return;
+    }
+
+    fs::path binary = make_temp_path("cxxprobe-alt-solution");
+    cxxprobe::compile::Result cres = compile_source(config, resolved, source, binary);
+    if (!cres.ok) {
+        out.diagnostics = cres.diagnostics;
+        fs::remove(binary);
+        return;
+    }
+
+    ManualTestsReport manual = run_manual_tests(config, run_limits, binary, checker_bin);
+    fs::remove(binary);
+
+    std::vector<cxxprobe::cases::Verdict> verdicts;
+    for (const auto& c : manual.cases) {
+        if (auto v = cxxprobe::cases::verdict_from_str(c.verdict)) {
+            verdicts.push_back(*v);
+        }
+    }
+    if (verdicts.empty()) {
+        out.diagnostics = "no test case produced a verdict (are .ans files present?)";
+        return;
+    }
+
+    cxxprobe::cases::Verdict worst = cxxprobe::cases::worst_verdict(verdicts);
+    out.actual_verdict = cxxprobe::cases::verdict_str(worst);
+    out.matched = (worst == entry.expected_verdict);
 }
 
 }  // namespace
@@ -325,6 +387,50 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     report.overall =
         worse(worse(report.manual.status, report.symbolic.status), report.behavior.status);
     return report;
+}
+
+std::vector<SolutionCheck> verify_additional_solutions(
+    const cxxprobe::problem::ProblemConfig& config,
+    const cxxprobe::problem::ProjectDefaults& defaults) {
+    std::vector<SolutionCheck> checks;
+    if (config.solutions.entries.size() <= 1 || !config.tests.enabled) {
+        return checks;
+    }
+
+    cxxprobe::problem::ResolvedCompiler resolved =
+        cxxprobe::problem::resolve_compiler(config.compiler, defaults);
+    cxxprobe::sandbox::Limits run_limits =
+        cxxprobe::problem::resolve_limits(config.limits, defaults);
+
+    // Built once and shared across every declared solution — recompiling the
+    // checker per solution would multiply the cost of a problem with several
+    // reference solutions for no benefit.
+    CheckerBuild checker = build_io_checker(config, resolved);
+
+    for (const auto& entry : config.solutions.entries) {
+        if (entry.primary) {
+            continue;
+        }
+        SolutionCheck out;
+        out.file = entry.file;
+        out.expected_verdict = cxxprobe::cases::verdict_str(entry.expected_verdict);
+        if (!checker.ok) {
+            out.diagnostics = "checker failed to compile:\n" + checker.report.diagnostics;
+        } else {
+            try {
+                check_one_solution(config, resolved, run_limits, checker.binary.string(), entry,
+                                   out);
+            } catch (const std::exception& ex) {
+                out.diagnostics = ex.what();
+            }
+        }
+        checks.push_back(std::move(out));
+    }
+
+    if (!checker.binary.empty()) {
+        fs::remove(checker.binary);
+    }
+    return checks;
 }
 
 }  // namespace cxxprobe::judge

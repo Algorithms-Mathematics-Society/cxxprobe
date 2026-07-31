@@ -89,6 +89,28 @@ void print_human(const cxxprobe::judge::JudgeReport& report, bool quiet, const C
                              status_str(report.overall), col.rst);
 }
 
+// A mismatch here does not change the primary solution's own Pass/Fail — it
+// says the test data is too weak to catch what that solution gets wrong, a
+// separate finding for the setter, reported alongside rather than folded in.
+void print_additional_solutions(const std::vector<cxxprobe::judge::SolutionCheck>& checks,
+                                const Col& col) {
+    if (checks.empty()) {
+        return;
+    }
+    std::cout << "\nAdditional solutions\n";
+    for (const auto& c : checks) {
+        if (!c.diagnostics.empty() && c.actual_verdict.empty()) {
+            std::cout << std::format("  {:<28} {}ERROR{} — {}\n", c.file, col.red, col.rst,
+                                     c.diagnostics);
+            continue;
+        }
+        std::cout << std::format("  {:<28} expected {:<4} got {:<4} {}{}{}\n", c.file,
+                                 c.expected_verdict, c.actual_verdict,
+                                 c.matched ? col.grn : col.yel, c.matched ? "OK" : "MISMATCH",
+                                 col.rst);
+    }
+}
+
 int exit_code_for(Status s) {
     switch (s) {
         case Status::Error:
@@ -175,11 +197,24 @@ int TestCommand::execute_test_problem() {
         return 2;
     }
 
+    // Only meaningful when judging the problem's own declared solutions —
+    // with --submission the caller is grading someone else's code, and the
+    // problem's reference solutions aren't what's under test.
+    std::vector<cxxprobe::judge::SolutionCheck> solution_checks;
+    if (!submission) {
+        solution_checks = cxxprobe::judge::verify_additional_solutions(config, defaults);
+    }
+
     if (json_output_) {
-        std::cout << judge_report_to_json(report).dump(2) << "\n";
+        auto j = judge_report_to_json(report);
+        if (!solution_checks.empty()) {
+            j["additional_solutions"] = cxxprobe::judge::to_json(solution_checks);
+        }
+        std::cout << j.dump(2) << "\n";
     } else {
         const Col col = make_col(!no_color_ && (isatty(STDOUT_FILENO) != 0));
         print_human(report, quiet_, col);
+        print_additional_solutions(solution_checks, col);
     }
     return exit_code_for(report.overall);
 }
