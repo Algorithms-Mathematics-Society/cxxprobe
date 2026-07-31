@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.11.0...v0.12.0) (2026-07-31)
+
+
+### Features
+
+* **generator:** add the Generator Engine library ([75f6c32](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/75f6c32e713540efffac12cca527f63bffffb1ac))
+
 # [0.11.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.10.0...v0.11.0) (2026-07-30)
 
 
