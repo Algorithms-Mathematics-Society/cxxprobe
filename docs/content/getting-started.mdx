@@ -97,15 +97,15 @@ Judging](/guides/single-run-judging).
 
 ## Your first contest
 
-`run` is the low-level primitive above; `new` and `test problem` build a
-whole contest/problem workflow on top of it:
+`run` is the low-level primitive above; `new contest`, `package`, and
+`test problem` build a whole contest/problem workflow on top of it:
 
 ```bash
 cxxprobe new contest "My Contest"
 cd my-contest
-cxxprobe new problem "A: Warmup"
+cxxprobe package init "A: Warmup"
 cd a-warmup
-cp solution_template.cpp solution.cpp   # fill it in
+# fill in solutions/main.cpp, then:
 cxxprobe test problem a-warmup
 ```
 

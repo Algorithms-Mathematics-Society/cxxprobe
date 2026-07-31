@@ -20,8 +20,8 @@ future sessions don't have to re-derive it from scratch. Status legend:
 | Compile submissions | ✅ | `compile::compile()`, `include/cxxprobe/compile.hpp` |
 | Sandbox execution | ✅ | `sandbox::run()`, cgroup v2 + user/mount namespaces, `include/cxxprobe/sandbox.hpp` |
 | Execute testcases | ✅ | `cases::load_cases_dir`/`load_cases_manifest`, `judge::run_manual_tests` |
-| Run custom checkers | ✅ | `cases::check_output()` — testlib-ABI binary if `tests.checker` set, else built-in token-equal |
-| Run validators | ⬜ | See Problem Setting — no input-format-validation concept exists yet, distinct from checkers |
+| Run custom checkers | ✅ | `cases::check_output()` — cxxprobe-compiled `checker/checker.cpp` (testlib ABI) if present, else built-in token-equal; runs sandboxed with stderr captured |
+| Run validators | ✅ | `cxxprobe::validator` + `cxxprobe validate` (Phase 2) — testlib `registerValidation()` protocol |
 | Enforce resource limits | ✅ | `sandbox::Limits` (memory/cpu/wall/pids), cgroup-enforced |
 | Produce verdicts | ✅ | `cases::Verdict` (AC/WA/TLE/MLE/OLE/RE), `judge::Status` (Pass/Fail/Skipped/Error) |
 | Produce testcase results | ✅ | `judge::CaseDetail` per case, with resource usage |
@@ -34,24 +34,24 @@ authoring tooling, not a small addition.
 
 | Item | Status | Notes |
 |---|---|---|
-| Validate problem packages | 🟡 | `problem::load()` validates YAML schema + referenced-file existence; no deep dataset validation |
-| Run validators against testcases | ⬜ | No validator concept at all — a distinct thing from checkers (validates input format, not output correctness) |
-| Generate testcases using generators | ⬜ | No generator invocation exists; `docs/content/guides/stress-testing.mdx` shows this as an external bash loop today |
+| Validate problem packages | ✅ | `problem::validate_package()` + `cxxprobe package validate` (Phase 2) — structural lint, non-throwing, distinct from `load()` |
+| Run validators against testcases | ✅ | `cxxprobe validate <problem>` (Phase 2) — one validator run per `.in`, exit 0 = valid, stderr = diagnostic |
+| Generate testcases using generators | ✅ | `cxxprobe::generator` + `cxxprobe generate` (Phase 2) — `generators/plan.yaml`, Polygon `tests.txt` convention |
 | Stress testing | ⬜ | Same — a documented workflow composed from `run`, not a built-in feature |
 | Differential testing | ⬜ | Same |
 | Verify checker correctness | ⬜ | No mechanism to test a checker against known-good/bad pairs |
-| Detect invalid datasets | ⬜ | Malformed `.in` with no `.ans`, duplicate labels, etc. are silently tolerated |
-| Test multiple solutions (AC/WA/TLE/RE) | 🟡 | `--submission` grades one arbitrary solution per invocation; no built-in "run N solutions" loop |
+| Detect invalid datasets | 🟡 | `package validate` warns on a `.in` with no `.ans`; duplicate labels and deeper dataset pathologies still tolerated |
+| Test multiple solutions (AC/WA/TLE/RE) | ✅ | `solutions.entries` with `expected_verdict`; `test problem` judges every non-primary entry and reports actual-vs-expected (Phase 2) |
 | Estimate runtime and memory usage | 🟡 | Every run reports exact resource usage; no statistical benchmarking across repeated runs |
-| Detect weak testcases | ⬜ | No coverage/mutation analysis |
-| Preview problem package before publishing | 🟡 | `cxxprobe test problem` (no `--submission`) validates the reference solution; `pack`'s `manifest.json` gives a JSON preview (Phase 1, this session) |
+| Detect weak testcases | 🟡 | A declared wrong solution that earns AC is exactly a weak-data signal (Phase 2); no coverage/mutation analysis |
+| Preview problem package before publishing | ✅ | `cxxprobe package inspect` (Phase 2); `package pack`'s `manifest.json` embeds the same preview |
 
 ## Package Management
 
 | Item | Status | Notes |
 |---|---|---|
-| Import problem packages | ✅ | `cxxprobe unpack` (Phase 1, this session) |
-| Export problem packages | ✅ | `cxxprobe pack` (Phase 1, this session) |
+| Import problem packages | ✅ | `cxxprobe package unpack` |
+| Export problem packages | ✅ | `cxxprobe package pack` |
 | Version problem packages | 🟡 | `manifest.json`'s `format_version` versions the *pack schema*; no content-revision history for a problem over time |
 | Package integrity verification | ⬜ | No checksums/signing |
 | Dependency validation | ⬜ | No inter-problem/inter-package dependency concept |
@@ -75,7 +75,7 @@ per job. Items below marked 🚫 are that adapter's job, not cxxprobe's.
 
 | Item | Status | Notes |
 |---|---|---|
-| Job execution | ✅ | `cxxprobe judge` (Phase 1, this session) — package-in/result-out, no contest-dir resolution |
+| Job execution | ✅ | `cxxprobe judge` — package-in/result-out, no contest-dir resolution |
 | Worker registration | 🚫 | Owned by the future SQS/S3 adapter |
 | Health reporting | 🚫 (to an external system) / ✅ (in-process) | `cxxprobe serve`'s `GET /health`/`GET /metrics` already exist for the self-contained HTTP-service mode; reporting to an external orchestrator is the adapter's job |
 | Retry support | 🚫 | Owned by the future adapter — `cxxprobe judge`'s contract (a produced report vs. no output file) is exactly what a retry policy needs to key off of |
@@ -85,10 +85,10 @@ per job. Items below marked 🚫 are that adapter's job, not cxxprobe's.
 
 | Item | Status | Notes |
 |---|---|---|
-| Local judge CLI | ✅ | `run`, `new`, `test`, `pack`/`unpack`, `judge`, `serve` |
+| Local judge CLI | ✅ | `run`, `new contest`, `package`, `test`, `validate`, `generate`, `judge`, `serve` |
 | Batch evaluation | ✅ | `cxxprobe run --cases <dir\|manifest>` |
 | Benchmarking | ⬜ | No repeated-run statistical analysis |
-| Dry-run mode | ⬜ | No flag validates config without compiling/executing |
+| Dry-run mode | 🟡 | `cxxprobe generate --dry-run` runs generators without writing; no equivalent for judging |
 | Rejudge support | ⬜ | `cxxprobe serve`'s API has no re-run-an-existing-submission endpoint |
 | Plugin architecture | ⬜ | No extension-point mechanism of any kind |
 
@@ -101,7 +101,7 @@ per job. Items below marked 🚫 are that adapter's job, not cxxprobe's.
 | Resource usage | ✅ | cpu/wall/memory, cgroup-measured |
 | Compile logs | ✅ | |
 | Runtime logs | ✅ | |
-| Checker output | 🟡 | Drives AC/WA and is passed through to the terminal in CLI mode; not captured into the structured `JudgeReport`/JSON |
+| Checker output | ✅ | Captured into `CaseDetail::checker_diagnostics` and surfaced in the JSON (Phase 2) |
 | Execution metadata | ✅ | Exit codes, problem/slug/submission identifiers, timestamps |
 
 ## Explicitly not cxxprobe's responsibility
@@ -117,13 +117,15 @@ logic, AWS infrastructure. All of this lives in AMS Access.
   core-library hoist (`find_problem_dirs`, `preview_to_json`) that both
   needed. Zero new server API surface — `cxxprobe serve`'s existing
   REST/SSE contract is untouched.
-- **Phase 2 (next)** — Problem-setting tooling: validators (input-format
-  validation, distinct from checkers), generators (test-case generation
-  via a user-provided program), and capturing checker stderr into the
-  structured `JudgeReport`. This is the most product-critical gap — it's
-  genuine Polygon/testlib-style authoring tooling that doesn't exist in
-  any form yet.
-- **Phase 3 (later)** — Stress/differential testing (built-in, not just a
+- **Phase 2 (done)** — The v2 package format (`statement/`, `tests/`,
+  `validator/`, `checker/`, `generators/`, `solutions/`, `attachments/`),
+  the Validator Engine (`cxxprobe validate`), the Generator Engine
+  (`cxxprobe generate`), declared-solution verification in
+  `cxxprobe test problem`, the `cxxprobe package` verb group, and
+  capturing checker stderr into the structured `JudgeReport`. This was the
+  most product-critical gap — genuine Polygon/testlib-style authoring
+  tooling that previously existed in no form at all.
+- **Phase 3 (next)** — Stress/differential testing (built-in, not just a
   documented bash-loop pattern), checker-correctness verification,
   weak-testcase detection, benchmarking, dry-run mode, rejudge support,
   plugin architecture.
@@ -132,6 +134,7 @@ logic, AWS infrastructure. All of this lives in AMS Access.
   model (no compile step for interpreted languages), and per-language
   resource defaults — architecturally invasive enough to scope on its own.
 - **Owned elsewhere, not part of this repo** — AWS infrastructure
-  (Terraform/CDK, ECS/RDS/S3/SQS/ElastiCache/Firecracker), the SQS/S3
-  worker adapter that wraps `cxxprobe judge` per job, and AMS Access itself
-  (the DASH web dashboard, the Go backend, the proctor/desktop client).
+  (Terraform/CDK, ECS/RDS/S3/SQS/ElastiCache/Firecracker) and AMS Access
+  itself (the DASH web dashboard, the Go backend, the proctor/desktop
+  client). The job-execution adapter that wraps `cxxprobe judge` per job
+  now lives in its own repo, **cxxprobe-worker**.

@@ -17,8 +17,8 @@ curl -sSf https://algorithms-mathematics-society.github.io/cxxprobe/install.sh |
 
 ```bash
 cxxprobe new contest "AMS Ascent"
-cxxprobe new problem "A: FileReader RAII"
-# fill in solution.cpp, then:
+cxxprobe package init "A: FileReader RAII"
+# fill in solutions/main.cpp, then:
 cxxprobe test problem a-filereader-raii
 ```
 
@@ -76,7 +76,7 @@ don't trust yet.
   real behavior checker. Combine any of the three per problem; `cxxprobe
   test problem` reports one clear verdict either way.
 - **Scaffolding, not folder conventions to memorize.** `cxxprobe new
-  contest` / `cxxprobe new problem` generate everything — statement,
+  contest` / `cxxprobe package init` generate everything — statement,
   solution template, test directory, checker template — so there's nothing
   to hand-roll and nothing to get subtly wrong.
 - **Grade contestants, not just your own reference solution.** `cxxprobe

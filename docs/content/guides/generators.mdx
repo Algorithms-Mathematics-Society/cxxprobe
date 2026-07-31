@@ -1,0 +1,151 @@
+---
+title: Generators
+description: Produce test inputs from a program instead of writing them by hand.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Generators
+
+Hand-writing `tests/1.in` works until you need a hundred cases, or one with
+`n = 100000`. A **generator** is a program that prints a test to stdout; a
+**plan** says which generators to run with which arguments.
+
+## The protocol
+
+```text
+generator <args...>        argv comes from the plan entry
+  stdout → tests/<label>.in
+  exit 0 → success
+```
+
+No stdin, no library requirement. Polygon-style generators work unmodified.
+
+<Callout type="warning">
+  Generators produce `.in` files only — never `.ans`. Computing expected
+  answers means running a solution you trust, which is the Stress Testing
+  Engine's job, not this one. Until that lands, write `.ans` files yourself
+  or use `cxxprobe run` to produce them.
+</Callout>
+
+## Writing one
+
+<Steps>
+
+### Add a generator
+
+`generators/gen_random.cpp`:
+
+```cpp
+#include <cstdio>
+#include <cstdlib>
+#include <random>
+
+int main(int argc, char** argv) {
+    int n = argc > 1 ? std::atoi(argv[1]) : 10;
+    unsigned seed = argc > 2 ? std::atoi(argv[2]) : 42;
+
+    std::mt19937 rng{seed};
+    std::uniform_int_distribution<int> dist(1, 1000000000);
+
+    std::printf("%d\n", n);
+    for (int i = 0; i < n; ++i) {
+        std::printf("%d\n", dist(rng));
+    }
+    return 0;
+}
+```
+
+### Write the plan
+
+`generators/plan.yaml` — one entry per test, matching Polygon's `tests.txt`
+convention:
+
+```yaml
+- { generator: gen_random.cpp, args: ["10", "1"] }
+- { generator: gen_random.cpp, args: ["1000", "2"] }
+- { generator: gen_random.cpp, args: ["100000", "3"], label: max }
+- { generator: gen_edge.cpp,   args: ["1"],           label: minimal }
+```
+
+`label` is optional. Omitted entries take the next unused numeric stem under
+`tests/`, continuing your existing numbering rather than colliding with it —
+so with `1.in` and `2.in` already present, the first two entries above become
+`3.in` and `4.in`.
+
+### Generate
+
+```bash
+cxxprobe generate sum-two-numbers
+```
+
+```text
+Problem: A: Sum Two Numbers
+
+       3: written
+       4: written
+     max: written
+ minimal: written
+
+---
+4/4 generated
+```
+
+</Steps>
+
+## Options
+
+| Flag | Effect |
+|---|---|
+| `-C, --dir` | Contest directory (default: auto-detect via `contest.yaml`) |
+| `--dry-run` | Run every generator but write nothing |
+| `--force` | Overwrite existing test files |
+| `--no-validate` | Skip running the problem's validator over generated cases |
+| `--strict` | Exit non-zero if any generated case fails validation |
+| `--json` | Emit the report as JSON |
+
+Exit codes: `0` every entry generated cleanly, `1` at least one entry failed,
+`2` a usage, plan-parse, or compile error.
+
+An existing `tests/<label>.in` is **never** silently overwritten — that's an
+error unless you pass `--force`. Regenerating everything after tweaking a
+generator is `cxxprobe generate <problem> --force`.
+
+## Automatic validation
+
+If the problem has a `validator/`, each freshly generated case is fed
+through it immediately:
+
+```text
+       3: written
+       4: written  [validator: n = 0 is outside [1, 100000]]
+
+---
+2/2 generated, 1 rejected by the validator
+```
+
+This catches a broken generator the moment you run it, instead of at contest
+time. The case is still written so you can inspect it, and by default a
+rejection is a warning rather than a failure — while you're iterating on a
+generator, producing not-yet-legal data is normal. Pass `--strict` in CI,
+where it should be fatal:
+
+```bash
+cxxprobe generate my-problem --force --strict
+```
+
+Turn it off entirely with `--no-validate`.
+
+<Callout type="info">
+  Each distinct generator source is compiled exactly once per run and reused
+  across every plan entry naming it, and the validator is compiled once for
+  the whole run — a hundred-entry plan doesn't mean a hundred compiles.
+</Callout>
+
+## A typical loop
+
+```bash
+cxxprobe generate my-problem --force   # (re)build the dataset
+cxxprobe validate my-problem           # confirm every input is legal
+cxxprobe test problem my-problem       # confirm solutions earn their verdicts
+```

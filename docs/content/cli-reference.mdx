@@ -12,7 +12,7 @@ cxxprobe <subcommand> [OPTIONS] ...
 ```
 
 cxxprobe has eight subcommands: [`run`](#run) (sandbox a program directly),
-[`new contest`](#new-contest--new-problem) / [`new problem`](#new-contest--new-problem)
+[`new contest`](#new-contest--new-problem) / [`package init`](#new-contest--new-problem)
 (scaffolding), [`test problem`](#test-problem) (judging), [`pack`](#pack) /
 [`unpack`](#unpack) (bundle a contest's problems for import elsewhere),
 [`judge`](#judge) (single-shot, worker-facing judging), and
@@ -144,23 +144,15 @@ verdict regardless of which mechanism actually killed the process. See
 
 ---
 
-## `new contest` / `new problem`
+## `new contest`
 
-Scaffolds a contest or problem directory. Run from anywhere for `new
-contest`; run from inside (or under) a contest directory for `new problem`.
+Scaffolds a contest directory (a `contest.yaml` marker). Run from anywhere.
 
 ```text
 cxxprobe new contest "Name"
-cxxprobe new problem "Name" [-C/--dir CONTEST_DIR]
 ```
 
-| Flag | Description |
-|---|---|
-| `-C, --dir PATH` | Contest directory override (default: auto-detected by walking up from cwd looking for `contest.yaml`) |
-
-See [Folder Structure](/architecture/folder-structure) for exactly what gets
-generated and why, and [Contest Workflows](/guides/contest-workflows) for the
-end-to-end authoring flow.
+Scaffolding a *problem* is `package init`, below.
 
 ---
 
@@ -177,8 +169,8 @@ cxxprobe test problem "Name" [-C/--dir CONTEST_DIR] [--submission PATH]
 
 | Flag | Description |
 |---|---|
-| `-C, --dir PATH` | Contest directory override (same auto-detection as `new problem`) |
-| `--submission PATH` | Grade an arbitrary source file instead of the problem's own `solution.cpp` — see [Contest Workflows](/guides/contest-workflows#grading-a-submission) |
+| `-C, --dir PATH` | Contest directory override (same auto-detection as `package init`) |
+| `--submission PATH` | Grade an arbitrary source file instead of the problem's own `solutions/main.cpp` — see [Contest Workflows](/guides/contest-workflows#grading-a-submission) |
 | `--json` | Emit the full report as JSON |
 | `-q, --quiet` | Suppress per-case/per-check detail (human mode) |
 | `--no-color` | Disable ANSI colors |
@@ -217,16 +209,53 @@ compile error) as opposed to a genuine test failure.
 
 ---
 
-## `pack`
+## `package`
 
-Bundles a contest directory's problems into a portable zip — statement,
-tests, checkers, and reference solution, verbatim — for import into another
-system (e.g. a contest platform's own admin UI). See [Packing &
-Import](/guides/packing-and-import) for a full walkthrough.
+Everything that operates on a problem package *as a package*, rather than on
+what's inside it.
 
 ```text
-cxxprobe pack [OPTIONS]
+cxxprobe package init     "Name" [-C/--dir DIR]
+cxxprobe package validate <name> [-C/--dir DIR] [--json] [--no-color]
+cxxprobe package inspect  <name> [-C/--dir DIR] [--json]
+cxxprobe package pack            [-C/--dir DIR] [--problems LIST] [-o/--out PATH]
+cxxprobe package unpack   <zip>  [-C/--dir DIR] [--force]
 ```
+
+### `package init`
+
+Scaffolds a v2 package: `problem.yaml`, `statement/problem.md`,
+`solutions/main.cpp`, and an empty `tests/`. `validator/`, `checker/`,
+`generators/`, and `attachments/` are deliberately not created — each is
+enabled by the presence of its entry file, so an empty directory would only
+be noise. See [Problem Packages](/guides/problem-packages).
+
+### `package validate`
+
+Lints the package's *structure*: does `problem.yaml` parse, do the files that
+enabled sections point at exist, is `solutions.entries` unambiguous, is
+`generators/plan.yaml` well-formed. Exit `0` valid (warnings allowed), `1`
+errors found, `2` usage error.
+
+<Callout type="info">
+  Three separate "is this right?" questions, three separate commands:
+  `package validate` checks package **structure**, [`validate`](#validate)
+  checks **test data** against the problem's constraints, and
+  [`test problem`](#test-problem) checks **solutions** against their
+  expected verdicts.
+</Callout>
+
+### `package inspect`
+
+Prints the package's preview — the same shape `GET /problems/{slug}` returns,
+plus `solutions`, `has_validator`, `has_checker_io`, `has_behavior_checker`,
+and `generator_count`. `--json` emits it raw.
+
+### `package pack`
+
+Bundles a contest directory's problems into a portable zip — statement,
+tests, checkers, and reference solutions, verbatim — for import into another
+system. See [Packing & Import](/guides/packing-and-import).
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
@@ -238,21 +267,13 @@ The zip is flat at the root (`manifest.json`, `contest.yaml`, one directory
 per packed problem) — any standard `unzip` works, and the result is
 immediately usable as a `--contest-dir`. `manifest.json` carries a
 `format_version`, `packed_at` timestamp, and a JSON preview of every packed
-problem (statement, limits, sample tests) — the same shape `GET
-/problems/{slug}` returns. A small fixed denylist (`.git`, `build/`, `*.o`,
-`a.out`, editor swap files) is excluded; everything else in each problem
-directory — including the reference solution — is included as-is.
+problem. A small fixed denylist (`.git`, `build/`, `*.o`, `a.out`, editor
+swap files) is excluded; everything else is included as-is.
 
----
+### `package unpack`
 
-## `unpack`
-
-Extracts a zip produced by `pack` back into a directly-servable contest
-directory.
-
-```text
-cxxprobe unpack <zip> [OPTIONS]
-```
+Extracts a zip produced by `package pack` back into a directly-servable
+contest directory.
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
@@ -263,6 +284,53 @@ cxxprobe unpack <zip> [OPTIONS]
 Refuses a pack whose `manifest.json` `format_version` is newer than this
 build understands, rather than failing confusingly deep inside problem
 loading.
+
+---
+
+## `validate`
+
+Runs the [Validator Engine](/guides/validators) over a problem's test inputs:
+compiles `validator/validator.cpp`, then runs it once per test with the
+`.in` on stdin. Exit 0 from the validator means the input is legal.
+
+```text
+cxxprobe validate <name> [-C/--dir DIR] [--tests PATH] [--json] [--no-color]
+```
+
+| Flag | Description |
+|---|---|
+| `-C, --dir PATH` | Contest directory override |
+| `--tests PATH` | Validate an alternate test directory or manifest |
+| `--json` | Emit the report as JSON |
+
+Exit codes: `0` valid (or no validator configured — a skip, not a failure),
+`1` at least one case rejected, `2` usage or compile error.
+
+---
+
+## `generate`
+
+Runs the [Generator Engine](/guides/generators): compiles each generator
+named in `generators/plan.yaml` and writes each entry's stdout to
+`tests/<label>.in`.
+
+```text
+cxxprobe generate <name> [-C/--dir DIR] [--dry-run] [--force]
+                         [--no-validate] [--strict] [--json] [--no-color]
+```
+
+| Flag | Description |
+|---|---|
+| `-C, --dir PATH` | Contest directory override |
+| `--dry-run` | Run every generator but write nothing |
+| `--force` | Overwrite existing test files |
+| `--no-validate` | Skip running the problem's validator over generated cases |
+| `--strict` | Exit non-zero if any generated case fails validation |
+| `--json` | Emit the report as JSON |
+
+Exit codes: `0` all entries generated, `1` at least one entry failed, `2`
+usage, plan-parse, or compile error. Generators produce `.in` files only —
+never `.ans`.
 
 ---
 

@@ -1,0 +1,232 @@
+---
+title: Problem Packages
+description: The v2 package layout — statement, tests, validator, checker, generators, solutions, attachments.
+---
+
+import { Callout, Steps, FileTree } from 'nextra/components'
+
+# Problem Packages
+
+A cxxprobe problem is a directory with a `problem.yaml` at its root. Every
+other part of the problem lives in a named subdirectory, so each piece of
+authoring tooling has one obvious home.
+
+<FileTree>
+  <FileTree.Folder name="sum-two-numbers" defaultOpen>
+    <FileTree.File name="problem.yaml" />
+    <FileTree.Folder name="statement" defaultOpen>
+      <FileTree.File name="problem.md" />
+    </FileTree.Folder>
+    <FileTree.Folder name="tests" defaultOpen>
+      <FileTree.File name="1.in" />
+      <FileTree.File name="1.ans" />
+    </FileTree.Folder>
+    <FileTree.Folder name="validator">
+      <FileTree.File name="validator.cpp" />
+    </FileTree.Folder>
+    <FileTree.Folder name="checker">
+      <FileTree.File name="checker.cpp" />
+      <FileTree.File name="behavior_gtest.cpp" />
+    </FileTree.Folder>
+    <FileTree.Folder name="generators">
+      <FileTree.File name="gen_random.cpp" />
+      <FileTree.File name="plan.yaml" />
+    </FileTree.Folder>
+    <FileTree.Folder name="solutions">
+      <FileTree.File name="main.cpp" />
+      <FileTree.File name="wa_off_by_one.cpp" />
+    </FileTree.Folder>
+    <FileTree.Folder name="attachments">
+      <FileTree.File name="starter.hpp" />
+    </FileTree.Folder>
+  </FileTree.Folder>
+</FileTree>
+
+Only `problem.yaml` and a solution are required. Every other directory is
+optional and **inferred from the presence of its entry file** — there is no
+flag to remember to flip. Drop a `validator/validator.cpp` in and the
+validator turns on.
+
+## Scaffolding one
+
+<Steps>
+
+### Create the package
+
+```bash
+cxxprobe package init "Sum Two Numbers"
+```
+
+This writes `problem.yaml`, `statement/problem.md`, `solutions/main.cpp`,
+and an empty `tests/`. It deliberately does *not* create `validator/`,
+`checker/`, `generators/`, or `attachments/` — an empty directory would only
+be noise when presence is what enables the feature.
+
+### Check its structure
+
+```bash
+cxxprobe package validate sum-two-numbers
+```
+
+### See what's enabled
+
+```bash
+cxxprobe package inspect sum-two-numbers
+```
+
+</Steps>
+
+## `problem.yaml`
+
+```yaml
+version: 2
+name: "A: Sum Two Numbers"
+
+statement:
+  dir: statement
+  entry: problem.md
+
+compiler:
+  cxx: null           # falls back to g++
+  std: null           # falls back to c++23
+  flags: null         # falls back to -O2 -Wall
+  extra_sources: []
+
+limits:
+  memory_mb: null     # falls back to 256
+  cpu: null           # falls back to 5s
+  wall: null          # falls back to 10s
+  pids: null          # falls back to 64
+
+tests:
+  dir: tests
+  manifest: null      # mutually exclusive with dir
+
+checker:
+  dir: checker
+  io:
+    entry: checker.cpp          # testlib-ABI I/O checker
+    extra_flags: []
+  behavior:
+    entry: behavior_gtest.cpp   # GTest-linked internal-API check
+    extra_flags: []
+
+validator:
+  dir: validator
+  entry: validator.cpp
+
+generators:
+  dir: generators
+  plan: plan.yaml
+
+solutions:
+  dir: solutions
+  entries: []         # inferred when solutions/ holds exactly one .cpp
+
+symbolic:
+  must_include: []
+  must_not_include: []
+
+attachments:
+  dir: attachments
+```
+
+<Callout type="warning">
+  `version` must be `2`. The v1 format — `problem.md`, `solution.cpp`, and
+  `checker_gtest.cpp` loose at the problem root, with `tests.checker`
+  pointing at a *prebuilt* binary — is not accepted, and there is no
+  compatibility shim. See [Migrating from v1](#migrating-from-v1).
+</Callout>
+
+## The directories
+
+| Directory | What lives there | Enabled when |
+|---|---|---|
+| `statement/` | `problem.md` plus any images it references | always read |
+| `tests/` | `1.in` / `1.ans` pairs | `tests/` contains a `.in` |
+| `validator/` | `validator.cpp` — checks *inputs* are well-formed | the file exists |
+| `checker/` | `checker.cpp` (I/O checking) and `behavior_gtest.cpp` (internal-API checking) | each file, independently |
+| `generators/` | generator sources plus `plan.yaml` | `cxxprobe generate` is run |
+| `solutions/` | the reference solution, plus any deliberately-wrong ones | always |
+| `attachments/` | files handed to contestants verbatim | never parsed — copied as-is |
+
+`checker/` holds two independently-inferred entry files because cxxprobe
+checks two different things: `checker.cpp` decides whether a submission's
+*output* is correct, while `behavior_gtest.cpp` is compiled together with the
+submission to assert things about its *internal API and behavior* (RAII,
+complexity, which types it exposes). They're unrelated mechanisms that happen
+to both be "a checker", so they share a directory rather than inventing an
+eighth top-level name.
+
+## Multiple solutions
+
+Declaring more than one solution turns test data into something you can
+verify rather than hope about:
+
+```yaml
+solutions:
+  dir: solutions
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: wa_off_by_one.cpp, expected_verdict: WA }
+    - { file: tle_quadratic.cpp, expected_verdict: TLE }
+```
+
+`cxxprobe test problem` judges every non-primary entry against the same
+manual tests and reports what it actually earned:
+
+```text
+Additional solutions
+  wa_off_by_one.cpp            expected WA   got WA   OK
+  tle_quadratic.cpp            expected TLE  got AC   MISMATCH
+```
+
+A `MISMATCH` is the useful signal: the quadratic solution was *supposed* to
+time out, and didn't — so the test data is too small to separate an
+efficient solution from a slow one.
+
+<Callout type="info">
+  Mismatches are reported but do not change the primary solution's own
+  Pass/Fail. "Is the reference solution correct?" and "is the test data
+  strong enough?" are separate questions and get separate answers.
+</Callout>
+
+Exactly one entry must set `primary: true` (unless there's only one entry, in
+which case it's implied). If you declare no entries at all, cxxprobe infers a
+single primary solution as long as `solutions/` holds exactly one `.cpp`;
+two or more is ambiguous and fails to load.
+
+## Migrating from v1
+
+The v2 layout is a breaking change with no shim. For each problem:
+
+```bash
+mkdir statement solutions
+git mv problem.md      statement/problem.md
+git mv solution.cpp    solutions/main.cpp
+
+# only if the problem has a behavior checker
+mkdir checker
+git mv checker_gtest.cpp checker/behavior_gtest.cpp
+
+git rm solution_template.cpp   # package init now writes a real placeholder
+```
+
+Then rewrite `problem.yaml`: `name`, `compiler`, `limits`, and `symbolic`
+port over unchanged; `statement:` and `solution:` become the map forms shown
+above; `behavior.checker_file` becomes `checker.behavior.entry`; and
+`tests.checker` — which pointed at a *prebuilt* binary — becomes
+`checker/checker.cpp`, compiled by cxxprobe like everything else.
+
+Verify by diffing the report before and after:
+
+```bash
+# on the old build, before migrating
+cxxprobe test problem <slug> --json > /tmp/<slug>-before.json
+# after migrating, on the v2 build
+cxxprobe package validate <slug>
+cxxprobe test problem <slug> --json > /tmp/<slug>-after.json
+```
+
+The `overall`, `tests.manual.*`, `tests.symbolic.*`, and `tests.behavior.*`
+fields should be identical.

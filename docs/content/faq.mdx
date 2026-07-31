@@ -79,7 +79,7 @@ relative to the current working directory, never via `$PATH`. Use
 `./checker`, not `checker`. Also remember `--checker` must be combined with
 `--expected` or `--cases`; it errors out (exit `2`) on its own. See [Custom
 Checkers](/guides/custom-checker). Under `test problem`, the equivalent is
-`problem.yaml`'s `tests.checker`, resolved relative to the problem
+`problem.yaml`'s `checker.io`, resolved relative to the problem
 directory.
 
 ### Can output limits (4 MiB) be configured?
@@ -97,25 +97,25 @@ Judging](/guides/single-run-judging) vs. [Batch Mode](/guides/batch-mode).
 `test problem`'s manual-tests section is `--cases`-equivalent judging driven
 from `problem.yaml` instead of flags.
 
-### What does `cxxprobe new problem` actually scaffold, and why is nothing enabled by default?
+### What does `cxxprobe package init` actually scaffold, and why is nothing enabled by default?
 
-`problem.yaml`, `problem.md`, `solution_template.cpp`, `checker_gtest.cpp`,
-and an empty `tests/` — see [Folder
-Structure](/architecture/folder-structure#a-problem) for the full list.
-Manual tests and symbolic checks start **disabled by inference**: `tests/`
-has no `.in` files yet, and `symbolic.must_include`/`must_not_include` are
-empty lists. Only the behavior checker starts active, because its
-placeholder `TEST()` passes trivially — so a freshly scaffolded, completely
-unfilled-in problem is a clean baseline `PASS`, proving the pipeline itself
-works before you've written any real content. Add `tests/*.in` files or
-`symbolic:` entries to activate those sections.
+`problem.yaml`, `statement/problem.md`, `solutions/main.cpp`, and an empty
+`tests/` — see [Problem Packages](/guides/problem-packages) for the full
+layout. Every check type starts **disabled by inference**: `tests/` has no
+`.in` files yet, `symbolic.must_include`/`must_not_include` are empty, and
+`validator/`, `checker/`, and `generators/` aren't created at all (each is
+enabled by the presence of its entry file, so an empty directory would only
+be noise). A freshly scaffolded, completely unfilled-in problem is therefore
+a clean baseline `PASS` — the pipeline is proven working before you've
+written any real content. Add `tests/*.in` files, `symbolic:` entries, or
+the relevant entry file to activate a section.
 
-### How is `checker_gtest.cpp` compiled against my solution?
+### How is `checker/behavior_gtest.cpp` compiled against my solution?
 
-cxxprobe compiles `checker_gtest.cpp` as a single translation unit — it
+cxxprobe compiles `checker/behavior_gtest.cpp` as a single translation unit — it
 `#include`s the submission itself via `CXXPROBE_SOLUTION_FILE` (a macro
 cxxprobe defines at compile time pointing at whichever file is actually
-being graded — `solution.cpp` by default, or whatever `--submission` was
+being graded — `solutions/main.cpp` by default, or whatever `--submission` was
 passed). The submission's own `main()` is renamed out of the way with
 `#define main solution_main` so it doesn't collide with GTest's own `main()`
 (linked in via `-lgtest_main`). One compiler invocation, sandboxed like any

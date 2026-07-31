@@ -37,7 +37,7 @@ Created contest 'AMS Starter Cup' in /path/to/ams-starter-cup
 ```
 
 That's it — `contest.yaml` is the only file, and it's just a marker so
-`new problem` and `test problem` know where the contest root is. See [Folder
+`package init` and `test problem` know where the contest root is. See [Folder
 Structure](/architecture/folder-structure) if you want the full picture of
 what's on disk at each step.
 
@@ -51,7 +51,7 @@ technique to enforce, no behavior beyond stdin/stdout — just test data.
 ### Scaffold it
 
 ```bash
-cxxprobe new problem "A: Sum Two Integers"
+cxxprobe package init "A: Sum Two Integers"
 cd a-sum-two-integers
 ```
 
@@ -83,31 +83,33 @@ The scaffold generates a fully-commented `problem.yaml` with every field
 shown (see the [CLI Reference](/cli-reference#test-problem) for the full
 schema) — everything left out just falls back to its default. Since this
 problem doesn't need a behavior checker, delete the placeholder
-`checker_gtest.cpp` and turn that section off explicitly:
+`checker/behavior_gtest.cpp` and turn that section off explicitly:
 
 ```bash
-rm checker_gtest.cpp
+rm checker/behavior_gtest.cpp
 ```
 
 ```yaml filename="problem.yaml"
-version: 1
+version: 2
 name: "A: Sum Two Integers"
-description: "Warm-up: read two integers, print their sum."
-statement: problem.md
+statement:
+  dir: statement
+  entry: problem.md
 
-solution:
-  file: solution.cpp
+solutions:
+  dir: solutions
 
 tests:
   dir: tests
 
-behavior:
-  enabled: false
+checker:
+  behavior:
+    enabled: false
 ```
 
 <Callout type="info">
-  Turning `behavior` off explicitly (rather than just deleting
-  `checker_gtest.cpp` and leaving the section unset) makes the intent
+  Turning `checker.behavior` off explicitly (rather than just deleting
+  `checker/behavior_gtest.cpp` and leaving the section unset) makes the intent
   unambiguous — anyone reading this file later knows there's deliberately no
   behavior checker for this problem, not a forgotten one.
 </Callout>
@@ -148,9 +150,9 @@ output. That's exactly what a symbolic check is for.
 
 ```bash
 cd ..
-cxxprobe new problem "B: Bit-Cast a Float"
+cxxprobe package init "B: Bit-Cast a Float"
 cd b-bit-cast-a-float
-rm checker_gtest.cpp
+rm checker/behavior_gtest.cpp
 ```
 
 ```cpp filename="solution.cpp"
@@ -191,13 +193,14 @@ unsigned integer:
 ### Add the symbolic requirement
 
 ```yaml filename="problem.yaml"
-version: 1
+version: 2
 name: "B: Bit-Cast a Float"
-description: "Print a float's raw bit pattern as an unsigned integer."
-statement: problem.md
+statement:
+  dir: statement
+  entry: problem.md
 
-solution:
-  file: solution.cpp
+solutions:
+  dir: solutions
 
 tests:
   dir: tests
@@ -210,8 +213,9 @@ symbolic:
       regex: true
       message: "memcpy for type punning is undefined behavior — use std::bit_cast"
 
-behavior:
-  enabled: false
+checker:
+  behavior:
+    enabled: false
 ```
 
 `must_include` takes a bare string as shorthand for a literal-substring
@@ -262,11 +266,11 @@ behavior checker tests the class directly.
 
 ```bash
 cd ..
-cxxprobe new problem "C: Move-Only File Handle"
+cxxprobe package init "C: Move-Only File Handle"
 cd c-move-only-file-handle
 ```
 
-This time keep `checker_gtest.cpp` — this problem needs it.
+This time keep `checker/behavior_gtest.cpp` — this problem needs it.
 
 ### Write the solution
 
@@ -326,7 +330,7 @@ echo "open" > tests/1.ans
 
 ### Write the behavior checker
 
-```cpp filename="checker_gtest.cpp"
+```cpp filename="checker/behavior_gtest.cpp"
 #include <gtest/gtest.h>
 
 #define main solution_main
@@ -375,13 +379,14 @@ Nothing stops you from combining all three types on one problem — here a
 symbolic check rides along with the manual test and the behavior checker:
 
 ```yaml filename="problem.yaml"
-version: 1
+version: 2
 name: "C: Move-Only File Handle"
-description: "Wrap a FILE* in a move-only RAII handle that closes on destruction."
-statement: problem.md
+statement:
+  dir: statement
+  entry: problem.md
 
-solution:
-  file: solution.cpp
+solutions:
+  dir: solutions
 
 tests:
   dir: tests
@@ -392,8 +397,9 @@ symbolic:
       regex: true
       message: "no need for memcpy here"
 
-behavior:
-  checker_file: checker_gtest.cpp
+checker:
+  behavior:
+    entry: behavior_gtest.cpp
 ```
 
 ### Run it

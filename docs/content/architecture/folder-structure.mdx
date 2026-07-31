@@ -7,7 +7,7 @@ import { FileTree, Callout } from 'nextra/components'
 
 # Folder Structure
 
-`cxxprobe new contest` and `cxxprobe new problem` generate this structure —
+`cxxprobe new contest` and `cxxprobe package init` generate this structure —
 it's not just a convention, `cxxprobe test problem` expects it. The
 lower-level `cxxprobe run --cases` (see [Batch Mode](/guides/batch-mode))
 still works against any ad hoc directory of `.in`/`.ans` files if you're not
@@ -26,27 +26,30 @@ cxxprobe new contest "AMS Ascent"
 </FileTree>
 
 `contest.yaml` is a small marker file (`version`, `name`, `description`) —
-`cxxprobe new problem` and `cxxprobe test problem` walk up from the current
+`cxxprobe package init` and `cxxprobe test problem` walk up from the current
 directory looking for it to find the contest root (or pass `-C/--dir`
 explicitly). Problem directories sit flat as direct children — there's no
 extra `problems/` nesting level and no tool-enforced ordering; if you want
 letter/number ordering visible in the problem list, put it in the title you
-pass to `new problem` (e.g. `"A: FileReader RAII"`) — cxxprobe never
+pass to `package init` (e.g. `"A: FileReader RAII"`) — cxxprobe never
 interprets that prefix, it just becomes part of the slug.
 
 ## A problem
 
 ```bash
 cd ams-ascent
-cxxprobe new problem "A: FileReader RAII"
+cxxprobe package init "A: FileReader RAII"
 ```
 
 <FileTree>
   <FileTree.Folder name="a-filereader-raii" defaultOpen>
     <FileTree.File name="problem.yaml" />
-    <FileTree.File name="problem.md" />
-    <FileTree.File name="solution_template.cpp" />
-    <FileTree.File name="checker_gtest.cpp" />
+    <FileTree.Folder name="statement" defaultOpen>
+      <FileTree.File name="problem.md" />
+    </FileTree.Folder>
+    <FileTree.Folder name="solutions" defaultOpen>
+      <FileTree.File name="main.cpp" />
+    </FileTree.Folder>
     <FileTree.Folder name="tests" />
   </FileTree.Folder>
 </FileTree>
@@ -54,10 +57,15 @@ cxxprobe new problem "A: FileReader RAII"
 | File / folder | Purpose |
 |---|---|
 | `problem.yaml` | Config: compiler/limits overrides, and the 3 consolidated test type settings — see [CLI Reference](/cli-reference#test-problem) |
-| `problem.md` | Human-readable statement — not read by cxxprobe |
-| `solution_template.cpp` | Copy to `solution.cpp` and fill in — the reference solution |
-| `checker_gtest.cpp` | GTest `TEST()` cases exercising the submission directly (consolidated type 3) |
+| `statement/problem.md` | Human-readable statement — not read by cxxprobe |
+| `solutions/main.cpp` | The reference solution — fill in the placeholder |
 | `tests/` | `.in`/`.ans` pairs (consolidated type 1) — empty until you add cases |
+
+`validator/`, `checker/`, `generators/`, and `attachments/` are **not**
+scaffolded: each is enabled by the presence of its entry file, so an empty
+directory would only be noise. Add `checker/behavior_gtest.cpp` to turn on
+behavior checking, `validator/validator.cpp` to turn on input validation,
+and so on — see [Problem Packages](/guides/problem-packages).
 
 The directory name (`a-filereader-raii`) is a mechanical slug of the title
 you passed — lowercase, non-alphanumeric runs collapsed to `-`. It's what
@@ -65,15 +73,14 @@ you pass to `cxxprobe test problem`, though the exact `problem.yaml` `name:`
 also resolves (so both `cxxprobe test problem a-filereader-raii` and
 `cxxprobe test problem "A: FileReader RAII"` work).
 
-A freshly scaffolded, unfilled problem is a clean baseline `PASS` — manual
-tests and symbolic checks are inferred **disabled** until you actually add
-`tests/*.in` files or `symbolic.must_include`/`must_not_include` entries;
-the placeholder `TEST()` in `checker_gtest.cpp` passes trivially, so the
-pipeline itself is verified working before you've written a line of the
-actual solution.
+A freshly scaffolded, unfilled problem is a clean baseline `PASS` — every
+check type is inferred **disabled** until you actually add `tests/*.in`
+files, `symbolic.must_include`/`must_not_include` entries, or the
+corresponding entry file under `checker/` or `validator/`. Nothing fails
+before you've written a line of the actual solution.
 
 <Callout type="warning">
-  `checker_gtest.cpp` includes the submission via the `CXXPROBE_SOLUTION_FILE`
+  `checker/behavior_gtest.cpp` includes the submission via the `CXXPROBE_SOLUTION_FILE`
   macro cxxprobe defines at compile time — don't replace that with a
   hardcoded `#include "solution.cpp"`, or [`--submission`
   grading](/guides/contest-workflows#grading-a-submission) will silently test
@@ -135,7 +142,7 @@ config to keep in sync.
 
 `cxxprobe test problem --submission <path>` grades an arbitrary source file
 through all 3 consolidated checks in place of the problem's own
-`solution.cpp` — see [Contest
+`solutions/main.cpp` — see [Contest
 Workflows](/guides/contest-workflows#grading-a-submission) for the full
 grading-loop pattern over many contestants:
 
@@ -164,14 +171,14 @@ Mode](/guides/batch-mode) still works identically.
 ## Packing for import
 
 ```bash
-cxxprobe pack
+cxxprobe package pack
 ```
 
 <FileTree>
   <FileTree.File name="ams-ascent.zip" />
 </FileTree>
 
-`cxxprobe pack` bundles a contest directory's problems into a zip for
+`cxxprobe package pack` bundles a contest directory's problems into a zip for
 import into another system — a contest platform's admin UI, or a judge
 host that will run `cxxprobe serve --contest-dir` against the unpacked
 result. The zip is flat at the root:
@@ -181,15 +188,14 @@ manifest.json          # preview index — same JSON shape GET /problems/{slug} 
 contest.yaml            # verbatim copy
 a-filereader-raii/      # verbatim copy of the whole problem directory
   problem.yaml
-  problem.md
-  solution.cpp
-  checker_gtest.cpp
+  statement/
+  solutions/
   tests/
 b-graph-diameter/
   ...
 ```
 
-Any standard `unzip` works — `cxxprobe unpack <zip>` is a thin convenience
+Any standard `unzip` works — `cxxprobe package unpack <zip>` is a thin convenience
 wrapper that also validates `manifest.json`'s `format_version` and refuses
 to silently clobber an existing contest directory (`--force` to override).
 Each problem directory is copied whole, filtered through a small fixed

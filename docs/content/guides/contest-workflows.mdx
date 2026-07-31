@@ -26,12 +26,13 @@ cd ams-ascent
 ### Create a problem
 
 ```bash
-cxxprobe new problem "A: FileReader RAII"
+cxxprobe package init "A: FileReader RAII"
 cd a-filereader-raii
 ```
 
-This generates `problem.yaml`, `problem.md`, `solution_template.cpp`,
-`checker_gtest.cpp`, and an empty `tests/`.
+This generates `problem.yaml`, `statement/problem.md`, `solutions/main.cpp`,
+and an empty `tests/`. See [Problem Packages](/guides/problem-packages) for
+what each directory holds.
 
 </Steps>
 
@@ -41,11 +42,8 @@ This generates `problem.yaml`, `problem.md`, `solution_template.cpp`,
 
 ### Write the reference solution
 
-```bash
-cp solution_template.cpp solution.cpp
-```
-
-Fill it in.
+Fill in `solutions/main.cpp` — `package init` writes a real placeholder
+there, so there's nothing to copy first.
 
 ### Add manual test cases (consolidated type 1)
 
@@ -80,10 +78,10 @@ why this is regex-based rather than a full AST parse.
 
 For problems where the interesting behavior isn't visible through a
 `main()` reading stdin — RAII cleanup timing, move-only types, exception
-safety — write real `TEST()` cases in `checker_gtest.cpp` against the
+safety — write real `TEST()` cases in `checker/behavior_gtest.cpp` against the
 submission's actual interface:
 
-```cpp filename="checker_gtest.cpp"
+```cpp filename="checker/behavior_gtest.cpp"
 #include <gtest/gtest.h>
 
 #define main solution_main
@@ -133,7 +131,7 @@ under, including via `--submission`.
 ## Grading a submission
 
 `--submission` runs the exact same three consolidated checks against an
-arbitrary source file instead of the problem's own `solution.cpp` — this is
+arbitrary source file instead of the problem's own `solutions/main.cpp` — this is
 how you actually grade a contestant, not just validate your own reference
 solution:
 
@@ -208,7 +206,7 @@ See [Batch Mode](/guides/batch-mode) for that path in full.
 - [Batch Mode](/guides/batch-mode) — the `run --cases` directory/manifest
   format that `tests.dir`/`tests.manifest` in `problem.yaml` also use
 - [Custom Checkers](/guides/custom-checker) — testlib-ABI checkers for
-  floating point / multiple-answer problems (`tests.checker` in `problem.yaml`)
+  floating point / multiple-answer problems (`checker.io` in `problem.yaml`)
 - [Stress Testing & Debugging](/guides/stress-testing) — generator +
   brute-force comparison loops
 - [Resource Limits](/architecture/resource-limits) — what each limit actually
