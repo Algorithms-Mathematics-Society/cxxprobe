@@ -30,7 +30,26 @@ jobs:
         cache: npm
         cache-dependency-path: server/ui/frontend/package-lock.json
     - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y cppcheck clang-tidy
+      # The runners point apt at azure.archive.ubuntu.com, which degrades
+      # often enough to matter and does it by stalling rather than failing:
+      # a bare `apt-get update` here sat for thirty minutes while the other
+      # three matrix legs finished. archive.ubuntu.com answers normally.
+      # Bounded and retried too, for the case where the mirror is not slow
+      # but simply gone.
+      timeout-minutes: 15
+      run: |
+        set -eu
+        sudo sed -i 's|https\?://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' \
+          /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+        for attempt in 1 2 3; do
+          if sudo timeout 180 apt-get update; then
+            break
+          fi
+          echo "apt-get update failed or stalled (attempt $attempt of 3)"
+          sudo rm -rf /var/lib/apt/lists/*
+          sleep 5
+        done
+        sudo timeout 600 apt-get install -y --no-install-recommends cppcheck clang-tidy
     - name: Install Python tools
       run: pip install conan pre-commit cmake-format
     - name: Setup Conan
