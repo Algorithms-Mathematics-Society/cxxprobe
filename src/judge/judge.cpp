@@ -337,9 +337,9 @@ void check_one_solution(const cxxprobe::problem::ProblemConfig& config,
 }  // namespace
 
 CustomRunReport run_custom_cases(const cxxprobe::problem::ProblemConfig& config,
-                                const cxxprobe::problem::ProjectDefaults& defaults,
-                                const fs::path& submission_path,
-                                const std::vector<CustomCase>& cases) {
+                                 const cxxprobe::problem::ProjectDefaults& defaults,
+                                 const fs::path& submission_path,
+                                 const std::vector<CustomCase>& cases) {
     CustomRunReport report;
 
     if (!fs::exists(submission_path)) {
@@ -429,7 +429,8 @@ CustomRunReport run_custom_cases(const cxxprobe::problem::ProblemConfig& config,
     }
     fs::remove(solution_binary);
 
-    report.status = (judged_total == 0 || judged_passed == judged_total) ? Status::Pass : Status::Fail;
+    report.status =
+        (judged_total == 0 || judged_passed == judged_total) ? Status::Pass : Status::Fail;
     return report;
 }
 

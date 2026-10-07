@@ -100,11 +100,10 @@ struct CustomRunReport {
 //
 // Status is Pass when every judged case was AC (an unjudged case cannot
 // fail), Error when compilation failed, Fail otherwise.
-CustomRunReport run_custom_cases(
-    const cxxprobe::problem::ProblemConfig& config,
-    const cxxprobe::problem::ProjectDefaults& defaults,
-    const std::filesystem::path& submission_path,
-    const std::vector<CustomCase>& cases);
+CustomRunReport run_custom_cases(const cxxprobe::problem::ProblemConfig& config,
+                                 const cxxprobe::problem::ProjectDefaults& defaults,
+                                 const std::filesystem::path& submission_path,
+                                 const std::vector<CustomCase>& cases);
 
 struct JudgeReport {
     std::string problem_name;
