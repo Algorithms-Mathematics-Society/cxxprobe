@@ -68,11 +68,11 @@ std::vector<cxxprobe::judge::CustomCase> load_custom_cases(const std::string& pa
 }
 
 int run_custom(const cxxprobe::problem::ProblemConfig& config,
-               const cxxprobe::problem::ProjectDefaults& defaults, const std::string& cases_path,
-               const std::string& output_path, bool json_output) {
+               const cxxprobe::problem::ProjectDefaults& defaults, const fs::path& submission_path,
+               const std::string& cases_path, const std::string& output_path, bool json_output) {
     cxxprobe::judge::CustomRunReport report;
     try {
-        report = cxxprobe::judge::run_custom_cases(config, defaults, config.problem_dir,
+        report = cxxprobe::judge::run_custom_cases(config, defaults, submission_path,
                                                    load_custom_cases(cases_path));
     } catch (const std::exception& ex) {
         std::cerr << "cxxprobe: " << ex.what() << "\n";
@@ -169,7 +169,8 @@ int JudgeCommand::execute() {
     // The problem's own tests are never loaded on this path, so there is no
     // route by which a hidden input or answer could reach the output.
     if (!custom_cases_path_.empty()) {
-        int rc = run_custom(config, defaults, custom_cases_path_, output_path_, json_output_);
+        int rc = run_custom(config, defaults, fs::absolute(submission_path_), custom_cases_path_,
+                            output_path_, json_output_);
         if (temp_unpack_dir) {
             fs::remove_all(*temp_unpack_dir);
         }

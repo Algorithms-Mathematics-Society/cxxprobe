@@ -346,6 +346,15 @@ CustomRunReport run_custom_cases(const cxxprobe::problem::ProblemConfig& config,
         throw std::runtime_error{
             std::format("submission source not found: {}", submission_path.string())};
     }
+    // Existence is not enough: a directory exists too. Handing one to the
+    // compiler gets it as far as the linker, which reports `file format not
+    // recognized` against a path that looks plausible -- and that reads as a
+    // broken toolchain rather than a caller passing the wrong argument,
+    // which is exactly how it was first missed.
+    if (!fs::is_regular_file(submission_path)) {
+        throw std::runtime_error{
+            std::format("submission is not a file: {}", submission_path.string())};
+    }
 
     cxxprobe::problem::ResolvedCompiler resolved =
         cxxprobe::problem::resolve_compiler(config.compiler, defaults);
