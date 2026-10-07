@@ -28,6 +28,7 @@ private:
     std::string package_path_;
     std::string submission_path_;
     std::string output_path_;
+    std::string custom_cases_path_;
     bool json_output_{false};
 };
 

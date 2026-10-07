@@ -6,7 +6,9 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "../common/json_io.hpp"
 #include "cxxprobe/judge.hpp"
@@ -33,6 +35,64 @@ int exit_code_for(Status s) {
     return 2;
 }
 
+// Reads the candidate's cases from a JSON array. Throws on anything
+// malformed -- a silently-dropped case would look to the candidate like
+// their code produced nothing.
+std::vector<cxxprobe::judge::CustomCase> load_custom_cases(const std::string& path) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) {
+        throw std::runtime_error{"cannot open custom cases file: " + path};
+    }
+    Json doc = Json::parse(ifs);
+    if (!doc.is_array()) {
+        throw std::runtime_error{"custom cases file must contain a JSON array"};
+    }
+    std::vector<cxxprobe::judge::CustomCase> cases;
+    int index = 0;
+    for (const auto& entry : doc) {
+        ++index;
+        if (!entry.is_object() || !entry.contains("input")) {
+            throw std::runtime_error{"custom case " + std::to_string(index) + " has no input"};
+        }
+        cxxprobe::judge::CustomCase tc;
+        tc.label = entry.value("label", "Case " + std::to_string(index));
+        tc.input = entry.at("input").get<std::string>();
+        // Absent or null means unjudged; an empty string is a legitimate
+        // expected output and must stay judged.
+        if (entry.contains("expected") && !entry.at("expected").is_null()) {
+            tc.expected = entry.at("expected").get<std::string>();
+        }
+        cases.push_back(std::move(tc));
+    }
+    return cases;
+}
+
+int run_custom(const cxxprobe::problem::ProblemConfig& config,
+               const cxxprobe::problem::ProjectDefaults& defaults, const std::string& cases_path,
+               const std::string& output_path, bool json_output) {
+    cxxprobe::judge::CustomRunReport report;
+    try {
+        report = cxxprobe::judge::run_custom_cases(config, defaults, config.problem_dir,
+                                                   load_custom_cases(cases_path));
+    } catch (const std::exception& ex) {
+        std::cerr << "cxxprobe: " << ex.what() << "\n";
+        return 2;
+    }
+
+    Json report_json = cxxprobe::judge::to_json(report);
+    if (!output_path.empty()) {
+        std::ofstream ofs(output_path, std::ios::binary);
+        ofs << report_json.dump(2) << "\n";
+    }
+    if (json_output) {
+        std::cout << report_json.dump(2) << "\n";
+    } else {
+        std::cout << config.slug << " (custom): " << cxxprobe::judge::status_str(report.status)
+                  << "\n";
+    }
+    return exit_code_for(report.status);
+}
+
 }  // namespace
 
 JudgeCommand::JudgeCommand(CLI::App& parent) {
@@ -52,6 +112,9 @@ JudgeCommand::JudgeCommand(CLI::App& parent) {
         ->required();
     app_->add_option("--output", output_path_, "Write the JSON report to this file");
     app_->add_flag("--json", json_output_, "Also print the JSON report to stdout");
+    app_->add_option("--custom-cases", custom_cases_path_,
+                     "JSON file of candidate-supplied cases: [{\"label\":…,\"input\":…,"
+                     "\"expected\":…}]. Runs ONLY these, never the problem's own tests");
 }
 
 int JudgeCommand::execute() {
@@ -101,6 +164,18 @@ int JudgeCommand::execute() {
     }
 
     cxxprobe::problem::ProjectDefaults defaults;
+
+    // Candidate-supplied cases short-circuit the whole three-way pipeline.
+    // The problem's own tests are never loaded on this path, so there is no
+    // route by which a hidden input or answer could reach the output.
+    if (!custom_cases_path_.empty()) {
+        int rc = run_custom(config, defaults, custom_cases_path_, output_path_, json_output_);
+        if (temp_unpack_dir) {
+            fs::remove_all(*temp_unpack_dir);
+        }
+        return rc;
+    }
+
     cxxprobe::judge::JudgeReport report;
     try {
         report = cxxprobe::judge::run_problem(config, defaults, fs::absolute(submission_path_));

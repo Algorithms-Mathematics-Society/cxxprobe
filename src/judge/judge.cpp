@@ -336,6 +336,103 @@ void check_one_solution(const cxxprobe::problem::ProblemConfig& config,
 
 }  // namespace
 
+CustomRunReport run_custom_cases(const cxxprobe::problem::ProblemConfig& config,
+                                const cxxprobe::problem::ProjectDefaults& defaults,
+                                const fs::path& submission_path,
+                                const std::vector<CustomCase>& cases) {
+    CustomRunReport report;
+
+    if (!fs::exists(submission_path)) {
+        throw std::runtime_error{
+            std::format("submission source not found: {}", submission_path.string())};
+    }
+
+    cxxprobe::problem::ResolvedCompiler resolved =
+        cxxprobe::problem::resolve_compiler(config.compiler, defaults);
+    cxxprobe::sandbox::Limits run_limits =
+        cxxprobe::problem::resolve_limits(config.limits, defaults);
+
+    fs::path solution_binary = make_temp_path("cxxprobe-custom-solution");
+    cxxprobe::compile::Result cres =
+        compile_source(config, resolved, submission_path, solution_binary);
+    report.solution_compile = to_compile_report(cres);
+    if (!cres.ok) {
+        // The diagnostics are the whole answer here, and they are already on
+        // the compile report. Status::Error, no cases.
+        report.status = Status::Error;
+        fs::remove(solution_binary);
+        return report;
+    }
+
+    // Only built when something is actually going to be judged. A candidate
+    // who supplied no expected output does not need the problem's checker,
+    // and a problem whose checker fails to build should still be able to show
+    // them what their code prints.
+    const bool any_judged =
+        std::ranges::any_of(cases, [](const CustomCase& c) { return c.expected.has_value(); });
+    CheckerBuild checker;
+    if (any_judged) {
+        checker = build_io_checker(config, resolved);
+        report.checker_compile = checker.report;
+        if (!checker.ok) {
+            report.status = Status::Error;
+            fs::remove(solution_binary);
+            return report;
+        }
+    }
+
+    int judged_total = 0;
+    int judged_passed = 0;
+
+    for (const CustomCase& tc : cases) {
+        CustomCaseResult out;
+        out.label = tc.label;
+
+        cxxprobe::sandbox::Result res;
+        try {
+            res = cxxprobe::sandbox::run({solution_binary.string()}, tc.input, run_limits);
+        } catch (const std::exception& ex) {
+            // The sandbox could not start it at all. Say so in stderr rather
+            // than dropping the case, or the candidate sees a blank row.
+            out.stderr_text = ex.what();
+            report.cases.push_back(std::move(out));
+            if (tc.expected) {
+                ++judged_total;
+            }
+            continue;
+        }
+
+        out.ran = true;
+        out.exit_code = res.exit_code;
+        out.cpu_time_ms = res.cpu_time.count();
+        out.wall_time_ms = res.wall_time.count();
+        out.peak_memory_bytes = res.peak_memory_bytes;
+        out.stdout_text = res.stdout_data;
+        out.stderr_text = res.stderr_data;
+
+        if (tc.expected) {
+            ++judged_total;
+            cxxprobe::cases::CheckerOutcome outcome =
+                cxxprobe::cases::check_output(checker.binary.string(), tc.input, res, *tc.expected);
+            auto verdict = cxxprobe::cases::compute_verdict(res, run_limits, outcome.ac);
+            out.verdict = cxxprobe::cases::verdict_str(verdict);
+            out.checker_diagnostics = outcome.diagnostics;
+            if (verdict == cxxprobe::cases::Verdict::AC) {
+                ++judged_passed;
+            }
+        }
+        report.cases.push_back(std::move(out));
+    }
+
+    if (!checker.binary.empty()) {
+        fs::remove(checker.binary);
+    }
+    fs::remove(solution_binary);
+
+    report.status = (judged_total == 0 || judged_passed == judged_total) ? Status::Pass : Status::Fail;
+    return report;
+}
+
 JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
                         const cxxprobe::problem::ProjectDefaults& defaults,
                         const std::optional<fs::path>& submission_override) {

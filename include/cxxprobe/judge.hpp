@@ -54,6 +54,58 @@ struct CompileStepReport {
     std::string diagnostics;
 };
 
+// ── Custom cases ─────────────────────────────────────────────────────────
+//
+// A candidate's own input, run against their own code. Deliberately a
+// separate type from CaseDetail rather than a flag on it: these results
+// carry the program's stdout and stderr, and the problem's own tests must
+// never be able to reach a shape that can hold them. A hidden test whose
+// output leaked would hand out the answer key, so the only structure with
+// those fields is the one that is only ever filled from input the candidate
+// supplied themselves.
+
+struct CustomCase {
+    std::string label;
+    std::string input;
+    // Absent means "just show me what it prints". Present turns the run into
+    // a judged one, through the problem's own checker, so whitespace and
+    // float tolerance match what a real submission would get.
+    std::optional<std::string> expected;
+};
+
+struct CustomCaseResult {
+    std::string label;
+    std::string verdict;  // empty when no expected output was supplied
+    std::string stdout_text;
+    std::string stderr_text;
+    int exit_code{0};
+    long cpu_time_ms{0};
+    long wall_time_ms{0};
+    std::size_t peak_memory_bytes{0};
+    std::string checker_diagnostics;
+    bool ran{false};  // false when the sandbox itself could not start it
+};
+
+struct CustomRunReport {
+    Status status{Status::Skipped};
+    CompileStepReport solution_compile;
+    CompileStepReport checker_compile;
+    std::vector<CustomCaseResult> cases;
+};
+
+// Compiles the submission exactly as run_problem() would -- same compiler,
+// same flags, same sandbox limits, same checker -- and runs it against
+// caller-supplied cases instead of the problem's own. Nothing here reads
+// config.tests, so no hidden input or answer is opened.
+//
+// Status is Pass when every judged case was AC (an unjudged case cannot
+// fail), Error when compilation failed, Fail otherwise.
+CustomRunReport run_custom_cases(
+    const cxxprobe::problem::ProblemConfig& config,
+    const cxxprobe::problem::ProjectDefaults& defaults,
+    const std::filesystem::path& submission_path,
+    const std::vector<CustomCase>& cases);
+
 struct JudgeReport {
     std::string problem_name;
     std::string slug;
@@ -114,5 +166,7 @@ std::vector<SolutionCheck> verify_additional_solutions(
 nlohmann::ordered_json to_json(const JudgeReport& report);
 
 nlohmann::ordered_json to_json(const std::vector<SolutionCheck>& checks);
+
+nlohmann::ordered_json to_json(const CustomRunReport& report);
 
 }  // namespace cxxprobe::judge

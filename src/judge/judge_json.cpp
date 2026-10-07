@@ -56,7 +56,48 @@ Json gtest_case_to_json(const cxxprobe::gtest_report::CaseResult& c) {
     return j;
 }
 
+Json custom_case_to_json(const CustomCaseResult& c) {
+    Json j;
+    j["label"] = c.label;
+    j["ran"] = c.ran;
+    if (!c.verdict.empty()) {
+        j["verdict"] = c.verdict;
+    }
+    // Always present, even when empty: a candidate staring at a blank Output
+    // needs to see that the field exists and the program printed nothing,
+    // rather than wonder whether it was dropped.
+    j["stdout"] = c.stdout_text;
+    j["stderr"] = c.stderr_text;
+    j["exit_code"] = c.exit_code;
+    j["cpu_time_ms"] = c.cpu_time_ms;
+    j["wall_time_ms"] = c.wall_time_ms;
+    j["peak_memory_bytes"] = c.peak_memory_bytes;
+    if (!c.checker_diagnostics.empty()) {
+        j["checker_diagnostics"] = c.checker_diagnostics;
+    }
+    return j;
+}
+
 }  // namespace
+
+Json to_json(const CustomRunReport& report) {
+    Json j;
+    j["status"] = status_str(report.status);
+    Json compile;
+    if (report.solution_compile.ran) {
+        compile["solution"] = compile_step_to_json(report.solution_compile);
+    }
+    if (report.checker_compile.ran) {
+        compile["checker_binary"] = compile_step_to_json(report.checker_compile);
+    }
+    j["compile"] = std::move(compile);
+    Json cases = Json::array();
+    for (const CustomCaseResult& c : report.cases) {
+        cases.push_back(custom_case_to_json(c));
+    }
+    j["cases"] = std::move(cases);
+    return j;
+}
 
 Json to_json(const JudgeReport& report) {
     Json j;
