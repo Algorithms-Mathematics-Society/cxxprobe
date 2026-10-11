@@ -24,7 +24,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="flex items-center gap-4 border-b border-border-subtle bg-panel px-4 py-2.5">
         <span className="text-lg font-bold tracking-tight text-accent">cxxprobe</span>
         <span className="rounded-full border border-border-subtle px-2.5 py-0.5 text-xs text-text-muted">
-          developer UI — for local testing only, not a replacement for AMS Judge
+          developer UI
         </span>
         <nav className="ml-auto flex items-center gap-1">
           {NAV_ITEMS.map((item) => (
