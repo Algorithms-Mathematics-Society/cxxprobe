@@ -14,7 +14,7 @@ statement:
   entry: problem.md
 
 compiler:
-  cxx: null                   # → g++
+  cxx: null                   # → g++ (GCC 13 on the AMS judges; g++-14 for newer C++23)
   std: null                   # → c++23
   flags: null                 # → -O2 -Wall
   extra_sources: []           # extra .cpp compiled alongside the submission

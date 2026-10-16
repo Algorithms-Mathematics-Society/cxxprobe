@@ -94,6 +94,13 @@ checker:
 Defaults when omitted: compiler `g++`, `c++23`, `-O2 -Wall`; limits 256 MiB,
 5 s CPU, 10 s wall, 64 pids.
 
+**On the AMS judges `g++` is GCC 13.** It has no deducing `this`, no
+`std::generator`, no `ranges::to` and no `std::print`. A problem that needs
+any of these sets `compiler: { cxx: g++-14 }`, which every judge host has.
+Nothing on the judges provides `mdspan`, `flat_map` or `stacktrace`, so
+don't use them. Verify with `g++-14` locally. If your `g++` is newer, a
+solution that passes locally can fail on the judge with Compilation Error.
+
 **Turn the behaviour checker off explicitly** rather than just deleting
 `checker/behavior_gtest.cpp`. Anyone reading the file later then knows there
 is deliberately no behaviour checker, not a forgotten one.
