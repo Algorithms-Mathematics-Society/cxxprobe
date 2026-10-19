@@ -157,6 +157,22 @@ LimitsOverride parse_limits_section(const YAML::Node& doc) {
 
 // Throws if tests.dir and tests.manifest are both explicitly set, or if
 // tests.enabled is explicitly true but no case data is actually present.
+// Labels of the cases a contestant may see. Absent means "all of them",
+// which is what every problem written before this existed relies on.
+std::vector<std::string> parse_sample_labels(const YAML::Node& tests) {
+    std::vector<std::string> labels;
+    if (!tests["samples"] || tests["samples"].IsNull()) {
+        return labels;
+    }
+    if (!tests["samples"].IsSequence()) {
+        throw std::runtime_error{"problem.yaml: tests.samples must be a list of case labels"};
+    }
+    for (const auto& label : tests["samples"]) {
+        labels.push_back(label.as<std::string>());
+    }
+    return labels;
+}
+
 ManualTestsConfig parse_tests_section(const YAML::Node& doc,
                                       const std::filesystem::path& problem_dir) {
     ManualTestsConfig tests;
@@ -176,6 +192,7 @@ ManualTestsConfig parse_tests_section(const YAML::Node& doc,
             throw std::runtime_error{
                 "problem.yaml: tests.dir and tests.manifest are mutually exclusive"};
         }
+        tests.samples = parse_sample_labels(t);
     }
 
     bool resource_present = tests.manifest ? std::filesystem::exists(problem_dir / *tests.manifest)

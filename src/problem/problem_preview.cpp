@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -7,6 +8,35 @@
 namespace cxxprobe::problem {
 
 namespace fs = std::filesystem;
+
+namespace {
+
+// The cases a contestant may see, out of every case that will be judged.
+//
+// An empty `wanted` keeps the historical behaviour: publish everything,
+// which is what every problem written before tests.samples existed relies
+// on. Naming a label that does not exist is a setter error worth stopping
+// for -- silently publishing nothing would look like a working problem with
+// no samples, and silently publishing everything would defeat the point.
+std::vector<cxxprobe::cases::TestCase> select_published(
+    std::vector<cxxprobe::cases::TestCase> all, const std::vector<std::string>& wanted) {
+    if (wanted.empty()) {
+        return all;
+    }
+    std::vector<cxxprobe::cases::TestCase> chosen;
+    chosen.reserve(wanted.size());
+    for (const std::string& label : wanted) {
+        auto it = std::ranges::find(all, label, &cxxprobe::cases::TestCase::label);
+        if (it == all.end()) {
+            throw std::runtime_error{"problem.yaml: tests.samples names '" + label +
+                                     "', which is not one of this problem's test cases"};
+        }
+        chosen.push_back(*it);
+    }
+    return chosen;
+}
+
+}  // namespace
 
 nlohmann::ordered_json preview_to_json(const ProblemConfig& config, const ProjectDefaults& defaults,
                                        const PreviewOptions& opts) {
@@ -35,6 +65,7 @@ nlohmann::ordered_json preview_to_json(const ProblemConfig& config, const Projec
         } catch (const std::exception&) {
             // Malformed test data shouldn't break a preview — just show none.
         }
+        sample_tests = select_published(std::move(sample_tests), config.tests.samples);
         if (sample_tests.size() > opts.max_sample_tests) {
             sample_tests.resize(opts.max_sample_tests);
         }

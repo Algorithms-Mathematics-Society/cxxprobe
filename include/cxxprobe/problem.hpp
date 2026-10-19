@@ -43,6 +43,19 @@ struct ManualTestsConfig {
     bool enabled{true};
     std::string dir{"tests"};
     std::optional<std::string> manifest;  // mutually exclusive with dir
+
+    // Which cases a contestant is allowed to see, by label.
+    //
+    // Everything in `dir` is judged; only these are published in the
+    // preview, the pack manifest and therefore the statement. Empty means
+    // the historical behaviour -- publish every case, capped by
+    // PreviewOptions::max_sample_tests -- so a problem written before this
+    // existed keeps working exactly as it did.
+    //
+    // Without it there is no hidden test: every expected answer ships to
+    // the candidate, and a problem whose output is short can be passed by
+    // printing the answers back.
+    std::vector<std::string> samples;
 };
 
 struct SymbolicConfig {
