@@ -133,6 +133,29 @@ Symbolic checks are a blunt instrument by design — a regex scan, not a parse.
 Use them for "did they reach for the intended technique", not as a security
 boundary. Anything you truly must prevent belongs in a behaviour checker.
 
+## `tests.samples`
+
+The labels of the cases a contestant may see, as a list:
+
+```yaml
+tests:
+  dir: tests
+  samples: ["1", "2"]
+```
+
+Everything in `tests/` is still judged. This filters only what is
+published into the pack, and therefore into the statement a candidate
+reads.
+
+**Omit it and every test is published**, capped at five. That is the
+historical behaviour and it is rarely what you want: a problem whose
+output is short enough to read -- one number per case -- can then be
+passed by printing the expected answers back. Name the one or two small
+readable cases and keep the rest hidden.
+
+Naming a label that does not exist fails the pack rather than silently
+publishing nothing.
+
 ## `tests.manifest`
 
 An alternative to a `tests/` directory when you want explicit control over

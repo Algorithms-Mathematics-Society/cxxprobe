@@ -126,6 +126,19 @@ that a test failed.
 
 `tests/1.in` with `tests/1.ans`. Default comparison is exact token match.
 
+**Every test is published to the contestant unless you say otherwise.**
+List the cases they may see and keep the rest hidden:
+
+```yaml
+tests:
+  dir: tests
+  samples: ["1", "2"]
+```
+
+All of them are still judged. Without this the whole expected-answer set
+ships in the statement, and a problem with short output can be passed by
+printing the answers back.
+
 **The most common authoring bug is invisible whitespace.** `printf '%s'` and
 `echo` differ; a stray `\r` or missing trailing newline shows up as a WA you
 cannot see. When a test fails and the output looks identical, check the bytes:
@@ -207,6 +220,14 @@ to time out and did not, so the tests are too small to separate an efficient
 solution from a slow one. Mismatches do **not** change the primary solution's
 Pass/Fail — "is the reference correct?" and "are the tests strong?" are
 separate questions with separate answers.
+
+**`expected_verdict` is graded by the manual tests only.** An additional
+solution never runs the behaviour checker or the symbolic checks
+(`check_one_solution` in `src/judge/judge.cpp` calls `run_manual_tests` and
+nothing else). So a wrong answer that only a GTest can catch — a clone that
+is not covariant, a Token that is a tagged struct — reports a permanent
+`MISMATCH` that means nothing. Verify those with `--submission` instead and
+require `Overall: FAIL`.
 
 Exactly one entry needs `primary: true`. With no `entries:` at all, a single
 `.cpp` in `solutions/` is inferred as primary; two or more is ambiguous and
