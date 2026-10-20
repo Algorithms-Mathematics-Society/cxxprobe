@@ -18,8 +18,8 @@ namespace {
 // on. Naming a label that does not exist is a setter error worth stopping
 // for -- silently publishing nothing would look like a working problem with
 // no samples, and silently publishing everything would defeat the point.
-std::vector<cxxprobe::cases::TestCase> select_published(
-    std::vector<cxxprobe::cases::TestCase> all, const std::vector<std::string>& wanted) {
+std::vector<cxxprobe::cases::TestCase> select_published(std::vector<cxxprobe::cases::TestCase> all,
+                                                        const std::vector<std::string>& wanted) {
     if (wanted.empty()) {
         return all;
     }
