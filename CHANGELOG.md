@@ -1,3 +1,30 @@
+# [1.0.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.14.0...v1.0.0) (2026-10-27)
+
+Cut by hand. The Release workflow has failed on every push since v0.14.0 with
+`EINVALIDGHTOKEN` — the token in the repository secret is no longer valid — so
+thirteen commits, including the judging fixes below, never reached a release
+and the contest fleet has been pinned to a three-month-old engine.
+
+
+### Bug Fixes
+
+* **judge:** report what the program printed on the problem's own I/O cases ([155339b](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/155339b))
+* **judge:** pass the submission to a custom run, not the problem dir ([240dbec](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/240dbec))
+
+
+### Features
+
+* **judge:** run a submission against caller-supplied cases ([a87fd08](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/a87fd08))
+* **problem:** publish only the tests a setter marks public ([5b71c24](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/5b71c24))
+* **cli:** add cxxprobe package init|validate|inspect, absorb pack/unpack ([a6db355](https://github.com/Algorithms-Mathematics-Society/cxxprobe/commit/a6db355))
+
+
+### BREAKING CHANGES
+
+* **cli:** `cxxprobe pack` and `cxxprobe unpack` are absorbed into
+`cxxprobe package`. The judging worker is unaffected: it only ever invokes
+`cxxprobe judge`.
+
 # [0.14.0](https://github.com/Algorithms-Mathematics-Society/cxxprobe/compare/v0.13.0...v0.14.0) (2026-07-31)
 
 
