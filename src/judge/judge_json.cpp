@@ -26,6 +26,17 @@ Json case_detail_to_json(const CaseDetail& c) {
     j["cpu_time_ms"] = c.cpu_time_ms;
     j["wall_time_ms"] = c.wall_time_ms;
     j["peak_memory_bytes"] = c.peak_memory_bytes;
+    // Always present, even when empty, exactly as `custom_case_to_json`
+    // does: a blank Output must read as "the program printed nothing"
+    // rather than as a field that went missing.
+    //
+    // The worker has forwarded this since `df4ae20` and the field was never
+    // here to forward, so every sample run showed a verdict and nothing
+    // else. Safe to emit because the API drops every non-sample case before
+    // a candidate sees it, and it identifies custom runs from the job it
+    // enqueued rather than from stdout being present.
+    j["stdout"] = c.stdout_text;
+    j["stderr"] = c.stderr_text;
     if (!c.checker_diagnostics.empty()) {
         j["checker_diagnostics"] = c.checker_diagnostics;
     }

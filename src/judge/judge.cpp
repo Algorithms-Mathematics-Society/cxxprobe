@@ -82,6 +82,8 @@ ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& confi
         detail.cpu_time_ms = res.cpu_time.count();
         detail.wall_time_ms = res.wall_time.count();
         detail.peak_memory_bytes = res.peak_memory_bytes;
+        detail.stdout_text = res.stdout_data;
+        detail.stderr_text = res.stderr_data;
 
         if (tc.answer_data) {
             ++judged_total;

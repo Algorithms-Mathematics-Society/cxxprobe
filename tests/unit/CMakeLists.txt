@@ -5,6 +5,7 @@ add_executable(
   cli_util_test.cpp
   symbolic_test.cpp
   gtest_report_test.cpp
+  judge_json_test.cpp
   problem_config_test.cpp
   problem_preview_test.cpp
   pack_test.cpp

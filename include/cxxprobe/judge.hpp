@@ -26,6 +26,13 @@ struct CaseDetail {
     long wall_time_ms{0};
     std::size_t peak_memory_bytes{0};
     std::string checker_diagnostics;  // the checker's stderr, if any
+    // What the program printed. Carried for the same reason
+    // `CustomCaseResult` carries it: a candidate whose answer is wrong needs
+    // to see what their code actually produced, and of 1,216 I/O cases in
+    // the 24 October contest not one did. The API decides who may see it --
+    // it drops every non-sample case before a candidate does.
+    std::string stdout_text;
+    std::string stderr_text;
 };
 
 struct ManualTestsReport {
