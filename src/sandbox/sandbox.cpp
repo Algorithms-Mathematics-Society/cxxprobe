@@ -24,6 +24,7 @@
 
 #include "detail/cgroup.hpp"
 #include "detail/child.hpp"
+#include "detail/pipe_io.hpp"
 #include "detail/pipe_sync.hpp"
 #include "detail/uidmap.hpp"
 
@@ -89,16 +90,6 @@ std::string drain_fd(int read_fd) {
         }
     }
     return buf;
-}
-
-void write_all(int write_fd, std::string_view data) {
-    while (!data.empty()) {
-        ssize_t sent = ::write(write_fd, data.data(), data.size());
-        if (sent <= 0) {
-            break;  // EPIPE: child closed stdin — stop silently
-        }
-        data = data.substr(static_cast<std::size_t>(sent));
-    }
 }
 
 // ── pidfd via syscall ────────────────────────────────────────────────────────
@@ -302,7 +293,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     }};
     // Capture stdin_data by value in the thread (safe: run() owns it until join).
     std::thread t_stdin{[data = std::string_view{stdin_data}, stdin_wfd] {
-        write_all(stdin_wfd, data);
+        (void)detail::write_all(stdin_wfd, data);
         ::close(stdin_wfd);
     }};
 
