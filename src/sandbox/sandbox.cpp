@@ -1,6 +1,7 @@
 #include "cxxprobe/sandbox.hpp"
 
 #include <fcntl.h>
+#include <pthread.h>
 #include <sched.h>
 #include <sys/epoll.h>
 #include <sys/syscall.h>
@@ -13,6 +14,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <ctime>
 #include <format>
 #include <span>
 #include <stdexcept>
@@ -91,11 +93,71 @@ std::string drain_fd(int read_fd) {
     return buf;
 }
 
+// ── stdin writer ─────────────────────────────────────────────────────────────
+
+// A submission is free to stop reading its input: return from main after the
+// first line, close(0), or give up on a malformed token. The harness write()
+// still in flight to that pipe then raises SIGPIPE, and the default disposition
+// terminates the judge before it can write a report. The worker sees a judge
+// that died with no verdict, retries, and dies the same way every time, so the
+// candidate's submission looks lost rather than answered.
+//
+// Blocking SIGPIPE is what makes write() report EPIPE instead, which is the
+// case write_all() below already meant to handle. The mask is changed on the
+// writer thread alone and restored on the way out, so a process embedding the
+// judge keeps whatever SIGPIPE disposition it installed for its own sockets.
+class ScopedSigpipeBlock {
+public:
+    ScopedSigpipeBlock() {
+        sigset_t just_sigpipe;
+        ::sigemptyset(&just_sigpipe);
+        ::sigaddset(&just_sigpipe, SIGPIPE);
+        blocked_ = ::pthread_sigmask(SIG_BLOCK, &just_sigpipe, &previous_) == 0;
+    }
+
+    ~ScopedSigpipeBlock() {
+        if (!blocked_) {
+            return;
+        }
+        // A SIGPIPE raised while blocked stays pending on this thread, and
+        // restoring the mask would deliver it and kill the process on the way
+        // out — the same crash one step later. Reap it first: this thread
+        // exists only to write stdin, so a pending SIGPIPE here is ours.
+        sigset_t just_sigpipe;
+        ::sigemptyset(&just_sigpipe);
+        ::sigaddset(&just_sigpipe, SIGPIPE);
+        struct timespec no_wait {};
+        while (::sigtimedwait(&just_sigpipe, nullptr, &no_wait) < 0 && errno == EINTR) {
+        }
+        ::pthread_sigmask(SIG_SETMASK, &previous_, nullptr);
+    }
+
+    ScopedSigpipeBlock(const ScopedSigpipeBlock&) = delete;
+    ScopedSigpipeBlock& operator=(const ScopedSigpipeBlock&) = delete;
+    ScopedSigpipeBlock(ScopedSigpipeBlock&&) = delete;
+    ScopedSigpipeBlock& operator=(ScopedSigpipeBlock&&) = delete;
+
+private:
+    sigset_t previous_{};
+    bool blocked_{false};
+};
+
 void write_all(int write_fd, std::string_view data) {
+    ScopedSigpipeBlock sigpipe_blocked;
+
     while (!data.empty()) {
         ssize_t sent = ::write(write_fd, data.data(), data.size());
-        if (sent <= 0) {
-            break;  // EPIPE: child closed stdin — stop silently
+        if (sent < 0) {
+            if (errno == EINTR) {
+                continue;  // not an error — retry the same bytes
+            }
+            // EPIPE is the ordinary case of a submission that stopped reading.
+            // Any other error has nobody to report to from this thread, and
+            // leaving input unwritten is what both cases amount to.
+            break;
+        }
+        if (sent == 0) {
+            break;
         }
         data = data.substr(static_cast<std::size_t>(sent));
     }

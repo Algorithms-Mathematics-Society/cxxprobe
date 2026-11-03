@@ -9,7 +9,8 @@ target_compile_definitions(
   cxxprobe-integration-tests
   PRIVATE CXXPROBE_MEMHOG_PATH="$<TARGET_FILE:cxxprobe-memhog>"
           CXXPROBE_BIGWRITER_PATH="$<TARGET_FILE:cxxprobe-bigwriter>"
-          CXXPROBE_SPINNER_PATH="$<TARGET_FILE:cxxprobe-spinner>")
+          CXXPROBE_SPINNER_PATH="$<TARGET_FILE:cxxprobe-spinner>"
+          CXXPROBE_EARLYCLOSER_PATH="$<TARGET_FILE:cxxprobe-earlycloser>")
 
 # problem_pipeline_test.cpp shells out to the real cxxprobe-cli binary for a
 # black-box scaffold -> author -> judge round trip, so it only makes sense to
