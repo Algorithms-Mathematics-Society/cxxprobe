@@ -285,3 +285,134 @@ TEST(Slugify, CollapsesRunsAndTrims) {
 TEST(Slugify, AlreadySlug) {
     EXPECT_EQ(cxxprobe::problem::slugify("graph-diameter"), "graph-diameter");
 }
+
+// ── declaring a mutant against a specific check (issue #9) ───────────────────
+
+TEST_F(ProblemConfigTest, ExpectedMapDeclaresABehaviorFailure) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: re_double_free.cpp, expected: { behavior: FAIL } }
+)");
+    auto cfg = load_from_dir(dir_);
+    const auto& mutant = cfg.solutions.entries.at(1);
+    ASSERT_TRUE(mutant.expected_behavior.has_value());
+    EXPECT_EQ(*mutant.expected_behavior, cxxprobe::problem::ExpectedCheck::Fail);
+    EXPECT_FALSE(mutant.expected_symbolic.has_value());
+    // No I/O expectation was stated, so the AC default must not be graded --
+    // otherwise every behaviour mutant reports a permanent MISMATCH, which is
+    // the bug this form exists to fix.
+    EXPECT_FALSE(mutant.verdict_declared);
+}
+
+TEST_F(ProblemConfigTest, ExpectedMapDeclaresASymbolicFailure) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: gate_uses_vector.cpp, expected: { symbolic: FAIL } }
+)");
+    auto cfg = load_from_dir(dir_);
+    const auto& mutant = cfg.solutions.entries.at(1);
+    ASSERT_TRUE(mutant.expected_symbolic.has_value());
+    EXPECT_EQ(*mutant.expected_symbolic, cxxprobe::problem::ExpectedCheck::Fail);
+}
+
+TEST_F(ProblemConfigTest, ExpectedMapCanDeclareSeveralChecksAtOnce) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: bad.cpp, expected: { io: WA, behavior: FAIL, symbolic: PASS } }
+)");
+    auto cfg = load_from_dir(dir_);
+    const auto& mutant = cfg.solutions.entries.at(1);
+    EXPECT_TRUE(mutant.verdict_declared);
+    EXPECT_EQ(mutant.expected_verdict, cxxprobe::cases::Verdict::WA);
+    EXPECT_EQ(*mutant.expected_behavior, cxxprobe::problem::ExpectedCheck::Fail);
+    EXPECT_EQ(*mutant.expected_symbolic, cxxprobe::problem::ExpectedCheck::Pass);
+}
+
+TEST_F(ProblemConfigTest, PlainExpectedVerdictStillWorksAndIsMarkedDeclared) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: wa.cpp, expected_verdict: WA }
+)");
+    auto cfg = load_from_dir(dir_);
+    const auto& mutant = cfg.solutions.entries.at(1);
+    EXPECT_TRUE(mutant.verdict_declared);
+    EXPECT_EQ(mutant.expected_verdict, cxxprobe::cases::Verdict::WA);
+    EXPECT_FALSE(mutant.expected_behavior.has_value());
+}
+
+TEST_F(ProblemConfigTest, AnUndeclaredSolutionIsNotGradedOnTheAcDefault) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: second_reference.cpp }
+)");
+    auto cfg = load_from_dir(dir_);
+    // A second reference solution, not a mutant. expected_verdict still reads
+    // AC for compatibility, but nothing about it was declared.
+    EXPECT_FALSE(cfg.solutions.entries.at(1).verdict_declared);
+    EXPECT_EQ(cfg.solutions.entries.at(1).expected_verdict, cxxprobe::cases::Verdict::AC);
+}
+
+TEST_F(ProblemConfigTest, ExpectedMapRejectsAMisspelledCheckName) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: m.cpp, expected: { behaviour: FAIL } }
+)");
+    // "behaviour" would otherwise declare nothing at all and report a silent
+    // pass, which is exactly the failure mode this form is meant to remove.
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, ExpectedMapRejectsAStatusThatIsNotPassOrFail) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: m.cpp, expected: { behavior: WA } }
+)");
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}
+
+TEST_F(ProblemConfigTest, ExpectedMapAcceptsLowercaseStatuses) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: m.cpp, expected: { behavior: fail } }
+)");
+    auto cfg = load_from_dir(dir_);
+    EXPECT_EQ(*cfg.solutions.entries.at(1).expected_behavior,
+              cxxprobe::problem::ExpectedCheck::Fail);
+}
+
+TEST_F(ProblemConfigTest, ExpectedVerdictAndExpectedIoTogetherIsRejected) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: m.cpp, expected_verdict: WA, expected: { io: TLE } }
+)");
+    // Two spellings of one expectation, disagreeing. Silently preferring one
+    // would hide a setter's mistake.
+    EXPECT_THROW(load_from_dir(dir_), std::runtime_error);
+}

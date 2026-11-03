@@ -176,6 +176,28 @@ Json to_json(const std::vector<SolutionCheck>& checks) {
             j["actual_verdict"] = c.actual_verdict;
         }
         j["matched"] = c.matched;
+        if (!c.mismatch.empty()) {
+            j["mismatch"] = c.mismatch;
+        }
+        if (!c.outcomes.empty()) {
+            Json outs = Json::array();
+            for (const auto& o : c.outcomes) {
+                Json oj;
+                oj["kind"] = o.kind;
+                oj["graded"] = o.graded;
+                if (!o.expected.empty()) {
+                    oj["expected"] = o.expected;
+                }
+                if (!o.actual.empty()) {
+                    oj["actual"] = o.actual;
+                }
+                if (o.graded) {
+                    oj["matched"] = o.matched;
+                }
+                outs.push_back(std::move(oj));
+            }
+            j["checks"] = std::move(outs);
+        }
         if (!c.diagnostics.empty()) {
             j["diagnostics"] = c.diagnostics;
         }

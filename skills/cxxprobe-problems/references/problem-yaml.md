@@ -103,9 +103,38 @@ Exactly one entry must be `primary: true`, unless there is only one entry.
 With no `entries:` block, a single `.cpp` in `solutions/` is inferred as
 primary — two or more is ambiguous and fails to load.
 
-Non-primary entries are judged against the same manual tests and reported in
+Non-primary entries are graded against **every check the problem enables** --
+manual tests, the behaviour checker and the symbolic rules -- and reported in
 an "Additional solutions" section. A `MISMATCH` there means your test data is
-not doing the job you assumed it was.
+not doing the job you assumed it was, and it fails `test problem` (exit 1), so
+weakened data shows up in CI rather than in a round.
+
+`expected_verdict` grades the manual tests only, so it cannot express a mutant
+that no manual test can catch -- a clone that is not covariant, a comparator
+that is not transitive, a solution reaching for a container a rule forbids. For
+those, say which check should fail:
+
+```yaml
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: wa_off_by_one.cpp,  expected_verdict: WA }        # manual tests
+    - { file: re_double_free.cpp, expected: { behavior: FAIL } }
+    - { file: gate_uses_vector.cpp, expected: { symbolic: FAIL } }
+    - { file: both.cpp, expected: { io: WA, behavior: FAIL } }
+```
+
+Keys are `io`, `behavior` and `symbolic`; the latter two take `PASS` or `FAIL`.
+An unknown key is an error rather than a no-op, because a typo like
+`behaviour:` would otherwise declare nothing and report a silent pass.
+
+A check you say nothing about is reported but never graded, so adding a
+behaviour checker to a problem does not retroactively fail mutants already
+declared against I/O. An entry with no expectations at all is a second
+reference solution, not a mutant, and always matches.
+
+Declare mutants rather than running each one by hand through `--submission`:
+by hand is the labour this exists to remove, and it never runs in CI.
 
 ## `symbolic`
 

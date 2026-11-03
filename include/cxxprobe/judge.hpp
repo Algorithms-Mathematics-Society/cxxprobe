@@ -140,12 +140,27 @@ JudgeReport run_problem(
 // One non-primary solutions/ entry judged against the problem's own manual
 // tests, with the verdict it actually earned compared to the one its
 // problem.yaml entry declares.
+// One check type's result for a declared non-primary solution.
+struct SolutionCheckOutcome {
+    std::string kind;      // "io" | "behavior" | "symbolic"
+    std::string expected;  // what the setter declared; empty if nothing was
+    std::string actual;    // PASS/FAIL/ERROR, or an I/O verdict; empty if the
+                           // check could not be reached at all
+    bool graded{false};    // false when nothing was declared for this check
+    bool matched{false};   // only meaningful when graded
+};
+
 struct SolutionCheck {
     std::string file;
     std::string expected_verdict;
     std::string actual_verdict;  // empty if it never got as far as a verdict
-    bool matched{false};
-    std::string diagnostics;  // compile output / why no verdict was reached
+    bool matched{false};         // every *declared* expectation held
+    std::string diagnostics;     // compile output / why no verdict was reached
+    // One entry per check type the problem enables. A mutant that only a
+    // behaviour assertion or a symbolic rule can catch has no I/O verdict to
+    // declare, so the single expected_verdict above cannot express it.
+    std::vector<SolutionCheckOutcome> outcomes;
+    std::string mismatch;  // names the check that disagreed, empty if none
 };
 
 // Compiles and judges every *non-primary* declared solution against the
