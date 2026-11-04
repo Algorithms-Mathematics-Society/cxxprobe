@@ -14,6 +14,7 @@
 #include <csignal>
 #include <cstring>
 #include <format>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@
 
 #include "detail/cgroup.hpp"
 #include "detail/child.hpp"
+#include "detail/perf_counter.hpp"
 #include "detail/pipe_io.hpp"
 #include "detail/pipe_sync.hpp"
 #include "detail/uidmap.hpp"
@@ -108,6 +110,25 @@ OwnedFd open_pidfd(pid_t pid) {
 int clone_entry(void* arg) {
     detail::child_main(std::move(*static_cast<detail::ChildArgs*>(arg)));
     std::unreachable();
+}
+
+// ── CPU affinity ─────────────────────────────────────────────────────────────
+
+void apply_affinity(pid_t pid, const std::vector<int>& cpus) {
+    if (cpus.empty()) {
+        return;
+    }
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    for (int cpu : cpus) {
+        if (cpu < 0 || cpu >= CPU_SETSIZE) {
+            throw std::runtime_error{std::format("cpu_affinity: no such CPU {}", cpu)};
+        }
+        CPU_SET(cpu, &set);
+    }
+    if (::sched_setaffinity(pid, sizeof(set), &set) != 0) {
+        throw std::runtime_error{std::format("sched_setaffinity: {}", std::strerror(errno))};
+    }
 }
 
 // ── ChildGuard ───────────────────────────────────────────────────────────────
@@ -263,6 +284,16 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     // The parent cannot migrate arbitrary PIDs under nsdelegate; self-migration
     // always works.
 
+    // Pinning and counters attach to the child before it execs: affinity is
+    // inherited across exec, and the counters start at exec (enable_on_exec).
+    apply_affinity(child_pid, limits.cpu_affinity);
+    std::optional<detail::PerfCounter> instructions;
+    std::optional<detail::PerfCounter> task_clock;
+    if (limits.count_instructions) {
+        instructions.emplace(child_pid, PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS);
+        task_clock.emplace(child_pid, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK);
+    }
+
     parent_sync.send(detail::SyncMsg::ExecNow);
     auto wall_start = std::chrono::steady_clock::now();
 
@@ -313,6 +344,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     }
 
     WaitResult wr = wait_for_child(child_pid, pidfd, tfd, cgroup);
+    const auto exited = std::chrono::steady_clock::now();
     child_guard.mark_reaped();  // waitpid already called inside wait_for_child
 
     t_stdin.join();
@@ -336,6 +368,13 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     result.cpu_time = std::chrono::duration_cast<std::chrono::milliseconds>(stats.cpu_usage);
     result.wall_time = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
     result.wall_timed_out = wr.timed_out;
+    result.wall_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(exited - wall_start);
+    if (instructions) {
+        result.instructions = instructions->read();
+    }
+    if (task_clock) {
+        result.task_clock_ns = task_clock->read();
+    }
     result.stdout_data = std::move(stdout_data);
     result.stderr_data = std::move(stderr_data);
     return result;
