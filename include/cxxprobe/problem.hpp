@@ -193,9 +193,9 @@ struct PackageReport {
 // that load() would refuse outright.
 PackageReport validate_package(const std::filesystem::path& problem_dir);
 
-// Immediate child directories of contest_dir containing a problem.yaml
-// (existence check only — does not parse). Order is filesystem-iteration
-// order; callers needing a stable order should sort the result themselves.
+// Immediate plain problems plus explicitly declared project parts. Projects
+// are validated before discovery; plain configs are not parsed. Existing plain
+// filesystem iteration order is preserved; callers may sort for stable order.
 std::vector<std::filesystem::path> find_problem_dirs(const std::filesystem::path& contest_dir);
 
 struct PreviewOptions {

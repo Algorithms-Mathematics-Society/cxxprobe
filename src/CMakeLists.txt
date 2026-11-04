@@ -47,6 +47,8 @@ add_library(
   sandbox/detail/cgroup.cpp
   sandbox/detail/child.cpp
   problem/problem.cpp
+  problem/project.cpp
+  problem/project_discovery.cpp
   problem/problem_preview.cpp
   problem/problem_validate.cpp
   symbolic/symbolic.cpp
