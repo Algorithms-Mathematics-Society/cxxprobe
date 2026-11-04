@@ -14,6 +14,7 @@
 #include "cxxprobe/pack.hpp"
 #include "cxxprobe/problem.hpp"
 #include "cxxprobe/project.hpp"
+#include "cxxprobe/project_discovery.hpp"
 
 namespace cxxprobe::cli {
 
@@ -366,6 +367,12 @@ int PackageCommand::execute_inspect() {
     cxxprobe::problem::ProjectDefaults defaults;
     nlohmann::ordered_json preview = cxxprobe::problem::preview_to_json(config, defaults);
     preview["attachments"] = {{"dir", attachments.dir}, {"files", attachments.files}};
+    // What a project part actually compiles with, beyond its own problem.yaml.
+    // Absent for plain problems so their inspect output is unchanged.
+    if (cxxprobe::project::owning_project(config.problem_dir)) {
+        preview["shared_sources"] = config.compiler.shared_sources;
+        preview["include_dirs"] = config.compiler.include_dirs;
+    }
     if (json_output_) {
         std::cout << preview.dump(2) << "\n";
         return 0;
@@ -393,6 +400,16 @@ int PackageCommand::execute_inspect() {
         std::cout << "    " << file << "\n";
     }
     std::cout << std::format("  generators      {}\n", preview["generator_count"].get<int>());
+    if (!config.compiler.shared_sources.empty() || !config.compiler.include_dirs.empty()) {
+        std::cout << std::format("  shared sources  {} (from project)\n",
+                                 config.compiler.shared_sources.size());
+        for (const auto& source : config.compiler.shared_sources) {
+            std::cout << "    " << source << "\n";
+        }
+        for (const auto& dir : config.compiler.include_dirs) {
+            std::cout << "    -I " << dir << "\n";
+        }
+    }
     return 0;
 }
 

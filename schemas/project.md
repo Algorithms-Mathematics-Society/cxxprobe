@@ -159,9 +159,22 @@ cxxprobe package inspect order-desk/1-ingest --json
 
 Project validation includes each ordinary part's existing package checks and
 prefixes diagnostics with the part index and label. A missing optional integration
-entry is valid. The loader does not inject shared sources or execute integration
-checks. Project-part identities survive symlink aliases, and discovery rejects
+entry is valid. Project-part identities survive symlink aliases, and discovery rejects
 colliding identities rather than flattening them.
+
+## Shared sources
+
+Loading a part (`cxxprobe::problem::load_from_dir`) prepends the project's
+`shared.sources` to the part's `compiler.extra_sources`, as paths relative to the
+part directory, and adds `shared.dir` to the include path when it exists. Both
+the manual-test build and the behavior-checker build therefore compile against
+the shared contract with no `extra_sources` line in the part's own `problem.yaml`;
+the I/O checker build does not, since it has its own `main`. Shared sources come
+first, so a part's own `extra_sources` may depend on shared symbols. A part that
+also lists a shared source in its own `extra_sources` is rejected at load time
+rather than failing later with a duplicate-symbol link error. Loading a part reads
+only the project's `shared` section, never the other parts. `package inspect` on
+a part lists the injected sources and include directory.
 
 Until #7 supplies the project archive format, packing an entire contest containing
 a project fails before writing an archive. Selecting ordinary problems explicitly
@@ -169,6 +182,5 @@ with `package pack --problems warmup` remains supported. Project paths are check
 by the strict loader before packaging is rejected, so absolute references produce
 field diagnostics rather than silently disappearing from an archive.
 
-Shared source injection (#4), integration judging (#5/#6), project packaging
-(#7), and benchmarking are separate followups. Schema PR #18 remains the separate
+Integration judging (#5/#6), project packaging (#7), and benchmarking are separate followups. Schema PR #18 remains the separate
 contract handoff; the runtime implementation is stacked on that contract.

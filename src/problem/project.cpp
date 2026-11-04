@@ -281,6 +281,21 @@ void parse_parts(const YAML::Node& doc, ProjectConfig& cfg) {
     }
 }
 
+SharedInputs check_shared(const ProjectConfig& cfg) {
+    SharedInputs out;
+    const auto shared_dir = cfg.project_dir / cfg.shared.dir;
+    out.dir = contained(cfg.project_dir, shared_dir, "shared.dir");
+    file_kind(shared_dir, "shared.dir", true, !cfg.shared.sources.empty());
+    out.dir_exists = fs::is_directory(shared_dir);
+    for (std::size_t i = 0; i < cfg.shared.sources.size(); ++i) {
+        const auto field = std::format("shared.sources[{}]", i);
+        const auto source = shared_dir / cfg.shared.sources[i];
+        out.sources.push_back(contained(shared_dir, source, field));
+        file_kind(source, field, false, true);
+    }
+    return out;
+}
+
 ProjectConfig parse(const fs::path& project_dir, bool check_filesystem) {
     ProjectConfig cfg;
     cfg.project_dir = fs::absolute(project_dir).lexically_normal();
@@ -324,15 +339,7 @@ ProjectConfig parse(const fs::path& project_dir, bool check_filesystem) {
     if (!check_filesystem) {
         return cfg;
     }
-    const auto shared_dir = cfg.project_dir / cfg.shared.dir;
-    contained(cfg.project_dir, shared_dir, "shared.dir");
-    file_kind(shared_dir, "shared.dir", true, !cfg.shared.sources.empty());
-    for (std::size_t i = 0; i < cfg.shared.sources.size(); ++i) {
-        const auto field = std::format("shared.sources[{}]", i);
-        const auto source = shared_dir / cfg.shared.sources[i];
-        contained(shared_dir, source, field);
-        file_kind(source, field, false, true);
-    }
+    check_shared(cfg);
     const auto integration_dir = cfg.project_dir / cfg.integration.dir;
     contained(cfg.project_dir, integration_dir, "integration.dir");
     file_kind(integration_dir, "integration.dir", true, false);
@@ -395,6 +402,16 @@ std::optional<std::string> declared_part_slug(const fs::path& project_dir,
             }
         }
         return std::nullopt;
+    } catch (const fs::filesystem_error& ex) {
+        fail("project_dir", ex.what());
+    } catch (const YAML::Exception& ex) {
+        fail("project.yaml", ex.what());
+    }
+}
+
+SharedInputs shared_inputs(const fs::path& project_dir) {
+    try {
+        return check_shared(parse(project_dir, false));
     } catch (const fs::filesystem_error& ex) {
         fail("project_dir", ex.what());
     } catch (const YAML::Exception& ex) {

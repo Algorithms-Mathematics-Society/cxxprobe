@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -193,6 +194,74 @@ TEST_F(ProjectPipelineTest, IntermediateProjectCannotChangePartIdentity) {
     const auto inspect = cli({"package", "inspect", "desk/one", "--json"});
     EXPECT_NE(inspect.code, 0);
     EXPECT_THROW(cxxprobe::problem::load_from_dir(root / "desk/parts/one"), std::runtime_error);
+}
+
+// A project whose one part has no extra_sources of its own: everything it
+// links against comes from the project's shared section.
+void shared_project(const fs::path& desk, const std::string& sources) {
+    write_file(desk / "project.yaml", "version: 1\nname: Desk\nshared:\n  sources: " + sources +
+                                          "\nparts:\n  - {dir: parts/one, label: '1'}\n");
+    write_file(desk / "shared/order.hpp", "#pragma once\nint order_total(int lines);\n");
+    write_file(desk / "shared/order.cpp",
+               "#include \"order.hpp\"\nint order_total(int lines) { return lines * 3; }\n");
+    const auto part = desk / "parts/one";
+    write_file(part / "problem.yaml",
+               "version: 2\nname: Ingest\nsymbolic:\n  must_include: [order_total]\n");
+    write_file(part / "solutions/main.cpp",
+               "#include <iostream>\n#include \"order.hpp\"\n"
+               "int main() { int n = 0; std::cin >> n; std::cout << order_total(n) << '\\n';\n"
+               "    return 0;\n}\n");
+    write_file(part / "tests/1.in", "4\n");
+    write_file(part / "tests/1.out", "12\n");
+    write_file(part / "checker/behavior_gtest.cpp",
+               "#define main solution_main\n#include CXXPROBE_SOLUTION_FILE\n#undef main\n"
+               "#include <gtest/gtest.h>\n"
+               "TEST(Behavior, SharedTotal) { EXPECT_EQ(order_total(2), 6); }\n");
+}
+
+TEST_F(ProjectPipelineTest, SharedSourcesReachEveryPartBuild) {
+    shared_project(root / "desk", "[order.cpp]");
+    const auto config = cxxprobe::problem::load_from_dir(root / "desk/parts/one");
+    EXPECT_EQ(config.compiler.extra_sources, (std::vector<std::string>{"../../shared/order.cpp"}));
+    EXPECT_EQ(config.compiler.shared_sources, config.compiler.extra_sources);
+    EXPECT_EQ(config.compiler.include_dirs, (std::vector<std::string>{"../../shared"}));
+
+    const auto result = cli({"test", "problem", "desk/one", "--json"});
+    ASSERT_EQ(result.code, 0) << result.text;
+    const auto report = nlohmann::json::parse(result.text);
+    for (const auto* section : {"manual", "symbolic", "behavior"}) {
+        EXPECT_EQ(report["tests"][section]["status"], "PASS") << section << "\n" << result.text;
+    }
+}
+
+TEST_F(ProjectPipelineTest, MissingSharedSourceFailsWithTheCompilerDiagnostic) {
+    shared_project(root / "desk", "[]");
+    const auto result = cli({"test", "problem", "desk/one", "--json"});
+    EXPECT_EQ(result.code, 2) << result.text;
+    EXPECT_NE(result.text.find("order_total"), std::string::npos) << result.text;
+    EXPECT_NE(result.text.find("undefined reference"), std::string::npos) << result.text;
+}
+
+TEST_F(ProjectPipelineTest, PartRedeclaringASharedSourceIsRejected) {
+    shared_project(root / "desk", "[order.cpp]");
+    write_file(root / "desk/parts/one/problem.yaml",
+               "version: 2\nname: Ingest\ncompiler:\n  extra_sources: [../../shared/order.cpp]\n");
+    EXPECT_THROW(cxxprobe::problem::load_from_dir(root / "desk/parts/one"), std::runtime_error);
+    const auto result = cli({"package", "validate", "desk", "--json"});
+    EXPECT_EQ(result.code, 1) << result.text;
+    EXPECT_NE(result.text.find("compiler.extra_sources"), std::string::npos) << result.text;
+}
+
+TEST_F(ProjectPipelineTest, InspectShowsInjectedSharedSources) {
+    shared_project(root / "desk", "[order.cpp]");
+    const auto json = cli({"package", "inspect", "desk/one", "--json"});
+    EXPECT_EQ(json.code, 0) << json.text;
+    EXPECT_NE(json.text.find("\"shared_sources\""), std::string::npos) << json.text;
+    EXPECT_NE(json.text.find("../../shared/order.cpp"), std::string::npos) << json.text;
+    const auto text = cli({"package", "inspect", "desk/one"});
+    EXPECT_EQ(text.code, 0) << text.text;
+    EXPECT_NE(text.text.find("shared sources  1"), std::string::npos) << text.text;
+    EXPECT_NE(text.text.find("-I ../../shared"), std::string::npos) << text.text;
 }
 
 }  // namespace

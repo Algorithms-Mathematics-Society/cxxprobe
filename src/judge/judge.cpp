@@ -142,6 +142,10 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
     // separate source here would compile it twice and produce duplicate
     // symbols (most visibly a duplicate `main`, since the submission has
     // its own `main()` for the manual-tests build).
+    for (const auto& dir : resolved.include_dirs) {
+        extra_flags.push_back("-I" + (config.problem_dir / dir).string());
+    }
+
     cxxprobe::compile::Request req;
     req.sources = {checker_src};
     for (const auto& extra : resolved.extra_sources) {
@@ -215,20 +219,29 @@ Status worse(Status a, Status b) {
 }
 
 // Compiles a single source into a fresh temp binary using the problem's
-// resolved compiler settings, plus any extra_sources it declares.
+// resolved compiler settings, plus any extra_sources it declares. A project
+// part's shared sources belong to the part's contract, not to the setter's
+// I/O checker, which has its own main(); with_shared=false leaves them out.
 cxxprobe::compile::Result compile_source(const cxxprobe::problem::ProblemConfig& config,
                                          const cxxprobe::problem::ResolvedCompiler& resolved,
                                          const fs::path& source, const fs::path& output,
-                                         const std::vector<std::string>& extra_flags = {}) {
+                                         const std::vector<std::string>& extra_flags = {},
+                                         bool with_shared = true) {
     cxxprobe::compile::Request req;
     req.sources = {source};
     for (const auto& extra : resolved.extra_sources) {
+        if (!with_shared && std::ranges::contains(resolved.shared_sources, extra)) {
+            continue;
+        }
         req.sources.push_back(config.problem_dir / extra);
     }
     req.cxx = resolved.cxx;
     req.std_flag = resolved.std_flag;
     req.flags = resolved.flags;
     req.extra_flags = extra_flags;
+    for (const auto& dir : resolved.include_dirs) {
+        req.extra_flags.push_back("-I" + (config.problem_dir / dir).string());
+    }
     req.output_binary = output;
     req.working_dir = config.problem_dir;
     return cxxprobe::compile::compile(req);
@@ -252,7 +265,8 @@ CheckerBuild build_io_checker(const cxxprobe::problem::ProblemConfig& config,
     fs::path binary = make_temp_path("cxxprobe-checker");
     fs::path src = config.problem_dir / config.checker.dir / config.checker.io.entry;
     cxxprobe::compile::Result res =
-        compile_source(config, resolved, src, binary, config.checker.io.extra_flags);
+        compile_source(config, resolved, src, binary, config.checker.io.extra_flags,
+                       /*with_shared=*/false);
     build.report = to_compile_report(res);
     build.ok = res.ok;
     if (res.ok) {
