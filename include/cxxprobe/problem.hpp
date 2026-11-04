@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -100,9 +101,21 @@ struct GeneratorsConfig {
     std::string plan{"plan.yaml"};
 };
 
+// What a declared non-primary solution is expected to do to one check type.
+// Absent on an entry means the setter stated nothing about that check, and an
+// unstated behavior/symbolic check is never graded -- adding a checker to a
+// problem would retroactively fail every mutant already declared against I/O.
+enum class ExpectedCheck : std::uint8_t { Pass, Fail };
+
 struct SolutionEntry {
     std::string file;
     cxxprobe::cases::Verdict expected_verdict{cxxprobe::cases::Verdict::AC};
+    // Whether expected_verdict was actually written down. It defaults to AC,
+    // which is a real expectation for a second reference solution and a
+    // meaningless one for a mutant only a behaviour rule or a gate can catch.
+    bool verdict_declared{false};
+    std::optional<ExpectedCheck> expected_behavior;
+    std::optional<ExpectedCheck> expected_symbolic;
     bool primary{false};
 };
 

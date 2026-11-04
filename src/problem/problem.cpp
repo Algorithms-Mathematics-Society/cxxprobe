@@ -369,6 +369,76 @@ GeneratorsConfig parse_generators_section(const YAML::Node& doc) {
     return generators;
 }
 
+// A solution entry's expected_verdict, as a cases::Verdict.
+cxxprobe::cases::Verdict parse_expected_verdict(const YAML::Node& node, const std::string& file) {
+    auto raw = node.as<std::string>();
+    auto v = cxxprobe::cases::verdict_from_str(raw);
+    if (!v) {
+        throw std::runtime_error{
+            std::format("problem.yaml: unknown expected_verdict '{}' on solution '{}'", raw, file)};
+    }
+    return *v;
+}
+
+// PASS or FAIL for one check type, case-insensitively.
+ExpectedCheck parse_expected_check(const YAML::Node& node, std::string_view key,
+                                   const std::string& file) {
+    auto raw = node.as<std::string>();
+    std::string upper;
+    upper.reserve(raw.size());
+    for (char c : raw) {
+        upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+    }
+    if (upper == "FAIL") {
+        return ExpectedCheck::Fail;
+    }
+    if (upper == "PASS") {
+        return ExpectedCheck::Pass;
+    }
+    throw std::runtime_error{
+        std::format("problem.yaml: solutions.entries[].expected.{} on '{}' must be PASS or FAIL, "
+                    "not '{}'",
+                    key, file, raw)};
+}
+
+// The per-check form:
+//
+//   - { file: re_double_free.cpp, expected: { behavior: FAIL } }
+//   - { file: gate_uses_vector.cpp, expected: { symbolic: FAIL } }
+//   - { file: wa_off_by_one.cpp,  expected: { io: WA, behavior: FAIL } }
+//
+// Unknown keys throw rather than being ignored: a typo like `behaviour:` would
+// otherwise silently declare nothing, which is the failure this form exists to
+// prevent.
+void parse_expected_map(const YAML::Node& node, SolutionEntry& entry) {
+    if (!node.IsMap()) {
+        throw std::runtime_error{std::format(
+            "problem.yaml: solutions.entries[].expected on '{}' must be a map", entry.file)};
+    }
+    for (const auto& kv : node) {
+        auto key = kv.first.as<std::string>();
+        if (key == "io") {
+            if (entry.verdict_declared) {
+                throw std::runtime_error{
+                    std::format("problem.yaml: solution '{}' sets both expected_verdict and "
+                                "expected.io -- use one",
+                                entry.file)};
+            }
+            entry.expected_verdict = parse_expected_verdict(kv.second, entry.file);
+            entry.verdict_declared = true;
+        } else if (key == "behavior") {
+            entry.expected_behavior = parse_expected_check(kv.second, "behavior", entry.file);
+        } else if (key == "symbolic") {
+            entry.expected_symbolic = parse_expected_check(kv.second, "symbolic", entry.file);
+        } else {
+            throw std::runtime_error{
+                std::format("problem.yaml: unknown key 'expected.{}' on solution '{}' -- expected "
+                            "io, behavior or symbolic",
+                            key, entry.file)};
+        }
+    }
+}
+
 // Throws on a missing 'file', an unknown expected_verdict string, or >1
 // entry with no single entry marked primary: true.
 std::vector<SolutionEntry> parse_declared_solution_entries(const YAML::Node& entries_node) {
@@ -380,13 +450,11 @@ std::vector<SolutionEntry> parse_declared_solution_entries(const YAML::Node& ent
         SolutionEntry entry;
         entry.file = e["file"].as<std::string>();
         if (e["expected_verdict"]) {
-            auto raw = e["expected_verdict"].as<std::string>();
-            auto v = cxxprobe::cases::verdict_from_str(raw);
-            if (!v) {
-                throw std::runtime_error{
-                    std::format("problem.yaml: unknown expected_verdict '{}'", raw)};
-            }
-            entry.expected_verdict = *v;
+            entry.expected_verdict = parse_expected_verdict(e["expected_verdict"], entry.file);
+            entry.verdict_declared = true;
+        }
+        if (e["expected"]) {
+            parse_expected_map(e["expected"], entry);
         }
         entry.primary = e["primary"] && e["primary"].as<bool>();
         entries.push_back(std::move(entry));

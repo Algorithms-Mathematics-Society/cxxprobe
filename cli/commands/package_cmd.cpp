@@ -68,30 +68,30 @@ tests:
   dir: tests
   manifest: null
 
-# checker.io (checker/checker.cpp, testlib-ABI I/O checking) and
-# checker.behavior (checker/behavior_gtest.cpp, GTest-linked) are each
-# inferred enabled once the corresponding file exists.
+# The placeholder behavior check is enabled by checker/behavior_gtest.cpp.
+# Replace its passing assertion with checks of the submission's behavior.
+# Optional I/O checking is inferred enabled once checker/checker.cpp exists.
 checker:
   dir: checker
-  io:
-    entry: checker.cpp
-    extra_flags: []
+  # io:
+  #   entry: checker.cpp
+  #   extra_flags: []
   behavior:
     entry: behavior_gtest.cpp
     extra_flags: []
 
 # testlib-protocol validator — inferred enabled once validator/validator.cpp
 # exists. Run it with `cxxprobe validate {}`.
-validator:
-  dir: validator
-  entry: validator.cpp
-  extra_flags: []
+# validator:
+#   dir: validator
+#   entry: validator.cpp
+#   extra_flags: []
 
 # Generators are driven by generators/plan.yaml — a sequence of
 # {{generator, args, label}}. Run them with `cxxprobe generate {}`.
-generators:
-  dir: generators
-  plan: plan.yaml
+# generators:
+#   dir: generators
+#   plan: plan.yaml
 
 # The primary solution is inferred as long as exactly one *.cpp lives under
 # solutions/. Declare entries explicitly (exactly one with primary: true) to
@@ -136,6 +136,19 @@ constexpr std::string_view kSolutionTemplate = R"TEMPLATE(// Reference solution 
 
 int main() {
     return 0;
+}
+)TEMPLATE";
+constexpr std::string_view kBehaviorTemplate = R"TEMPLATE(// Replace this placeholder with checks of the submission's behavior.
+// cxxprobe sets CXXPROBE_SOLUTION_FILE to the selected submission, including
+// when --submission overrides the primary solution.
+#define main solution_main
+#include CXXPROBE_SOLUTION_FILE
+#undef main
+
+#include <gtest/gtest.h>
+
+TEST(Behavior, Placeholder) {
+    EXPECT_TRUE(true);
 }
 )TEMPLATE";
 // clang-format on
@@ -235,18 +248,19 @@ int PackageCommand::execute_init() {
         return 2;
     }
 
-    // validator/, checker/, generators/ and attachments/ are deliberately NOT
-    // pre-created: every one of them is inference-driven off the presence of
-    // its entry file, so an empty directory would only be noise.
+    // Optional validator/, generators/ and attachments/ stay absent until
+    // the setter supplies them. checker/ contains the active behavior check.
     fs::create_directories(dir / "statement");
     fs::create_directories(dir / "tests");
     fs::create_directories(dir / "solutions");
+    fs::create_directories(dir / "checker");
     write_file(dir / "tests" / ".gitkeep", "");
     write_file(dir / "problem.yaml",
                std::vformat(kProblemYamlTemplate, std::make_format_args(init_name_, slug, slug)));
     write_file(dir / "statement" / "problem.md",
                std::vformat(kProblemMdTemplate, std::make_format_args(init_name_)));
     write_file(dir / "solutions" / "main.cpp", kSolutionTemplate);
+    write_file(dir / "checker" / "behavior_gtest.cpp", kBehaviorTemplate);
 
     std::cout << "Created package '" << init_name_ << "' in " << dir.string() << "\n";
     std::cout << "Next: fill in solutions/main.cpp, add tests/1.in + tests/1.ans, then run:\n";
