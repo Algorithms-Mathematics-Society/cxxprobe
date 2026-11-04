@@ -325,6 +325,8 @@ TEST_F(ProjectPipelineTest, MixedContestPacksUnpacksAndStillPasses) {
     const auto tested =
         cli({"test", "problem", "desk/one", "-C", (root / "out").string(), "--json"});
     EXPECT_EQ(tested.code, 0) << tested.text;
+    const auto project = cli({"test", "project", "desk", "-C", (root / "out").string(), "--json"});
+    EXPECT_EQ(project.code, 0) << project.text;
 }
 
 TEST_F(ProjectPipelineTest, PlainContestManifestHasNoProjectsKey) {
@@ -466,6 +468,148 @@ TEST(IntegrationAttribution, LabelsMustBeDelimited) {
               (std::vector<std::string>{"a_b"}));
     EXPECT_TRUE(attributed_parts("Integration", "Round123Trip", labels).empty());
     EXPECT_TRUE(attributed_parts("Integration", "RoundTrip", labels).empty());
+}
+
+// Each part's own behaviour check, so a wrong book() fails its per-part
+// verdict too and a correct ingest() has a verdict of its own to keep.
+void book_behavior(const fs::path& desk) {
+    write_file(desk / "parts/ingest/checker/behavior_gtest.cpp",
+               "#define main solution_main\n#include CXXPROBE_SOLUTION_FILE\n#undef main\n"
+               "#include <gtest/gtest.h>\nTEST(Behavior, Ingest) { EXPECT_EQ(ingest(2), 4); }\n");
+    write_file(desk / "parts/book/checker/behavior_gtest.cpp",
+               "#define main solution_main\n#include CXXPROBE_SOLUTION_FILE\n#undef main\n"
+               "#include <gtest/gtest.h>\nTEST(Behavior, Book) { EXPECT_EQ(book(1), 6); }\n");
+}
+
+nlohmann::json parsed(const Result& result) {
+    try {
+        return nlohmann::json::parse(result.text);
+    } catch (const std::exception&) {
+        ADD_FAILURE() << result.text;
+        return {};
+    }
+}
+
+TEST_F(ProjectPipelineTest, TestProjectPassesOnACorrectProject) {
+    linked_project(root / "desk");
+    book_behavior(root / "desk");
+    const auto result = cli({"test", "project", "desk", "--json"});
+    ASSERT_EQ(result.code, 0) << result.text;
+    const auto report = parsed(result);
+    EXPECT_EQ(report["overall"], "PASS");
+    EXPECT_EQ(report["integration"]["status"], "PASS");
+    EXPECT_EQ(report["parts"][1]["status"], "PASS");
+    EXPECT_EQ(report["parts"][1]["origin"], "reference");
+    EXPECT_TRUE(report["substitutions"].empty());
+
+    const auto human = cli({"test", "project", "desk", "--no-color"});
+    EXPECT_EQ(human.code, 0) << human.text;
+    EXPECT_NE(human.text.find("Integration     PASS (3/3)"), std::string::npos) << human.text;
+}
+
+TEST_F(ProjectPipelineTest, BrokenPartFailsByNameWhileOthersKeepTheirVerdicts) {
+    linked_project(root / "desk");
+    book_behavior(root / "desk");
+    write_file(root / "wrong.cpp",
+               "#include \"desk.hpp\"\nint book(int x) { return x; }\nint main() { return 0; }\n");
+    const auto result = cli({"test", "project", "desk", "--submission", "2=wrong.cpp", "--json"});
+    EXPECT_EQ(result.code, 1) << result.text;
+    const auto report = parsed(result);
+    EXPECT_EQ(report["overall"], "FAIL");
+    EXPECT_EQ(report["parts"][0]["status"], "PASS");
+    EXPECT_EQ(report["parts"][1]["status"], "FAIL");
+    EXPECT_EQ(report["parts"][1]["origin"], "submission");
+    EXPECT_EQ(report["integration"]["status"], "FAIL");
+    for (const auto& c : report["integration"]["cases"]) {
+        if (c["failed"] == true && !c["parts"].empty()) {
+            EXPECT_EQ(c["parts"][0], "2") << c.dump();
+        }
+    }
+    ASSERT_EQ(report["substitutions"].size(), 1U);
+    EXPECT_EQ(report["substitutions"][0]["label"], "1");
+    EXPECT_EQ(report["substitutions"][0]["origin"], "reference");
+}
+
+TEST_F(ProjectPipelineTest, NoSuppliedPartsEqualsTheBareForm) {
+    linked_project(root / "desk");
+    const auto bare = parsed(cli({"test", "project", "desk", "--json"}));
+    const auto named = parsed(cli({"test", "project", "desk", "--json", "--fallback", "1=reference",
+                                   "--fallback", "2=reference"}));
+    EXPECT_EQ(bare["overall"], named["overall"]);
+    EXPECT_EQ(bare["integration"]["status"], named["integration"]["status"]);
+    EXPECT_EQ(bare["substitutions"], named["substitutions"]);
+    for (std::size_t i = 0; i < 2; ++i) {
+        EXPECT_EQ(bare["parts"][i]["origin"], named["parts"][i]["origin"]);
+        EXPECT_EQ(bare["parts"][i]["source"], named["parts"][i]["source"]);
+    }
+}
+
+TEST_F(ProjectPipelineTest, EmptyFallbackProvesTheIntegrationNeedsThePart) {
+    linked_project(root / "desk");
+    const auto result = cli({"test", "project", "desk", "--fallback", "2=empty", "--json"});
+    EXPECT_EQ(result.code, 2) << result.text;
+    const auto report = parsed(result);
+    EXPECT_EQ(report["parts"][1]["status"], "SKIPPED");
+    EXPECT_EQ(report["parts"][1]["origin"], "empty");
+    EXPECT_EQ(report["integration"]["status"], "ERROR");
+    EXPECT_NE(report["integration"]["error"].get<std::string>().find("nothing linked"),
+              std::string::npos)
+        << result.text;
+}
+
+TEST_F(ProjectPipelineTest, UnknownOrRepeatedLabelsAreRejected) {
+    linked_project(root / "desk");
+    write_file(root / "x.cpp", "int main() { return 0; }\n");
+    const auto unknown = cli({"test", "project", "desk", "--submission", "9=x.cpp"});
+    EXPECT_EQ(unknown.code, 2);
+    EXPECT_NE(unknown.text.find("unknown part label '9' (declared: 1, 2)"), std::string::npos)
+        << unknown.text;
+    const auto twice =
+        cli({"test", "project", "desk", "--submission", "1=x.cpp", "--submission", "1=x.cpp"});
+    EXPECT_EQ(twice.code, 2);
+    EXPECT_NE(twice.text.find("named twice"), std::string::npos) << twice.text;
+    const auto bad = cli({"test", "project", "desk", "--fallback", "1=maybe"});
+    EXPECT_EQ(bad.code, 2);
+    EXPECT_NE(bad.text.find("expected reference or empty"), std::string::npos) << bad.text;
+    const auto part = cli({"test", "project", "desk/ingest"});
+    EXPECT_EQ(part.code, 2);
+}
+
+TEST_F(ProjectPipelineTest, FallbackSubstitutionIsListed) {
+    linked_project(root / "desk", "integration:\n  fallback_dir: fallback\n");
+    write_file(root / "desk/integration/fallback/2.cpp",
+               "#include \"desk.hpp\"\nint book(int x) { return x + 5; }\n");
+    book_behavior(root / "desk");
+    write_file(root / "broken.cpp", "this is not C++\n");
+    const auto result = cli({"test", "project", "desk", "--submission", "2=broken.cpp", "--json"});
+    EXPECT_EQ(result.code, 2) << result.text;
+    const auto report = parsed(result);
+    EXPECT_EQ(report["parts"][1]["status"], "ERROR");
+    EXPECT_EQ(report["integration"]["status"], "PASS");
+    EXPECT_EQ(report["integration"]["parts"][1]["origin"], "fallback");
+    bool listed = false;
+    for (const auto& sub : report["substitutions"]) {
+        listed = listed || (sub["label"] == "2" && sub["origin"] == "fallback" &&
+                            sub["reason"] == "submission did not compile");
+    }
+    EXPECT_TRUE(listed) << report["substitutions"].dump();
+}
+
+TEST_F(ProjectPipelineTest, ScaffoldedProjectPasses) {
+    const auto init = cli({"package", "init", "Order Desk", "--project", "--parts", "3"});
+    ASSERT_EQ(init.code, 0) << init.text;
+    for (const auto* file :
+         {"order-desk/project.yaml", "order-desk/shared/contract.hpp",
+          "order-desk/integration/integration_gtest.cpp", "order-desk/parts/part-3/problem.yaml"}) {
+        EXPECT_TRUE(fs::exists(root / file)) << file;
+    }
+    const auto result = cli({"test", "project", "order-desk", "--json"});
+    EXPECT_EQ(result.code, 0) << result.text;
+    const auto report = parsed(result);
+    EXPECT_EQ(report["parts"].size(), 3U);
+    EXPECT_EQ(report["integration"]["status"], "PASS");
+    const auto again = cli({"package", "init", "Order Desk", "--project"});
+    EXPECT_EQ(again.code, 2);
 }
 
 }  // namespace

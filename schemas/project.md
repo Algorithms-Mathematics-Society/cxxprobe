@@ -46,10 +46,10 @@ of this contract.
 JSON Schema defaults are annotations, not mutations: the loader MUST apply
 the defaults. An empty sources list permits header-only shared content and does
 not require `shared.dir` to exist. An absent integration entry MUST remain valid;
-the future integration judge reports SKIPPED, following the presence-based checker
-convention in `src/problem/problem.cpp` and issue #5. Setting `fallback_dir` names
-a directory; fallback file naming and substitution behavior belong to #5/#6,
-not this manifest schema.
+the integration check then reports SKIPPED, following the presence-based checker
+convention in `src/problem/problem.cpp`. Setting `fallback_dir` names a directory
+in which `<label>.cpp` replaces a part whose source does not compile; the
+substitution is always reported (see `cxxprobe test project`).
 
 ## Paths and identities
 
@@ -102,10 +102,12 @@ silently overwriting an entry.
 and [draft PR #17](https://github.com/Algorithms-Mathematics-Society/cxxprobe-worker/pull/17)
 use `project_slug: "order-desk"` and `parts: {"1": "<submission URI>", ...}`.
 The manifest's label set is authoritative. Missing labels MUST be diagnosed by
-label; an explicit fallback can cover a missing submission under the future
-#6 CLI contract. Reject unknown submission/fallback labels. Do not derive labels
+label; an explicit fallback can cover a missing submission. `cxxprobe test project`
+rejects unknown or repeated submission/fallback labels. Do not derive labels
 from directory names or display names, or implicitly substitute a reference for
-a missing worker submission. Existing problem jobs remain unchanged.
+a missing worker submission: the CLI's default for an unsupplied part is
+`reference`, a setter convenience, so the worker passes `--fallback <label>=...`
+explicitly for every part it did not receive. Existing problem jobs remain unchanged.
 
 The package metadata seam PR #17 already reads is `manifest.json`:
 
@@ -199,5 +201,5 @@ part does not compile without its shared sources.
 attachments. A contest without projects has no `projects` key at all. Unpacking
 restores the project layout, so a packed project round-trips.
 
-Integration judging (#5/#6) and benchmarking are separate followups. Schema PR #18 remains the separate
+Benchmarking is a separate followup. Schema PR #18 remains the separate
 contract handoff; the runtime implementation is stacked on that contract.
