@@ -1,0 +1,3 @@
+# Test tools only; no engine/runtime dependency.
+jsonschema>=4.18,<5
+PyYAML>=6,<7

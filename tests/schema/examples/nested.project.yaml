@@ -1,0 +1,12 @@
+version: 1
+name: Nested paths
+shared:
+  dir: support/common
+  sources: [drivers/main.cpp, helpers/book.cpp]
+parts:
+  - {dir: components/input/ingest, label: ingest}
+  - {dir: components/output/book, label: Book-2}
+integration:
+  dir: checks/end-to-end
+  entry: suites/orders.cpp
+  fallback_dir: stubs/empty

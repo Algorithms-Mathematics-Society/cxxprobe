@@ -1,0 +1,4 @@
+version: 1
+name: Header-only parts
+parts:
+  - {dir: parts/core, label: Core_1}
