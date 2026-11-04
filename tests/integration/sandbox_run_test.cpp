@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <pthread.h>
 
 #include <chrono>
 #include <csignal>
@@ -19,9 +20,13 @@ using cxxprobe::sandbox::run;
 #ifndef CXXPROBE_BIGWRITER_PATH
 #error "CXXPROBE_BIGWRITER_PATH not defined — check CMakeLists"
 #endif
+#ifndef CXXPROBE_EARLYCLOSER_PATH
+#error "CXXPROBE_EARLYCLOSER_PATH not defined — check CMakeLists"
+#endif
 
 static constexpr const char* kMemhog = CXXPROBE_MEMHOG_PATH;
 static constexpr const char* kBigwriter = CXXPROBE_BIGWRITER_PATH;
+static constexpr const char* kEarlycloser = CXXPROBE_EARLYCLOSER_PATH;
 
 // ── fixture ───────────────────────────────────────────────────────────────────
 
@@ -134,6 +139,64 @@ TEST_F(SandboxTest, LargeStdinNoDeadlock) {
     Result res = run({"/bin/cat"}, large_stdin, default_limits());
     EXPECT_EQ(res.exit_code, 0);
     EXPECT_EQ(res.stdout_data.size(), large_stdin.size());
+}
+
+// ── stdin closed early ────────────────────────────────────────────────────────
+
+TEST_F(SandboxTest, StdinClosedEarlyDoesNotKillTheJudge) {
+    // 1 MiB of input against a program that reads 16 bytes and stops. That is
+    // far past the pipe buffer, so a write is always still in flight when the
+    // read end goes away, and the resulting SIGPIPE is delivered to *this*
+    // process. Before the fix this killed the test binary outright, so simply
+    // reaching an assertion below is most of what is being checked here.
+    std::string input(1UL * 1024UL * 1024UL, 'q');
+    Result res = run({kEarlycloser, "16"}, input, default_limits());
+    EXPECT_EQ(res.exit_code, 0);
+    EXPECT_EQ(res.stdout_data, input.substr(0, 16));
+}
+
+TEST_F(SandboxTest, StdinClosedEarlyStillReportsTheSubmissionsExitCode) {
+    // The verdict has to come from the submission, not from how the harness
+    // reacted to it: a program that stops reading and then fails is a failing
+    // submission, not a judge error.
+    std::string input(1UL * 1024UL * 1024UL, 'q');
+    Result res = run({"/bin/sh", "-c", "head -c 16 >/dev/null; exit 3"}, input, default_limits());
+    EXPECT_EQ(res.exit_code, 3);
+}
+
+TEST_F(SandboxTest, StdinWriterLeavesTheSigpipeDispositionAlone) {
+    // The tempting one-line fix is signal(SIGPIPE, SIG_IGN) somewhere in run(),
+    // which silently changes the signal behaviour of whatever process is
+    // embedding the judge. Blocking on the writer thread must not be visible
+    // from out here.
+    struct sigaction before{};
+    ASSERT_EQ(::sigaction(SIGPIPE, nullptr, &before), 0);
+
+    sigset_t mask_before;
+    ASSERT_EQ(::pthread_sigmask(SIG_BLOCK, nullptr, &mask_before), 0);
+
+    std::string input(1UL * 1024UL * 1024UL, 'q');
+    Result res = run({kEarlycloser, "16"}, input, default_limits());
+    EXPECT_EQ(res.exit_code, 0);
+
+    struct sigaction after{};
+    ASSERT_EQ(::sigaction(SIGPIPE, nullptr, &after), 0);
+    EXPECT_EQ(before.sa_handler, after.sa_handler);
+
+    sigset_t mask_after;
+    ASSERT_EQ(::pthread_sigmask(SIG_BLOCK, nullptr, &mask_after), 0);
+    EXPECT_EQ(::sigismember(&mask_before, SIGPIPE), ::sigismember(&mask_after, SIGPIPE));
+}
+
+TEST_F(SandboxTest, RepeatedEarlyCloseRunsAllSucceed) {
+    // Each run creates a fresh writer thread; every early close must consume
+    // its generated SIGPIPE before the writer restores its signal mask.
+    std::string input(256UL * 1024UL, 'q');
+    for (int i = 0; i < 5; ++i) {
+        Result res = run({kEarlycloser, "8"}, input, default_limits());
+        EXPECT_EQ(res.exit_code, 0) << "run " << i;
+        EXPECT_EQ(res.stdout_data, input.substr(0, 8)) << "run " << i;
+    }
 }
 
 // ── wall-clock timeout ────────────────────────────────────────────────────────
