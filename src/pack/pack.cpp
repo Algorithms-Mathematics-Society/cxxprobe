@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include "../problem/detail/package_files.hpp"
+#include "cxxprobe/project.hpp"
 #include "detail/zip_archive.hpp"
 
 #ifndef CXXPROBE_VERSION
@@ -62,6 +63,19 @@ PackResult pack_contest(const fs::path& contest_dir, const fs::path& output_path
         throw std::runtime_error("pack: no contest.yaml found in " + contest_dir.string());
     }
 
+    // Project archives need the #7 manifest contract. Validate project references
+    // (absolute paths are errors) before refusing an incomplete flattened pack.
+    if (opts.problem_slugs.empty()) {
+        for (const auto& entry : fs::directory_iterator(contest_dir)) {
+            if (entry.is_directory() && fs::exists(entry.path() / "project.yaml")) {
+                (void)cxxprobe::project::load_from_dir(entry.path());
+                throw std::runtime_error(
+                    "pack: project packaging is not yet supported; "
+                    "select ordinary problems explicitly");
+            }
+        }
+    }
+
     std::vector<fs::path> problem_dirs;
     if (opts.problem_slugs.empty()) {
         problem_dirs = cxxprobe::problem::find_problem_dirs(contest_dir);
@@ -86,6 +100,10 @@ PackResult pack_contest(const fs::path& contest_dir, const fs::path& output_path
     configs.reserve(problem_dirs.size());
     for (const auto& dir : problem_dirs) {
         configs.push_back(cxxprobe::problem::load_from_dir(dir));
+        if (configs.back().slug.contains('/')) {
+            throw std::runtime_error(
+                "pack: project parts require project packaging (not yet supported)");
+        }
     }
 
     Json manifest;

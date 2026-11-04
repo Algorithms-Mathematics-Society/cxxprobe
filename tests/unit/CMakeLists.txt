@@ -8,6 +8,7 @@ add_executable(
   gtest_report_test.cpp
   judge_json_test.cpp
   problem_config_test.cpp
+  project_test.cpp
   problem_preview_test.cpp
   pack_test.cpp
   pack_zip_archive_test.cpp
