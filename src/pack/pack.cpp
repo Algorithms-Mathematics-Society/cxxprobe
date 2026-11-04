@@ -28,6 +28,41 @@ namespace {
 
 constexpr int kManifestFormatVersion = 1;
 
+std::vector<fs::path> select_problem_dirs(const fs::path& contest_dir, const PackOptions& opts) {
+    // Project archives need the #7 manifest contract. Validate project references
+    // (absolute paths are errors) before refusing an incomplete flattened pack.
+    if (opts.problem_slugs.empty()) {
+        for (const auto& entry : fs::directory_iterator(contest_dir)) {
+            if (entry.is_directory() && fs::exists(entry.path() / "project.yaml")) {
+                (void)cxxprobe::project::load_from_dir(entry.path());
+                throw std::runtime_error(
+                    "pack: project packaging is not yet supported; "
+                    "select ordinary problems explicitly");
+            }
+        }
+    }
+
+    std::vector<fs::path> problem_dirs;
+    if (opts.problem_slugs.empty()) {
+        problem_dirs = cxxprobe::problem::find_problem_dirs(contest_dir);
+        std::ranges::sort(problem_dirs);
+    } else {
+        for (const auto& slug : opts.problem_slugs) {
+            if (!cxxprobe::problem::detail::safe_path(slug) || slug == "." ||
+                fs::path(slug).has_parent_path()) {
+                throw std::runtime_error("pack: unsafe requested problem slug");
+            }
+            fs::path dir = contest_dir / slug;
+            if (!fs::exists(dir / "problem.yaml")) {
+                throw std::runtime_error("pack: no problem '" + slug + "' found in " +
+                                         contest_dir.string());
+            }
+            problem_dirs.push_back(dir);
+        }
+    }
+    return problem_dirs;
+}
+
 std::string packed_at_now() {
     auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     return std::format("{:%Y-%m-%dT%H:%M:%SZ}", now);
@@ -63,37 +98,7 @@ PackResult pack_contest(const fs::path& contest_dir, const fs::path& output_path
         throw std::runtime_error("pack: no contest.yaml found in " + contest_dir.string());
     }
 
-    // Project archives need the #7 manifest contract. Validate project references
-    // (absolute paths are errors) before refusing an incomplete flattened pack.
-    if (opts.problem_slugs.empty()) {
-        for (const auto& entry : fs::directory_iterator(contest_dir)) {
-            if (entry.is_directory() && fs::exists(entry.path() / "project.yaml")) {
-                (void)cxxprobe::project::load_from_dir(entry.path());
-                throw std::runtime_error(
-                    "pack: project packaging is not yet supported; "
-                    "select ordinary problems explicitly");
-            }
-        }
-    }
-
-    std::vector<fs::path> problem_dirs;
-    if (opts.problem_slugs.empty()) {
-        problem_dirs = cxxprobe::problem::find_problem_dirs(contest_dir);
-        std::ranges::sort(problem_dirs);
-    } else {
-        for (const auto& slug : opts.problem_slugs) {
-            if (!cxxprobe::problem::detail::safe_path(slug) || slug == "." ||
-                fs::path(slug).has_parent_path()) {
-                throw std::runtime_error("pack: unsafe requested problem slug");
-            }
-            fs::path dir = contest_dir / slug;
-            if (!fs::exists(dir / "problem.yaml")) {
-                throw std::runtime_error("pack: no problem '" + slug + "' found in " +
-                                         contest_dir.string());
-            }
-            problem_dirs.push_back(dir);
-        }
-    }
+    auto problem_dirs = select_problem_dirs(contest_dir, opts);
 
     cxxprobe::problem::ProjectDefaults defaults;
     std::vector<cxxprobe::problem::ProblemConfig> configs;
