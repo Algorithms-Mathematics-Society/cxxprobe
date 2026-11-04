@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <format>
@@ -19,6 +20,7 @@
 #include "cxxprobe/problem.hpp"
 #include "cxxprobe/project.hpp"
 #include "cxxprobe/project_discovery.hpp"
+#include "cxxprobe/sandbox.hpp"
 
 namespace {
 namespace fs = std::filesystem;
@@ -40,6 +42,23 @@ struct Result {
     int code;
     std::string text;
 };
+
+// Compiling and running anything goes through the sandbox, which CI runners
+// cannot provide; those steps skip there, as the other pipeline tests do.
+bool sandbox_available() {
+    static const bool available = [] {
+        try {
+            cxxprobe::sandbox::Limits limits;
+            limits.wall = std::chrono::milliseconds{5000};
+            return cxxprobe::sandbox::run({"/bin/true"}, "", limits).exit_code == 0;
+        } catch (const std::exception&) {
+            return false;
+        }
+    }();
+    return available;
+}
+
+constexpr const char* kNoSandbox = "sandbox not available: needs user namespaces + writable cgroup";
 
 std::vector<std::string> archive_names(const fs::path& zip) {
     std::vector<std::string> names;
@@ -252,6 +271,9 @@ TEST_F(ProjectPipelineTest, SharedSourcesReachEveryPartBuild) {
     EXPECT_EQ(config.compiler.shared_sources, config.compiler.extra_sources);
     EXPECT_EQ(config.compiler.include_dirs, (std::vector<std::string>{"../../shared"}));
 
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     const auto result = cli({"test", "problem", "desk/one", "--json"});
     ASSERT_EQ(result.code, 0) << result.text;
     const auto report = nlohmann::json::parse(result.text);
@@ -262,6 +284,9 @@ TEST_F(ProjectPipelineTest, SharedSourcesReachEveryPartBuild) {
 
 TEST_F(ProjectPipelineTest, MissingSharedSourceFailsWithTheCompilerDiagnostic) {
     shared_project(root / "desk", "[]");
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     const auto result = cli({"test", "problem", "desk/one", "--json"});
     EXPECT_EQ(result.code, 2) << result.text;
     EXPECT_NE(result.text.find("order_total"), std::string::npos) << result.text;
@@ -322,6 +347,9 @@ TEST_F(ProjectPipelineTest, MixedContestPacksUnpacksAndStillPasses) {
     const auto unpacked = cli({"package", "unpack", "mixed.zip", "-C", "out"});
     ASSERT_EQ(unpacked.code, 0) << unpacked.text;
     EXPECT_NE(unpacked.text.find("Unpacked 1 project(s)"), std::string::npos) << unpacked.text;
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     const auto tested =
         cli({"test", "problem", "desk/one", "-C", (root / "out").string(), "--json"});
     EXPECT_EQ(tested.code, 0) << tested.text;
@@ -383,6 +411,9 @@ cxxprobe::judge::IntegrationReport integrate(const fs::path& desk) {
 }
 
 TEST_F(ProjectPipelineTest, CorrectPartsLinkAndTheSuitePasses) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     const auto report = integrate(root / "desk");
     ASSERT_EQ(report.status, cxxprobe::judge::Status::Pass)
@@ -399,6 +430,9 @@ TEST_F(ProjectPipelineTest, CorrectPartsLinkAndTheSuitePasses) {
 }
 
 TEST_F(ProjectPipelineTest, MissingDefinitionIsALinkErrorNamingTheLinkedParts) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     // Compiles alone, but never defines the book() the header promises.
     write_part(root / "desk/parts/book", "Book", "");
@@ -412,6 +446,9 @@ TEST_F(ProjectPipelineTest, MissingDefinitionIsALinkErrorNamingTheLinkedParts) {
 }
 
 TEST_F(ProjectPipelineTest, FailingCaseIsAttributedToItsPart) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     write_part(root / "desk/parts/book", "Book", "int book(int x) { return x; }");
     const auto report = integrate(root / "desk");
@@ -432,11 +469,17 @@ TEST_F(ProjectPipelineTest, NoIntegrationEntryIsSkippedAndPartsStillJudge) {
     EXPECT_EQ(report.status, cxxprobe::judge::Status::Skipped);
     EXPECT_FALSE(report.link.ran);
     EXPECT_EQ(report.parts.size(), 2U);
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     const auto part = cli({"test", "problem", "desk/ingest", "--json"});
     EXPECT_EQ(part.code, 0) << part.text;
 }
 
 TEST_F(ProjectPipelineTest, UncompilablePartIsReplacedByItsVisibleFallback) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk", "integration:\n  fallback_dir: fallback\n");
     write_file(root / "desk/integration/fallback/2.cpp",
                "#include \"desk.hpp\"\nint book(int x) { return x + 5; }\n");
@@ -491,6 +534,9 @@ nlohmann::json parsed(const Result& result) {
 }
 
 TEST_F(ProjectPipelineTest, TestProjectPassesOnACorrectProject) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     book_behavior(root / "desk");
     const auto result = cli({"test", "project", "desk", "--json"});
@@ -508,6 +554,9 @@ TEST_F(ProjectPipelineTest, TestProjectPassesOnACorrectProject) {
 }
 
 TEST_F(ProjectPipelineTest, BrokenPartFailsByNameWhileOthersKeepTheirVerdicts) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     book_behavior(root / "desk");
     write_file(root / "wrong.cpp",
@@ -531,6 +580,9 @@ TEST_F(ProjectPipelineTest, BrokenPartFailsByNameWhileOthersKeepTheirVerdicts) {
 }
 
 TEST_F(ProjectPipelineTest, NoSuppliedPartsEqualsTheBareForm) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     const auto bare = parsed(cli({"test", "project", "desk", "--json"}));
     const auto named = parsed(cli({"test", "project", "desk", "--json", "--fallback", "1=reference",
@@ -545,6 +597,9 @@ TEST_F(ProjectPipelineTest, NoSuppliedPartsEqualsTheBareForm) {
 }
 
 TEST_F(ProjectPipelineTest, EmptyFallbackProvesTheIntegrationNeedsThePart) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk");
     const auto result = cli({"test", "project", "desk", "--fallback", "2=empty", "--json"});
     EXPECT_EQ(result.code, 2) << result.text;
@@ -576,6 +631,9 @@ TEST_F(ProjectPipelineTest, UnknownOrRepeatedLabelsAreRejected) {
 }
 
 TEST_F(ProjectPipelineTest, FallbackSubstitutionIsListed) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
     linked_project(root / "desk", "integration:\n  fallback_dir: fallback\n");
     write_file(root / "desk/integration/fallback/2.cpp",
                "#include \"desk.hpp\"\nint book(int x) { return x + 5; }\n");
@@ -602,6 +660,9 @@ TEST_F(ProjectPipelineTest, ScaffoldedProjectPasses) {
          {"order-desk/project.yaml", "order-desk/shared/contract.hpp",
           "order-desk/integration/integration_gtest.cpp", "order-desk/parts/part-3/problem.yaml"}) {
         EXPECT_TRUE(fs::exists(root / file)) << file;
+    }
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
     }
     const auto result = cli({"test", "project", "order-desk", "--json"});
     EXPECT_EQ(result.code, 0) << result.text;
