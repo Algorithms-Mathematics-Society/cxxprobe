@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "../../src/pack/detail/zip_archive.hpp"
 #include "cxxprobe/problem.hpp"
 #include "cxxprobe/project_discovery.hpp"
 
@@ -37,6 +38,29 @@ struct Result {
     int code;
     std::string text;
 };
+
+std::vector<std::string> archive_names(const fs::path& zip) {
+    std::vector<std::string> names;
+    for (const auto& entry : cxxprobe::pack::detail::ZipReader{zip}.list_entries()) {
+        names.push_back(entry.name);
+    }
+    std::ranges::sort(names);
+    return names;
+}
+
+nlohmann::json archive_manifest(const fs::path& zip) {
+    const cxxprobe::pack::detail::ZipReader reader{zip};
+    for (const auto& entry : reader.list_entries()) {
+        if (entry.name == "manifest.json") {
+            return nlohmann::json::parse(reader.read_data(entry));
+        }
+    }
+    throw std::runtime_error("no manifest.json");
+}
+
+bool contains(const std::vector<std::string>& names, const std::string& name) {
+    return std::ranges::find(names, name) != names.end();
+}
 
 class ProjectPipelineTest : public ::testing::Test {
 protected:
@@ -153,12 +177,12 @@ TEST_F(ProjectPipelineTest, PlainOutputUnchangedWhenProjectAdded) {
     EXPECT_EQ(preview_before.text, preview_after.text);
 }
 
-TEST_F(ProjectPipelineTest, ProjectPackFailsWithoutWritingPartialArchive) {
+TEST_F(ProjectPipelineTest, SelectingOnePartOfAProjectIsRejected) {
     project("desk");
-    const auto result = cli({"package", "pack", "-o", "mixed.zip"});
+    const auto result = cli({"package", "pack", "--problems", "desk/one", "-o", "part.zip"});
     EXPECT_NE(result.code, 0);
-    EXPECT_NE(result.text.find("project packaging"), std::string::npos);
-    EXPECT_FALSE(fs::exists(root / "mixed.zip"));
+    EXPECT_NE(result.text.find("pack the project whole"), std::string::npos) << result.text;
+    EXPECT_FALSE(fs::exists(root / "part.zip"));
     problem(root / "warmup");
     const auto plain = cli({"package", "pack", "--problems", "warmup", "-o", "plain.zip"});
     EXPECT_EQ(plain.code, 0) << plain.text;
@@ -262,6 +286,67 @@ TEST_F(ProjectPipelineTest, InspectShowsInjectedSharedSources) {
     EXPECT_EQ(text.code, 0) << text.text;
     EXPECT_NE(text.text.find("shared sources  1"), std::string::npos) << text.text;
     EXPECT_NE(text.text.find("-I ../../shared"), std::string::npos) << text.text;
+}
+
+TEST_F(ProjectPipelineTest, MixedContestPacksUnpacksAndStillPasses) {
+    problem(root / "warmup");
+    shared_project(root / "desk", "[order.cpp]");
+    write_file(root / "desk/notes/scratch.txt", "not declared, not packed\n");
+    const auto packed = cli({"package", "pack", "-o", "mixed.zip"});
+    ASSERT_EQ(packed.code, 0) << packed.text;
+    EXPECT_NE(packed.text.find("desk  (Desk, 1 parts)"), std::string::npos) << packed.text;
+
+    const auto names = archive_names(root / "mixed.zip");
+    for (const auto* name : {"desk/project.yaml", "desk/shared/order.hpp", "desk/shared/order.cpp",
+                             "desk/parts/one/problem.yaml", "desk/parts/one/solutions/main.cpp",
+                             "warmup/problem.yaml"}) {
+        EXPECT_TRUE(contains(names, name)) << name;
+    }
+    EXPECT_FALSE(contains(names, "desk/notes/scratch.txt"));
+
+    const auto manifest = archive_manifest(root / "mixed.zip");
+    ASSERT_EQ(manifest["problems"].size(), 1U);
+    EXPECT_EQ(manifest["problems"][0]["slug"], "warmup");
+    ASSERT_EQ(manifest["projects"].size(), 1U);
+    const auto& desk = manifest["projects"][0];
+    EXPECT_EQ(desk["slug"], "desk");
+    EXPECT_EQ(desk["name"], "Desk");
+    ASSERT_EQ(desk["parts"].size(), 1U);
+    EXPECT_EQ(desk["parts"][0]["label"], "1");
+    EXPECT_EQ(desk["parts"][0]["slug"], "desk/one");
+    EXPECT_EQ(desk["parts"][0]["dir"], "parts/one");
+    EXPECT_EQ(desk["parts"][0]["preview"]["slug"], "desk/one");
+
+    const auto unpacked = cli({"package", "unpack", "mixed.zip", "-C", "out"});
+    ASSERT_EQ(unpacked.code, 0) << unpacked.text;
+    EXPECT_NE(unpacked.text.find("Unpacked 1 project(s)"), std::string::npos) << unpacked.text;
+    const auto tested =
+        cli({"test", "problem", "desk/one", "-C", (root / "out").string(), "--json"});
+    EXPECT_EQ(tested.code, 0) << tested.text;
+}
+
+TEST_F(ProjectPipelineTest, PlainContestManifestHasNoProjectsKey) {
+    problem(root / "warmup");
+    const auto packed = cli({"package", "pack", "-o", "plain.zip"});
+    ASSERT_EQ(packed.code, 0) << packed.text;
+    const auto manifest = archive_manifest(root / "plain.zip");
+    std::vector<std::string> keys;
+    for (const auto& [key, value] : manifest.items()) {
+        keys.push_back(key);
+    }
+    EXPECT_EQ(keys, (std::vector<std::string>{"contest", "cxxprobe_version", "format_version",
+                                              "packed_at", "problems"}));
+}
+
+TEST_F(ProjectPipelineTest, SymlinkedSharedSourceIsNeverPacked) {
+    shared_project(root / "desk", "[order.cpp]");
+    fs::rename(root / "desk/shared/order.cpp", root / "desk/shared/real.cpp");
+    fs::create_symlink("real.cpp", root / "desk/shared/order.cpp");
+    const auto result = cli({"package", "pack", "--problems", "desk", "-o", "desk.zip"});
+    EXPECT_NE(result.code, 0);
+    EXPECT_NE(result.text.find("shared source 'shared/order.cpp'"), std::string::npos)
+        << result.text;
+    EXPECT_FALSE(fs::exists(root / "desk.zip"));
 }
 
 }  // namespace

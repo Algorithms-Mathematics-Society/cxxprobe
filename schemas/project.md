@@ -113,8 +113,8 @@ The package metadata seam PR #17 already reads is `manifest.json`:
 {"projects": [{"slug": "order-desk", "parts": [{"label": "1"}, {"label": "2"}]}]}
 ```
 
-This is the minimum identity projection expected of future project packaging,
-not a complete package-manifest schema. `projects[].slug` MUST equal the project
+This is the minimum identity projection project packaging provides (see
+[Packing](#packing) for the full shape), not a complete package-manifest schema. `projects[].slug` MUST equal the project
 slug above and `parts[].label` MUST preserve each manifest label as a string.
 Additional packaging metadata, CLI argv, result formats, and substitution policy
 are outside this PR. The parent coordinates the worker contract handoff; this
@@ -176,11 +176,28 @@ rather than failing later with a duplicate-symbol link error. Loading a part rea
 only the project's `shared` section, never the other parts. `package inspect` on
 a part lists the injected sources and include directory.
 
-Until #7 supplies the project archive format, packing an entire contest containing
-a project fails before writing an archive. Selecting ordinary problems explicitly
-with `package pack --problems warmup` remains supported. Project paths are checked
-by the strict loader before packaging is rejected, so absolute references produce
-field diagnostics rather than silently disappearing from an archive.
+## Packing
 
-Integration judging (#5/#6), project packaging (#7), and benchmarking are separate followups. Schema PR #18 remains the separate
+`package pack` carries a project whole, beneath its slug: `project.yaml`, the
+`shared.dir` and `integration.dir` subtrees, and every declared part directory.
+Undeclared directories under the project are left out, and symlinks never enter
+an archive, so a shared source or part manifest that is a symlink stops the pack
+rather than producing an archive that cannot compile. `--problems order-desk`
+takes the project whole; `--problems order-desk/1-ingest` is an error, since a
+part does not compile without its shared sources.
+
+`manifest.json` keeps `problems[]` for plain problems exactly as before and adds
+`projects[]` only when a project is packed:
+
+```json
+{"projects": [{"slug": "order-desk", "name": "The Order Desk",
+  "parts": [{"label": "1", "slug": "order-desk/1-ingest", "dir": "parts/1-ingest",
+             "preview": {"slug": "order-desk/1-ingest", "...": "..."}}]}]}
+```
+
+`preview` is the same object a plain problem gets in `problems[]`, including its
+attachments. A contest without projects has no `projects` key at all. Unpacking
+restores the project layout, so a packed project round-trips.
+
+Integration judging (#5/#6) and benchmarking are separate followups. Schema PR #18 remains the separate
 contract handoff; the runtime implementation is stacked on that contract.

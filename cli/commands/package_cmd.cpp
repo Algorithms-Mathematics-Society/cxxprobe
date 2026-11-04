@@ -450,6 +450,13 @@ int PackageCommand::execute_pack() {
     for (const auto& p : result.problems) {
         std::cout << "  " << p.slug << "  (" << p.name << ")\n";
     }
+    if (!result.projects.empty()) {
+        std::cout << "Packed " << result.projects.size() << " project(s)\n";
+        for (const auto& project : result.projects) {
+            std::cout << "  " << project.slug << "  (" << project.name << ", "
+                      << project.parts.size() << " parts)\n";
+        }
+    }
     return 0;
 }
 
@@ -469,6 +476,12 @@ int PackageCommand::execute_unpack() {
               << result.dest_dir.string() << "\n";
     for (const auto& slug : result.problem_slugs) {
         std::cout << "  " << slug << "\n";
+    }
+    if (!result.project_slugs.empty()) {
+        std::cout << "Unpacked " << result.project_slugs.size() << " project(s)\n";
+        for (const auto& slug : result.project_slugs) {
+            std::cout << "  " << slug << "\n";
+        }
     }
     return 0;
 }
