@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <iostream>
@@ -104,11 +105,34 @@ void print_additional_solutions(const std::vector<cxxprobe::judge::SolutionCheck
                                      c.diagnostics);
             continue;
         }
-        std::cout << std::format("  {:<28} expected {:<4} got {:<4} {}{}{}\n", c.file,
-                                 c.expected_verdict, c.actual_verdict,
-                                 c.matched ? col.grn : col.yel, c.matched ? "OK" : "MISMATCH",
-                                 col.rst);
+        std::cout << std::format("  {:<28} {}{}{}\n", c.file, c.matched ? col.grn : col.yel,
+                                 c.matched ? "OK" : "MISMATCH", col.rst);
+        for (const auto& o : c.outcomes) {
+            if (!o.graded) {
+                // Reported so a setter can see what the mutant actually did to
+                // a check they said nothing about -- often the thing they meant
+                // to declare.
+                std::cout << std::format("    {:<10} {:<8} (not declared)\n", o.kind,
+                                         o.actual.empty() ? "-" : o.actual);
+                continue;
+            }
+            std::cout << std::format("    {:<10} expected {:<8} got {:<8} {}{}{}\n", o.kind,
+                                     o.expected, o.actual.empty() ? "-" : o.actual,
+                                     o.matched ? col.grn : col.yel, o.matched ? "ok" : "MISMATCH",
+                                     col.rst);
+        }
     }
+}
+
+// A declared mutant that stopped being caught means the problem's test data has
+// weakened, which is a problem-authoring failure even though the reference
+// solution is still correct. report.overall deliberately describes only the
+// primary solution, so it is combined here rather than folded into the report.
+bool any_solution_mismatch(const std::vector<cxxprobe::judge::SolutionCheck>& checks) {
+    return std::ranges::any_of(checks, [](const cxxprobe::judge::SolutionCheck& c) {
+        return !c.matched ||
+               (!c.diagnostics.empty() && c.actual_verdict.empty() && c.outcomes.empty());
+    });
 }
 
 int exit_code_for(Status s) {
@@ -216,7 +240,11 @@ int TestCommand::execute_test_problem() {
         print_human(report, quiet_, col);
         print_additional_solutions(solution_checks, col);
     }
-    return exit_code_for(report.overall);
+    int code = exit_code_for(report.overall);
+    if (code == 0 && any_solution_mismatch(solution_checks)) {
+        code = 1;
+    }
+    return code;
 }
 
 }  // namespace cxxprobe::cli
