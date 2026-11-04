@@ -16,6 +16,10 @@ struct ChildFds {
 };
 
 // Arguments for the child-side entry point.
+// Exit status a child uses when it could not pin itself to the requested
+// CPUs; the parent turns it into an exception rather than a program result.
+inline constexpr int kAffinityFailedExit = 125;
+
 struct ChildArgs {
     std::vector<std::string> argv;
     ChildFds fds;
@@ -23,6 +27,7 @@ struct ChildArgs {
     std::string cgroup_procs_path;       // absolute path to leaf's cgroup.procs
     std::size_t memory_limit_bytes{0};   // fallback RLIMIT_AS when cgroup migration is blocked
     unsigned long cpu_limit_seconds{0};  // RLIMIT_CPU; 0 = no enforcement
+    std::vector<int> cpu_affinity;       // sched_setaffinity before exec; empty = unchanged
 };
 
 // Entry point executed inside the cloned process (user + mount namespace).

@@ -114,20 +114,13 @@ int clone_entry(void* arg) {
 
 // ── CPU affinity ─────────────────────────────────────────────────────────────
 
-void apply_affinity(pid_t pid, const std::vector<int>& cpus) {
-    if (cpus.empty()) {
-        return;
-    }
-    cpu_set_t set;
-    CPU_ZERO(&set);
+// The child pins itself (child.cpp); this only refuses impossible requests
+// before any process exists.
+void check_affinity(const std::vector<int>& cpus) {
     for (int cpu : cpus) {
         if (cpu < 0 || cpu >= CPU_SETSIZE) {
             throw std::runtime_error{std::format("cpu_affinity: no such CPU {}", cpu)};
         }
-        CPU_SET(cpu, &set);
-    }
-    if (::sched_setaffinity(pid, sizeof(set), &set) != 0) {
-        throw std::runtime_error{std::format("sched_setaffinity: {}", std::strerror(errno))};
     }
 }
 
@@ -217,6 +210,8 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     std::string stdin_data,         // NOLINT(performance-unnecessary-value-param)
     Limits limits) {                // NOLINT(performance-unnecessary-value-param)
 
+    check_affinity(limits.cpu_affinity);
+
     // ── pipes ────────────────────────────────────────────────────────────
     auto stdin_pipe = make_pipe();
     auto stdout_pipe = make_pipe();
@@ -251,6 +246,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         .cpu_limit_seconds = limits.cpu.count() > 0
                                  ? static_cast<unsigned long>((limits.cpu.count() + 999) / 1000)
                                  : 0UL,
+        .cpu_affinity = limits.cpu_affinity,
     };
 
     // ── clone ─────────────────────────────────────────────────────────────
@@ -284,9 +280,8 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     // The parent cannot migrate arbitrary PIDs under nsdelegate; self-migration
     // always works.
 
-    // Pinning and counters attach to the child before it execs: affinity is
-    // inherited across exec, and the counters start at exec (enable_on_exec).
-    apply_affinity(child_pid, limits.cpu_affinity);
+    // The counters attach to the child before it execs and start at exec
+    // (enable_on_exec). The child has pinned itself by now if asked to.
     std::optional<detail::PerfCounter> instructions;
     std::optional<detail::PerfCounter> task_clock;
     if (limits.count_instructions) {
@@ -363,6 +358,10 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     }
     if (wr.timed_out) {
         result.exit_code = -SIGKILL;
+    }
+    if (!limits.cpu_affinity.empty() && result.exit_code == detail::kAffinityFailedExit &&
+        stderr_data.starts_with("cxxprobe: cannot pin")) {
+        throw std::runtime_error{"sandbox: cannot pin the child to the requested CPUs"};
     }
     result.peak_memory_bytes = stats.peak_memory_bytes;
     result.cpu_time = std::chrono::duration_cast<std::chrono::milliseconds>(stats.cpu_usage);
