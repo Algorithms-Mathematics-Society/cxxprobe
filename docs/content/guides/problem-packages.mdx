@@ -172,23 +172,40 @@ solutions:
     - { file: tle_quadratic.cpp, expected_verdict: TLE }
 ```
 
-`cxxprobe test problem` judges every non-primary entry against the same
-manual tests and reports what it actually earned:
+`cxxprobe test problem` runs enabled I/O, behavior, and symbolic checks for
+non-primary entries. `expected_verdict` is the legacy spelling for an I/O
+expectation; `expected` can name several checks:
 
-```text
-Additional solutions
-  wa_off_by_one.cpp            expected WA   got WA   OK
-  tle_quadratic.cpp            expected TLE  got AC   MISMATCH
+```yaml
+    - { file: second_reference.cpp }  # implicit I/O AC
+    - { file: bad_api.cpp, expected: { behavior: FAIL } }
+    - { file: forbidden_container.cpp, expected: { symbolic: FAIL } }
+    - { file: bad.cpp, expected: { io: WA, behavior: FAIL, symbolic: PASS } }
 ```
 
-A `MISMATCH` is the useful signal: the quadratic solution was *supposed* to
-time out, and didn't — so the test data is too small to separate an
-efficient solution from a slow one.
+I/O expectations use verdicts such as `AC`, `WA`, or `TLE`. Behavior and
+symbolic expectations use `PASS` or `FAIL`. An entry with no explicit
+expectation (including `expected: {}`) defaults to I/O `AC` when manual tests
+are enabled. An entry with only behavior or symbolic expectations has no
+implicit I/O expectation; other enabled checks are reported but ungraded.
+
+Every explicit expectation must be checked. If its check is disabled, including
+when absent resources leave it automatically disabled, the result is `SKIPPED`
+and `MISMATCH`, even when all checks are disabled. Explicitly enabling a check
+with missing resources is a configuration error. An explicit
+`expected: { io: AC }` also requires manual
+tests; the implicit reference AC applies only when manual tests are enabled.
+Removing a checker cannot make its declared mutant silently pass.
+
+A `MISMATCH` also reports weakened checks: a mutant declared `FAIL` that now
+passes, or a solution declared `WA` that now earns `AC`. JSON output records
+`graded`, `expected`, `actual`, and `matched` for each applicable check in
+`additional_solutions[].checks`, plus the solution's `matched` and `mismatch`.
+Text output shows the expected and actual results alongside `MISMATCH`.
 
 <Callout type="info">
-  Mismatches are reported but do not change the primary solution's own
-  Pass/Fail. "Is the reference solution correct?" and "is the test data
-  strong enough?" are separate questions and get separate answers.
+  Mismatches leave the primary solution's own `overall` result unchanged, but
+  make the command exit with status `1`. A primary judging error exits `2`.
 </Callout>
 
 Exactly one entry must set `primary: true` (unless there's only one entry, in

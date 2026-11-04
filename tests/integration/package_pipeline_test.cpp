@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <yaml-cpp/yaml.h>
 
 #include <algorithm>
 #include <array>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "../../src/pack/detail/zip_archive.hpp"
+#include "cxxprobe/problem.hpp"
 
 #ifndef CXXPROBE_CLI_PATH
 #error "CXXPROBE_CLI_PATH not defined — check CMakeLists"
@@ -62,6 +64,14 @@ void write_file(const fs::path& p, std::string_view content) {
     ofs << content;
 }
 
+void expect_declared_file(const fs::path& dir, const YAML::Node& section, const char* key) {
+    if (!section || !section[key]) {
+        return;
+    }
+    const auto file = dir / section[key].as<std::string>();
+    EXPECT_TRUE(fs::is_regular_file(file)) << file;
+}
+
 // The package verbs are pure filesystem/YAML work — no compiling, no
 // sandbox — so unlike the judging pipelines this suite runs everywhere.
 class PackagePipelineTest : public ::testing::Test {
@@ -101,10 +111,29 @@ TEST_F(PackagePipelineTest, InitScaffoldsTheV2Layout) {
     EXPECT_TRUE(fs::exists(dir / "statement" / "problem.md"));
     EXPECT_TRUE(fs::exists(dir / "solutions" / "main.cpp"));
     EXPECT_TRUE(fs::is_directory(dir / "tests"));
-    // Inference-driven sections are deliberately not pre-created.
+    // Optional sections are absent until the setter supplies their files.
     EXPECT_FALSE(fs::exists(dir / "validator"));
     EXPECT_FALSE(fs::exists(dir / "generators"));
     EXPECT_FALSE(fs::exists(dir / "attachments"));
+}
+
+TEST_F(PackagePipelineTest, InitWritesDeclaredFilesAndEnablesDeclaredChecks) {
+    ASSERT_EQ(run_cli({"package", "init", "Fresh"}, contest_dir_).exit_code, 0);
+    const fs::path dir = contest_dir_ / "fresh";
+    const auto yaml = YAML::LoadFile((dir / "problem.yaml").string());
+    const auto config = cxxprobe::problem::load_from_dir(dir);
+
+    // Every declared entry must exist; optional tools should only be examples
+    // until the setter supplies their implementation.
+    expect_declared_file(dir / config.statement.dir, yaml["statement"], "entry");
+    expect_declared_file(dir / config.validator.dir, yaml["validator"], "entry");
+    expect_declared_file(dir / config.generators.dir, yaml["generators"], "plan");
+    expect_declared_file(dir / config.checker.dir, yaml["checker"]["io"], "entry");
+    expect_declared_file(dir / config.checker.dir, yaml["checker"]["behavior"], "entry");
+    EXPECT_TRUE(config.checker.behavior.enabled);
+    EXPECT_FALSE(config.checker.io.enabled);
+    EXPECT_FALSE(config.tests.enabled);
+    EXPECT_FALSE(config.symbolic.enabled);
 }
 
 TEST_F(PackagePipelineTest, InitRefusesToOverwriteAnExistingDirectory) {

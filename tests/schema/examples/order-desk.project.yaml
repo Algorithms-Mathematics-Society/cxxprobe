@@ -1,0 +1,12 @@
+version: 1
+name: The Order Desk
+shared:
+  dir: shared
+  sources: [driver.cpp]
+parts:
+  - {dir: parts/1-ingest, label: "1"}
+  - {dir: parts/2-book, label: "2"}
+integration:
+  dir: integration
+  entry: integration_gtest.cpp
+  fallback_dir: fallback

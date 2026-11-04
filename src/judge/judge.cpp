@@ -299,7 +299,114 @@ void judge_manual_tests_section(const cxxprobe::problem::ProblemConfig& config,
 
 // Judges one already-declared solution against the manual tests and fills in
 // the verdict it actually earned.
+const char* expected_check_str(cxxprobe::problem::ExpectedCheck e) {
+    return e == cxxprobe::problem::ExpectedCheck::Fail ? "FAIL" : "PASS";
+}
+
+// Records one check type's outcome and grades it against what the setter
+// declared, if anything. An undeclared check is reported but not graded.
+void record_outcome(SolutionCheck& out, std::string kind,
+                    std::optional<cxxprobe::problem::ExpectedCheck> expected, std::string actual) {
+    SolutionCheckOutcome o;
+    o.kind = std::move(kind);
+    o.actual = std::move(actual);
+    if (expected) {
+        o.graded = true;
+        o.expected = expected_check_str(*expected);
+        o.matched = (o.expected == o.actual);
+    }
+    out.outcomes.push_back(std::move(o));
+}
+
+// Runs the manual tests for one declared solution and records the I/O outcome.
+// The I/O expectation keeps its original meaning -- a verdict, not PASS/FAIL --
+// and defaults to AC for references without any explicit check expectation.
+void check_solution_io(const cxxprobe::problem::ProblemConfig& config,
+                       const cxxprobe::problem::ResolvedCompiler& resolved,
+                       const cxxprobe::sandbox::Limits& run_limits, const std::string& checker_bin,
+                       const fs::path& source, const cxxprobe::problem::SolutionEntry& entry,
+                       SolutionCheck& out) {
+    fs::path binary = make_temp_path("cxxprobe-alt-solution");
+    cxxprobe::compile::Result cres = compile_source(config, resolved, source, binary);
+    if (!cres.ok) {
+        out.diagnostics = cres.diagnostics;
+        fs::remove(binary);
+    } else {
+        ManualTestsReport manual = run_manual_tests(config, run_limits, binary, checker_bin);
+        fs::remove(binary);
+
+        std::vector<cxxprobe::cases::Verdict> verdicts;
+        for (const auto& c : manual.cases) {
+            if (auto v = cxxprobe::cases::verdict_from_str(c.verdict)) {
+                verdicts.push_back(*v);
+            }
+        }
+        if (verdicts.empty()) {
+            out.diagnostics = "no test case produced a verdict (are .ans files present?)";
+        } else {
+            out.actual_verdict =
+                cxxprobe::cases::verdict_str(cxxprobe::cases::worst_verdict(verdicts));
+        }
+    }
+
+    SolutionCheckOutcome io;
+    io.kind = "io";
+    io.actual = out.actual_verdict;
+    if (entry.verdict_declared || (!entry.expected_behavior && !entry.expected_symbolic)) {
+        io.graded = true;
+        io.expected = cxxprobe::cases::verdict_str(entry.expected_verdict);
+        io.matched = (io.expected == io.actual);
+    }
+    out.outcomes.push_back(std::move(io));
+}
+
+// Builds and runs the behaviour checker against one declared solution. The
+// checker already takes the submission path, so a mutant grades through it the
+// same way `--submission` does.
+void check_solution_behavior(const cxxprobe::problem::ProblemConfig& config,
+                             const cxxprobe::problem::ProjectDefaults& defaults,
+                             const cxxprobe::problem::ResolvedCompiler& resolved,
+                             const fs::path& source, const cxxprobe::problem::SolutionEntry& entry,
+                             SolutionCheck& out) {
+    CompileStepReport behavior_compile;
+    Status status = Status::Error;
+    try {
+        status = run_behavior_checker(config, defaults, source, resolved, behavior_compile).status;
+    } catch (const std::exception&) {
+        status = Status::Error;
+    }
+    if (status == Status::Error && !behavior_compile.diagnostics.empty() &&
+        out.diagnostics.empty()) {
+        out.diagnostics = behavior_compile.diagnostics;
+    }
+    record_outcome(out, "behavior", entry.expected_behavior, status_str(status));
+}
+
+// Match every explicit expectation and the implicit I/O AC for references.
+void grade_declared_expectations(SolutionCheck& out) {
+    out.matched = true;
+    for (const auto& o : out.outcomes) {
+        if (o.graded && !o.matched) {
+            out.matched = false;
+            if (out.mismatch.empty()) {
+                out.mismatch = std::format("expected {} {}, got {}", o.kind, o.expected,
+                                           o.actual.empty() ? "nothing" : o.actual);
+            }
+        }
+    }
+}
+
+// Grades one declared non-primary solution against every check the problem
+// enables, not just the manual tests.
+//
+// A mutant is only interesting if some check catches it, and most interesting
+// mutants are invisible to manual tests: a clone that is not covariant, a
+// comparator that is not transitive, a solution reaching for the container a
+// symbolic rule forbids. Grading those against expected_verdict alone reported
+// a permanent MISMATCH that meant nothing, so the real check had to be run by
+// hand and never ran in CI at all.
 void check_one_solution(const cxxprobe::problem::ProblemConfig& config,
+                        const cxxprobe::problem::ProjectDefaults& defaults,
                         const cxxprobe::problem::ResolvedCompiler& resolved,
                         const cxxprobe::sandbox::Limits& run_limits, const std::string& checker_bin,
                         const cxxprobe::problem::SolutionEntry& entry, SolutionCheck& out) {
@@ -309,31 +416,38 @@ void check_one_solution(const cxxprobe::problem::ProblemConfig& config,
         return;
     }
 
-    fs::path binary = make_temp_path("cxxprobe-alt-solution");
-    cxxprobe::compile::Result cres = compile_source(config, resolved, source, binary);
-    if (!cres.ok) {
-        out.diagnostics = cres.diagnostics;
-        fs::remove(binary);
-        return;
-    }
-
-    ManualTestsReport manual = run_manual_tests(config, run_limits, binary, checker_bin);
-    fs::remove(binary);
-
-    std::vector<cxxprobe::cases::Verdict> verdicts;
-    for (const auto& c : manual.cases) {
-        if (auto v = cxxprobe::cases::verdict_from_str(c.verdict)) {
-            verdicts.push_back(*v);
+    // Symbolic reads the source text, so it runs whether or not this mutant
+    // compiles -- and a gate mutant that fails to compile still has a
+    // meaningful symbolic result.
+    if (config.symbolic.enabled) {
+        std::string actual;
+        try {
+            cxxprobe::symbolic::Report sym = cxxprobe::symbolic::run(config.symbolic, source);
+            actual = sym.passed ? "PASS" : "FAIL";
+        } catch (const std::exception&) {
+            actual = "ERROR";
         }
-    }
-    if (verdicts.empty()) {
-        out.diagnostics = "no test case produced a verdict (are .ans files present?)";
-        return;
+        record_outcome(out, "symbolic", entry.expected_symbolic, std::move(actual));
+    } else if (entry.expected_symbolic) {
+        record_outcome(out, "symbolic", entry.expected_symbolic, "SKIPPED");
     }
 
-    cxxprobe::cases::Verdict worst = cxxprobe::cases::worst_verdict(verdicts);
-    out.actual_verdict = cxxprobe::cases::verdict_str(worst);
-    out.matched = (worst == entry.expected_verdict);
+    if (config.tests.enabled) {
+        check_solution_io(config, resolved, run_limits, checker_bin, source, entry, out);
+    } else if (entry.verdict_declared) {
+        SolutionCheckOutcome io;
+        io.kind = "io";
+        io.graded = true;
+        io.expected = cxxprobe::cases::verdict_str(entry.expected_verdict);
+        io.actual = "SKIPPED";
+        out.outcomes.push_back(std::move(io));
+    }
+    if (config.checker.behavior.enabled) {
+        check_solution_behavior(config, defaults, resolved, source, entry, out);
+    } else if (entry.expected_behavior) {
+        record_outcome(out, "behavior", entry.expected_behavior, "SKIPPED");
+    }
+    grade_declared_expectations(out);
 }
 
 }  // namespace
@@ -502,10 +616,9 @@ std::vector<SolutionCheck> verify_additional_solutions(
     const cxxprobe::problem::ProblemConfig& config,
     const cxxprobe::problem::ProjectDefaults& defaults) {
     std::vector<SolutionCheck> checks;
-    if (config.solutions.entries.size() <= 1 || !config.tests.enabled) {
+    if (config.solutions.entries.size() <= 1) {
         return checks;
     }
-
     cxxprobe::problem::ResolvedCompiler resolved =
         cxxprobe::problem::resolve_compiler(config.compiler, defaults);
     cxxprobe::sandbox::Limits run_limits =
@@ -513,8 +626,12 @@ std::vector<SolutionCheck> verify_additional_solutions(
 
     // Built once and shared across every declared solution — recompiling the
     // checker per solution would multiply the cost of a problem with several
-    // reference solutions for no benefit.
-    CheckerBuild checker = build_io_checker(config, resolved);
+    // reference solutions for no benefit. Only the manual tests use it, so a
+    // problem without them does not pay for it.
+    CheckerBuild checker;
+    if (config.tests.enabled) {
+        checker = build_io_checker(config, resolved);
+    }
 
     for (const auto& entry : config.solutions.entries) {
         if (entry.primary) {
@@ -523,12 +640,12 @@ std::vector<SolutionCheck> verify_additional_solutions(
         SolutionCheck out;
         out.file = entry.file;
         out.expected_verdict = cxxprobe::cases::verdict_str(entry.expected_verdict);
-        if (!checker.ok) {
+        if (config.tests.enabled && !checker.ok) {
             out.diagnostics = "checker failed to compile:\n" + checker.report.diagnostics;
         } else {
             try {
-                check_one_solution(config, resolved, run_limits, checker.binary.string(), entry,
-                                   out);
+                check_one_solution(config, defaults, resolved, run_limits, checker.binary.string(),
+                                   entry, out);
             } catch (const std::exception& ex) {
                 out.diagnostics = ex.what();
             }

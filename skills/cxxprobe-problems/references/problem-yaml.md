@@ -103,9 +103,47 @@ Exactly one entry must be `primary: true`, unless there is only one entry.
 With no `entries:` block, a single `.cpp` in `solutions/` is inferred as
 primary — two or more is ambiguous and fails to load.
 
-Non-primary entries are judged against the same manual tests and reported in
+Non-primary entries are graded against **every check the problem enables** --
+manual tests, the behaviour checker and the symbolic rules -- and reported in
 an "Additional solutions" section. A `MISMATCH` there means your test data is
-not doing the job you assumed it was.
+not doing the job you assumed it was, and it fails `test problem` (exit 1), so
+weakened data shows up in CI rather than in a round.
+
+`expected_verdict` grades the manual tests only, so it cannot express a mutant
+that no manual test can catch -- a clone that is not covariant, a comparator
+that is not transitive, a solution reaching for a container a rule forbids. For
+those, say which check should fail:
+
+```yaml
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: wa_off_by_one.cpp,  expected_verdict: WA }        # manual tests
+    - { file: re_double_free.cpp, expected: { behavior: FAIL } }
+    - { file: gate_uses_vector.cpp, expected: { symbolic: FAIL } }
+    - { file: both.cpp, expected: { io: WA, behavior: FAIL } }
+```
+
+Keys are `io`, `behavior` and `symbolic`; the latter two take `PASS` or `FAIL`.
+An unknown key is an error rather than a no-op, because a typo like
+`behaviour:` would otherwise declare nothing and report a silent pass.
+
+For an entry with explicit expectations, other enabled checks are reported
+but ungraded. Adding a behaviour checker therefore does not retroactively
+fail mutants declared only against I/O. An entry with no explicit expectation
+(including `expected: {}`) is a second reference solution: it defaults to I/O
+`AC` when manual tests are enabled and mismatches if it earns `WA` or another
+verdict. Behavior-only and symbolic-only mutants have no implicit I/O `AC`.
+
+Explicit expectations require their checks to run. A disabled check, including
+one automatically disabled because its resources are missing, is reported as
+`SKIPPED` and mismatches even when all checks are disabled. Explicitly enabling
+a check with missing resources is a configuration error. These mismatches
+make `test problem` exit `1` while preserving the primary solution's own
+`overall` result.
+
+Declare mutants rather than running each one by hand through `--submission`:
+by hand is the labour this exists to remove, and it never runs in CI.
 
 ## `symbolic`
 
