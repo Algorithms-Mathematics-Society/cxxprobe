@@ -2,6 +2,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
@@ -14,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "cxxprobe/judge.hpp"
 #include "cxxprobe/sandbox.hpp"
 
 #ifndef CXXPROBE_CLI_PATH
@@ -134,6 +136,15 @@ TEST_F(ProblemPipelineTest, FullRoundTripPassesAtBaseline) {
     json j = json::parse(r.stdout_text);
     EXPECT_EQ(j["overall"], "PASS");
     EXPECT_EQ(j["tests"]["behavior"]["status"], "PASS");
+    EXPECT_GT(j["tests"]["behavior"]["total"].get<int>(), 0);
+
+    // The CLI omits GTest's execution fields; inspect the library report so
+    // a disabled or skipped placeholder cannot satisfy this regression.
+    const auto report = cxxprobe::judge::run_problem(cxxprobe::problem::load_from_dir(problem_dir),
+                                                     cxxprobe::problem::ProjectDefaults{});
+    EXPECT_TRUE(std::ranges::any_of(report.behavior.cases, [](const auto& test) {
+        return test.status == "RUN" && test.result == "COMPLETED";
+    }));
 }
 
 TEST_F(ProblemPipelineTest, ManualTestFailureReportedIndependently) {
@@ -197,6 +208,7 @@ TEST_F(ProblemPipelineTest, CompileFailureReportsErrorNotFail) {
 TEST_F(ProblemPipelineTest, SubmissionOverrideGradesDifferentFile) {
     fs::path problem_dir = scaffold_baseline();
     write_file(problem_dir / "other.cpp", kCorrectSolution);
+    write_file(problem_dir / "solutions" / "main.cpp", "#error primary must not be compiled\n");
 
     auto r = run_cli({"test", "problem", "sum-two-numbers", "--submission", "other.cpp", "--json"},
                      problem_dir);
@@ -205,6 +217,18 @@ TEST_F(ProblemPipelineTest, SubmissionOverrideGradesDifferentFile) {
     EXPECT_EQ(j["overall"], "PASS");
     std::string submission = j["submission"].get<std::string>();
     EXPECT_NE(submission.find("other.cpp"), std::string::npos);
+}
+
+TEST_F(ProblemPipelineTest, SubmissionOverrideCompilesTheSelectedFile) {
+    fs::path problem_dir = scaffold_baseline();
+    write_file(problem_dir / "other.cpp", "#error selected submission must be compiled\n");
+
+    auto r = run_cli({"test", "problem", "sum-two-numbers", "--submission", "other.cpp", "--json"},
+                     problem_dir);
+    EXPECT_EQ(r.exit_code, 2) << r.stdout_text;
+    json j = json::parse(r.stdout_text);
+    EXPECT_EQ(j["overall"], "ERROR");
+    EXPECT_FALSE(j["compile"]["behavior_binary"]["ok"].get<bool>());
 }
 
 // ─── additional declared solutions ──────────────────────────────────────────
