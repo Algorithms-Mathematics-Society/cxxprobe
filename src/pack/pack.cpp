@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "../problem/detail/package_files.hpp"
 #include "detail/zip_archive.hpp"
 
 #ifndef CXXPROBE_VERSION
@@ -26,21 +27,6 @@ namespace {
 
 constexpr int kManifestFormatVersion = 1;
 
-bool matches_denylisted_dir(const std::string& name) {
-    static const std::vector<std::string> kExact = {".git",  ".svn",   ".hg",
-                                                    "build", ".cache", "__pycache__"};
-    if (std::ranges::find(kExact, name) != kExact.end()) {
-        return true;
-    }
-    return name.starts_with("cmake-build-");
-}
-
-bool matches_denylisted_file(const std::string& name) {
-    return name == "a.out" || name == ".DS_Store" || name.ends_with(".swp") ||
-           name.ends_with(".swo") || name.ends_with("~") || name.ends_with(".o") ||
-           name.ends_with(".obj");
-}
-
 std::string packed_at_now() {
     auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     return std::format("{:%Y-%m-%dT%H:%M:%SZ}", now);
@@ -55,27 +41,6 @@ void warn_if_absolute_reference(const cxxprobe::problem::ProblemConfig& config) 
     if (config.tests.manifest && fs::path(*config.tests.manifest).is_absolute()) {
         std::cerr << "cxxprobe: warning: problem '" << config.slug
                   << "': tests.manifest is an absolute path and will not be included in the pack\n";
-    }
-}
-
-void add_problem_dir_to_zip(ZipWriter& writer, const fs::path& problem_dir,
-                            const std::string& slug) {
-    for (auto it = fs::recursive_directory_iterator(problem_dir);
-         it != fs::recursive_directory_iterator(); ++it) {
-        const fs::path& path = it->path();
-        std::string name = path.filename().string();
-        if (it->is_directory()) {
-            if (matches_denylisted_dir(name)) {
-                it.disable_recursion_pending();
-            }
-            continue;
-        }
-        if (matches_denylisted_file(name)) {
-            continue;
-        }
-        fs::path rel = fs::relative(path, problem_dir);
-        std::string entry_name = slug + "/" + rel.generic_string();
-        writer.add_file(entry_name, path);
     }
 }
 
@@ -103,6 +68,10 @@ PackResult pack_contest(const fs::path& contest_dir, const fs::path& output_path
         std::ranges::sort(problem_dirs);
     } else {
         for (const auto& slug : opts.problem_slugs) {
+            if (!cxxprobe::problem::detail::safe_path(slug) || slug == "." ||
+                fs::path(slug).has_parent_path()) {
+                throw std::runtime_error("pack: unsafe requested problem slug");
+            }
             fs::path dir = contest_dir / slug;
             if (!fs::exists(dir / "problem.yaml")) {
                 throw std::runtime_error("pack: no problem '" + slug + "' found in " +
@@ -128,11 +97,29 @@ PackResult pack_contest(const fs::path& contest_dir, const fs::path& output_path
     manifest["contest"] = std::move(contest_json);
 
     Json problems_json = Json::array();
+    std::vector<std::vector<std::string>> packed_files;
     PackResult result;
     result.output_path = output_path;
     for (const auto& config : configs) {
         warn_if_absolute_reference(config);
-        problems_json.push_back(cxxprobe::problem::preview_to_json(config, defaults));
+        namespace detail = cxxprobe::problem::detail;
+        if (!detail::safe_path(config.slug) || config.slug == "." ||
+            !fs::is_directory(fs::symlink_status(config.problem_dir))) {
+            throw std::runtime_error("pack: unsafe problem directory");
+        }
+        auto dir = detail::attachment_dir(config);
+        auto files = detail::package_files(config.problem_dir);
+        auto candidates = detail::attachment_subset(files, dir);
+        if (candidates.empty() &&
+            (config.attachments.declared || fs::exists(config.problem_dir / dir))) {
+            std::cerr << "cxxprobe: warning: problem '" << config.slug
+                      << "': attachments directory '" << dir
+                      << "' is missing or contains no packable candidate files\n";
+        }
+        auto preview = cxxprobe::problem::preview_to_json(config, defaults);
+        preview["attachments"] = Json{{"dir", dir}, {"files", candidates}};
+        problems_json.push_back(std::move(preview));
+        packed_files.push_back(std::move(files));
         result.problems.push_back(PackedProblem{.slug = config.slug, .name = config.name});
     }
     manifest["problems"] = std::move(problems_json);
@@ -140,8 +127,11 @@ PackResult pack_contest(const fs::path& contest_dir, const fs::path& output_path
     ZipWriter writer(output_path);
     writer.add_data("manifest.json", manifest.dump(2));
     writer.add_file("contest.yaml", contest_dir / "contest.yaml");
-    for (const auto& config : configs) {
-        add_problem_dir_to_zip(writer, config.problem_dir, config.slug);
+    for (std::size_t i = 0; i < configs.size(); ++i) {
+        const auto& config = configs[i];
+        for (const auto& file : packed_files[i]) {
+            writer.add_file(config.slug + "/" + file, config.problem_dir / file);
+        }
     }
     writer.close();
 

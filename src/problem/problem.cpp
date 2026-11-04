@@ -445,6 +445,7 @@ SolutionsConfig parse_solutions_section(const YAML::Node& doc,
 AttachmentsConfig parse_attachments_section(const YAML::Node& doc) {
     AttachmentsConfig attachments;
     YAML::Node a = doc["attachments"];
+    attachments.declared = a && !a.IsNull();
     if (a && a["dir"]) {
         attachments.dir = a["dir"].as<std::string>();
     }

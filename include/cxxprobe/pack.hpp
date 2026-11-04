@@ -24,7 +24,9 @@ struct PackResult {
 
 // Packs contest_dir (must contain a contest.yaml) into a zip at
 // output_path: manifest.json + a verbatim copy of contest.yaml + a
-// denylist-filtered verbatim copy of each selected problem directory.
+// sorted, denylist-filtered regular files of each selected problem directory.
+// Symlinks and special files are excluded. Per-problem attachments metadata
+// lists packed candidate files relative to the configured attachments directory.
 // Fail-fast: throws std::runtime_error if contest_dir has no contest.yaml,
 // a requested slug in opts.problem_slugs doesn't exist, or any selected
 // problem's problem.yaml fails to load.

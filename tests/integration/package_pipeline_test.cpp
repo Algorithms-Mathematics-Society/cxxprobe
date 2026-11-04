@@ -2,16 +2,20 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <iomanip>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "../../src/pack/detail/zip_archive.hpp"
 
 #ifndef CXXPROBE_CLI_PATH
 #error "CXXPROBE_CLI_PATH not defined — check CMakeLists"
@@ -185,4 +189,142 @@ TEST_F(PackagePipelineTest, TopLevelPackAndUnpackAndNewProblemAreGone) {
     EXPECT_NE(run_cli({"pack"}, contest_dir_).exit_code, 0);
     EXPECT_NE(run_cli({"unpack", "x.zip"}, contest_dir_).exit_code, 0);
     EXPECT_NE(run_cli({"new", "problem", "Nope"}, contest_dir_).exit_code, 0);
+}
+
+TEST_F(PackagePipelineTest, AttachmentInspectValidateAndPackUseTheConfiguredDirectory) {
+    ASSERT_EQ(run_cli({"package", "init", "Candidate"}, contest_dir_).exit_code, 0);
+    auto root = contest_dir_ / "candidate";
+    write_file(root / "problem.yaml",
+               "version: 2\nname: Candidate\nattachments: {dir: candidate/start}\n");
+    for (bool empty : {false, true}) {
+        if (empty) {
+            fs::create_directories(root / "candidate" / "start");
+        }
+        auto validation = run_cli({"package", "validate", "candidate", "--json"}, contest_dir_);
+        ASSERT_EQ(validation.exit_code, 0) << validation.stdout_text;
+        auto warnings = json::parse(validation.stdout_text)["warnings"].dump();
+        EXPECT_NE(warnings.find("no packable candidate files"), std::string::npos);
+        auto packed =
+            run_cli({"package", "pack", "-o", (base_dir_ / "pack.zip").string()}, contest_dir_);
+        EXPECT_EQ(packed.exit_code, 0) << packed.stdout_text;
+        EXPECT_NE(packed.stdout_text.find("no packable candidate files"), std::string::npos);
+        auto inspected = run_cli({"package", "inspect", "candidate", "--json"}, contest_dir_);
+        ASSERT_EQ(inspected.exit_code, 0) << inspected.stdout_text;
+        EXPECT_EQ(json::parse(inspected.stdout_text)["attachments"]["files"], json::array());
+    }
+    write_file(root / "candidate" / "start" / "nested" / "helper.hpp", "header");
+    write_file(root / "candidate" / "start" / "main.cpp", "starter");
+    write_file(root / "candidate" / "start" / "skip.o", "excluded");
+    auto inspected = run_cli({"package", "inspect", "candidate", "--json"}, contest_dir_);
+    ASSERT_EQ(inspected.exit_code, 0) << inspected.stdout_text;
+    auto attachments = json::parse(inspected.stdout_text)["attachments"];
+    EXPECT_EQ(attachments["dir"], "candidate/start");
+    EXPECT_EQ(attachments["files"], (std::vector<std::string>{"main.cpp", "nested/helper.hpp"}));
+    auto text = run_cli({"package", "inspect", "candidate"}, contest_dir_);
+    EXPECT_EQ(text.exit_code, 0) << text.stdout_text;
+    EXPECT_NE(text.stdout_text.find("candidate/start (2 candidate files)"), std::string::npos);
+    EXPECT_NE(text.stdout_text.find("nested/helper.hpp"), std::string::npos);
+    auto packed =
+        run_cli({"package", "pack", "-o", (base_dir_ / "pack.zip").string()}, contest_dir_);
+    EXPECT_EQ(packed.exit_code, 0) << packed.stdout_text;
+    EXPECT_EQ(packed.stdout_text.find("no packable candidate files"), std::string::npos);
+    write_file(root / "problem.yaml",
+               "version: 2\nname: Candidate\nattachments: {dir: ../private}\n");
+    EXPECT_EQ(run_cli({"package", "validate", "candidate", "--json"}, contest_dir_).exit_code, 1);
+    EXPECT_EQ(run_cli({"package", "inspect", "candidate", "--json"}, contest_dir_).exit_code, 2);
+    EXPECT_EQ(run_cli({"package", "pack", "-o", (base_dir_ / "unsafe.zip").string()}, contest_dir_)
+                  .exit_code,
+              2);
+}
+
+TEST_F(PackagePipelineTest, ControlCharactersCannotEnterAttachmentMetadataOrArchivePaths) {
+    ASSERT_EQ(run_cli({"package", "init", "Controls"}, contest_dir_).exit_code, 0);
+    auto root = contest_dir_ / "controls";
+    write_file(root / "attachments" / "main.cpp", "starter");
+    for (int code = 1; code <= 127; ++code) {
+        if (code >= 32 && code != 127) {
+            continue;
+        }
+        auto name = std::string("bad") + static_cast<char>(code) + ".cpp";
+        write_file(root / "attachments" / name, "excluded");
+        write_file(
+            root / "attachments" / (std::string("dir") + static_cast<char>(code)) / "leak.cpp",
+            "excluded");
+    }
+    auto inspected = run_cli({"package", "inspect", "controls", "--json"}, contest_dir_);
+    ASSERT_EQ(inspected.exit_code, 0) << inspected.stdout_text;
+    EXPECT_EQ(json::parse(inspected.stdout_text)["attachments"]["files"],
+              (std::vector<std::string>{"main.cpp"}));
+    auto packed =
+        run_cli({"package", "pack", "-o", (base_dir_ / "controls.zip").string()}, contest_dir_);
+    ASSERT_EQ(packed.exit_code, 0) << packed.stdout_text;
+    cxxprobe::pack::detail::ZipReader reader(base_dir_ / "controls.zip");
+    auto entries = reader.list_entries();
+    for (const auto& entry : entries) {
+        EXPECT_FALSE(
+            std::ranges::any_of(entry.name, [](unsigned char ch) { return ch < 32 || ch == 127; }));
+    }
+    auto manifest = json::parse(reader.read_data(entries.front()));
+    EXPECT_EQ(manifest["problems"][0]["attachments"]["files"],
+              (std::vector<std::string>{"main.cpp"}));
+    for (int code = 0; code <= 127; ++code) {
+        if (code >= 32 && code != 127) {
+            continue;
+        }
+        std::ostringstream yaml;
+        yaml << "version: 2\nname: Controls\nattachments: {dir: \"bad\\x" << std::hex
+             << std::setw(2) << std::setfill('0') << code << "\"}\n";
+        write_file(root / "problem.yaml", yaml.str());
+        EXPECT_EQ(run_cli({"package", "inspect", "controls", "--json"}, contest_dir_).exit_code, 2)
+            << code;
+        EXPECT_EQ(run_cli({"package", "validate", "controls", "--json"}, contest_dir_).exit_code, 1)
+            << code;
+        EXPECT_EQ(
+            run_cli({"package", "pack", "-o", (base_dir_ / "unsafe.zip").string()}, contest_dir_)
+                .exit_code,
+            2)
+            << code;
+    }
+}
+
+TEST_F(PackagePipelineTest, RenamedPrivateDirectoriesFreeTheirConventionalNamesForAttachments) {
+    for (const auto& section : {"solutions", "checker", "tests", "validator", "generators"}) {
+        std::string slug = std::string("reuse-") + section;
+        auto initialized = run_cli({"package", "init", slug}, contest_dir_);
+        ASSERT_EQ(initialized.exit_code, 0) << initialized.stdout_text;
+        auto root = contest_dir_ / slug;
+        if (fs::exists(root / section)) {
+            fs::rename(root / section, root / "private");
+        }
+        write_file(root / section / "starter.cpp", "// candidate starter\n");
+        write_file(root / "problem.yaml", "version: 2\nname: Reused\n" + std::string(section) +
+                                              ": {dir: ./private/}\nattachments: {dir: " + section +
+                                              "}\n");
+        auto validation = run_cli({"package", "validate", slug, "--json"}, contest_dir_);
+        EXPECT_EQ(validation.exit_code, 0) << validation.stdout_text;
+        auto inspected = run_cli({"package", "inspect", slug, "--json"}, contest_dir_);
+        ASSERT_EQ(inspected.exit_code, 0) << inspected.stdout_text;
+        auto metadata = json::parse(inspected.stdout_text)["attachments"];
+        EXPECT_EQ(metadata["dir"], section);
+        EXPECT_EQ(metadata["files"], (std::vector<std::string>{"starter.cpp"}));
+        auto packed = run_cli(
+            {"package", "pack", "--problems", slug, "-o", (base_dir_ / "reuse.zip").string()},
+            contest_dir_);
+        ASSERT_EQ(packed.exit_code, 0) << packed.stdout_text;
+        cxxprobe::pack::detail::ZipReader reader(base_dir_ / "reuse.zip");
+        auto entries = reader.list_entries();
+        auto manifest = json::parse(reader.read_data(entries.front()));
+        EXPECT_EQ(manifest["problems"][0]["attachments"], metadata);
+        // Moving the actual private directory under the candidate directory still fails.
+        write_file(root / "problem.yaml", "version: 2\nname: Reused\n" + std::string(section) +
+                                              ": {dir: " + section +
+                                              "/private}\nattachments: {dir: " + section + "}\n");
+        EXPECT_EQ(run_cli({"package", "validate", slug, "--json"}, contest_dir_).exit_code, 1);
+        EXPECT_EQ(run_cli({"package", "inspect", slug, "--json"}, contest_dir_).exit_code, 2);
+        EXPECT_EQ(run_cli({"package", "pack", "--problems", slug, "-o",
+                           (base_dir_ / "unsafe.zip").string()},
+                          contest_dir_)
+                      .exit_code,
+                  2);
+    }
 }

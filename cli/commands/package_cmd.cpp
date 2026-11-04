@@ -326,8 +326,10 @@ int PackageCommand::execute_inspect() {
     }
 
     cxxprobe::problem::ProblemConfig config;
+    cxxprobe::problem::AttachmentFiles attachments;
     try {
         config = cxxprobe::problem::load_from_dir(*problem_dir);
+        attachments = cxxprobe::problem::inspect_attachments(config);
     } catch (const std::exception& ex) {
         std::cerr << "cxxprobe: " << ex.what() << "\n";
         return 2;
@@ -335,6 +337,7 @@ int PackageCommand::execute_inspect() {
 
     cxxprobe::problem::ProjectDefaults defaults;
     nlohmann::ordered_json preview = cxxprobe::problem::preview_to_json(config, defaults);
+    preview["attachments"] = {{"dir", attachments.dir}, {"files", attachments.files}};
     if (json_output_) {
         std::cout << preview.dump(2) << "\n";
         return 0;
@@ -356,6 +359,11 @@ int PackageCommand::execute_inspect() {
                              preview["has_checker_io"].get<bool>() ? "yes" : "no");
     std::cout << std::format("  behavior check  {}\n",
                              preview["has_behavior_checker"].get<bool>() ? "yes" : "no");
+    std::cout << std::format("  attachments     {} ({} candidate files)\n", attachments.dir,
+                             attachments.files.size());
+    for (const auto& file : attachments.files) {
+        std::cout << "    " << file << "\n";
+    }
     std::cout << std::format("  generators      {}\n", preview["generator_count"].get<int>());
     return 0;
 }
