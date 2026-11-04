@@ -31,6 +31,9 @@ private:
     std::string profile_dir_;
     int repetitions_{7};
     int warmups_{1};
+    int warmup_ms_{1000};
+    double host_baseline_ns_{0};
+    double host_tolerance_{0.05};
     int attempts_{3};
     double noise_threshold_{0.05};
     int cpu_{-1};

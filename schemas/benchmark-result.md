@@ -88,8 +88,10 @@ them; changing one is a contract change.
 - **Timed region.** Wall time from `execve` to child exit, measured by the
   parent on `CLOCK_MONOTONIC` (`steady_clock`) at nanosecond resolution.
   Sandbox setup, uid maps and output draining are outside it.
-- **Warmups and failed runs.** One discarded warmup run by default
-  (`--warmups`). Any timed run that exits non-zero, times out, or prints
+- **Warmups and failed runs.** Discarded warmup runs until at least
+  `--warmups` (1) runs and `--warmup-ms` (1000 ms) have passed: on c7i.xlarge
+  the first timed second after building the parts was consistently 8-11%
+  noisier than the rest, which one run does not absorb. Any timed run that exits non-zero, times out, or prints
   output that does not token-match the reference is `FAILED_VERIFY`; it is
   never dropped and replaced.
 - **Verification.** The candidate is linked once. Its output on the benchmark
@@ -105,6 +107,14 @@ them; changing one is a contract change.
   is re-run, up to 3 batches (`--attempts`). The record reports the accepted
   batch, or the last batch with status `NOISY` when none was accepted;
   `attempts[]` carries every batch's samples as diagnostics.
+- **Host check.** With `--host-baseline-ns` (the worker passes its
+  machine's calibration baseline), the calibration workload is timed on the
+  same CPU just before and just after the batches. If either is more than
+  `--host-tolerance` (5%) from the baseline, an otherwise `OK` result is
+  `NOISY` with `noise_reason`. This is the case the IQR gate cannot see: a
+  busy hyperthread sibling slowed a benchmark by 28% on c7i.xlarge while its
+  IQR stayed under 5%. Instruction counts did not move, which is how the two
+  are told apart.
 - **Instructions.** User-space retired instructions (`exclude_kernel`) of the
   measured process and everything it starts (`inherit`), from exec to exit;
   `instructions` is the median of the accepted batch's per-run counts. `null`

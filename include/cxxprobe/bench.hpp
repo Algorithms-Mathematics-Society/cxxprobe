@@ -53,11 +53,33 @@ CpuPlacement place(int requested);
 struct BenchOptions {
     std::optional<std::filesystem::path> input;  // default: benchmark.dir/benchmark.input
     int repetitions{7};
+    // Discarded runs before timing: at least `warmups` runs and at least
+    // `warmup_ms` of them. A single run does not settle a host that has just
+    // compiled the parts; measured on c7i.xlarge, the first timed second is
+    // consistently noisier than the rest.
     int warmups{1};
+    int warmup_ms{1000};
     double noise_threshold{0.05};
     int max_attempts{3};
     int cpu{-1};
     std::optional<std::filesystem::path> profile_dir;  // write a profile here when OK
+
+    // Host check. With a baseline, the calibration workload is timed just
+    // before and just after the benchmark on the same CPU; drift beyond
+    // `host_tolerance` makes an otherwise OK result NOISY. This catches what
+    // the IQR gate cannot: a host slowed evenly (a busy hyperthread sibling,
+    // a throttled machine) has a tight spread around the wrong number.
+    std::optional<double> host_baseline_ns;
+    double host_tolerance{0.05};
+    std::optional<std::filesystem::path> calibration_binary;  // runs `bench calibrate-workload`
+};
+
+struct HostCheck {
+    bool ran{false};
+    double baseline_ns{0};
+    double before_ns{0};
+    double after_ns{0};
+    double drift{0};  // the larger of the two relative deviations
 };
 
 struct Batch {
@@ -93,6 +115,8 @@ struct BenchReport {
 
     std::string error;          // setup failure: no verdict at all
     std::string verify_reason;  // why FAILED_VERIFY, when it is
+    std::string noise_reason;   // why NOISY, when it is
+    HostCheck host;
     std::vector<cxxprobe::judge::IntegrationPart> parts;
     cxxprobe::judge::CompileStepReport link;
     std::vector<Batch> attempts;

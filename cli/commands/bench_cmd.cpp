@@ -29,6 +29,13 @@ BenchCommand::BenchCommand(CLI::App& parent) {
                              "Benchmark input (default: the project's benchmark.input)");
     project_app_->add_option("--repetitions", repetitions_, "Timed runs per batch (default 7)");
     project_app_->add_option("--warmups", warmups_, "Discarded runs before timing (default 1)");
+    project_app_->add_option("--warmup-ms", warmup_ms_,
+                             "Keep warming up for at least this long (default 1000)");
+    project_app_->add_option(
+        "--host-baseline-ns", host_baseline_ns_,
+        "This host's calibration baseline; drift around the run makes it NOISY");
+    project_app_->add_option("--host-tolerance", host_tolerance_,
+                             "Accepted host drift from the baseline (default 0.05)");
     project_app_->add_option("--attempts", attempts_,
                              "Batches to try before reporting NOISY (default 3)");
     project_app_->add_option("--noise-threshold", noise_threshold_,
@@ -81,13 +88,21 @@ int BenchCommand::execute_project() {
         const auto project = cxxprobe::project::load_from_dir(contest_dir / slug_);
         const auto submissions = label_map(submission_pairs_, "--submission", project);
         const auto fallbacks = label_map(fallback_pairs_, "--fallback", project);
-        cxxprobe::bench::BenchOptions options{.input = std::nullopt,
-                                              .repetitions = repetitions_,
-                                              .warmups = warmups_,
-                                              .noise_threshold = noise_threshold_,
-                                              .max_attempts = attempts_,
-                                              .cpu = cpu_,
-                                              .profile_dir = std::nullopt};
+        cxxprobe::bench::BenchOptions options{
+            .input = std::nullopt,
+            .repetitions = repetitions_,
+            .warmups = warmups_,
+            .warmup_ms = warmup_ms_,
+            .noise_threshold = noise_threshold_,
+            .max_attempts = attempts_,
+            .cpu = cpu_,
+            .profile_dir = std::nullopt,
+            .host_baseline_ns = std::nullopt,
+            .host_tolerance = host_tolerance_,
+            .calibration_binary = fs::read_symlink("/proc/self/exe")};
+        if (host_baseline_ns_ > 0) {
+            options.host_baseline_ns = host_baseline_ns_;
+        }
         if (!input_.empty()) {
             options.input = fs::absolute(input_);
         }
@@ -108,8 +123,9 @@ int BenchCommand::execute_project() {
     } else {
         std::cout << std::format("Benchmark: {} on CPU {}\n", slug_, report.placement.cpu);
         std::cout << std::format("Status     {}\n", cxxprobe::bench::status_str(report.status));
-        if (!report.verify_reason.empty()) {
-            std::cout << std::format("Reason     {}\n", report.verify_reason);
+        if (!report.verify_reason.empty() || !report.noise_reason.empty()) {
+            std::cout << std::format("Reason     {}{}\n", report.verify_reason,
+                                     report.noise_reason);
         }
         if (report.median_ns) {
             std::cout << std::format("Median     {:.0f} ns (IQR {:.0f} ns, {} runs)\n",

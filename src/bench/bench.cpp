@@ -190,7 +190,12 @@ std::optional<std::string> timed_batch(const fs::path& binary, const std::string
 void measure(const fs::path& binary, const std::string& input, const std::string& expected,
              const cxxprobe::sandbox::Limits& limits, const BenchOptions& options,
              BenchReport& report) {
-    for (int i = 0; i < options.warmups; ++i) {
+    constexpr int kMaxWarmups = 200;
+    const auto warm_until =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds{options.warmup_ms};
+    for (int i = 0;
+         i < kMaxWarmups && (i < options.warmups || std::chrono::steady_clock::now() < warm_until);
+         ++i) {
         (void)run_once(binary, input, limits);
     }
     for (int attempt = 0; attempt < options.max_attempts; ++attempt) {
@@ -208,10 +213,74 @@ void measure(const fs::path& binary, const std::string& input, const std::string
     }
     const auto& last = report.attempts.back();
     report.status = noisy(last, options.noise_threshold) ? BenchStatus::Noisy : BenchStatus::Ok;
+    if (report.status == BenchStatus::Noisy) {
+        report.noise_reason =
+            std::format("no batch of {} attempts had an IQR within {:.1f}% of its median",
+                        options.max_attempts, options.noise_threshold * 100);
+    }
     report.median_ns = last.median_ns;
     report.iqr_ns = last.iqr_ns;
     report.instructions = median_instructions(last);
     report.repetitions = static_cast<int>(last.wall_ns.size());
+}
+
+// The calibration workload, `repetitions` times on `cpu`, as one batch.
+Batch calibration_batch(const fs::path& self_binary, int cpu, int repetitions) {
+    cxxprobe::sandbox::Limits base;
+    base.wall = std::chrono::milliseconds{30000};
+    base.cpu = std::chrono::milliseconds{30000};
+    const auto limits = pinned(base, cpu);
+    const std::vector<std::string> argv{self_binary.string(), "bench", "calibrate-workload"};
+    std::vector<std::int64_t> wall;
+    std::vector<std::uint64_t> instructions;
+    bool counted = true;
+    std::string checksum;
+    for (int i = 0; i < repetitions; ++i) {
+        const auto run = cxxprobe::sandbox::run(argv, "", limits);
+        if (run.exit_code != 0) {
+            throw std::runtime_error(std::format("calibrate: workload exited with code {}: {}",
+                                                 run.exit_code, run.stderr_data));
+        }
+        if (!checksum.empty() && run.stdout_data != checksum) {
+            throw std::runtime_error("calibrate: workload output changed between runs");
+        }
+        checksum = run.stdout_data;
+        wall.push_back(run.wall_time_ns.count());
+        if (run.instructions) {
+            instructions.push_back(*run.instructions);
+        } else {
+            counted = false;
+        }
+    }
+    return summarise(std::move(wall),
+                     counted ? std::move(instructions) : std::vector<std::uint64_t>{});
+}
+
+constexpr int kHostCheckRepetitions = 3;
+
+double host_median(const BenchOptions& options, int cpu) {
+    return calibration_batch(*options.calibration_binary, cpu, kHostCheckRepetitions).median_ns;
+}
+
+// Turns an OK result NOISY when the host itself moved away from its
+// calibration baseline around the measurement.
+void check_host(const BenchOptions& options, double before_ns, int cpu, BenchReport& report) {
+    const double baseline = *options.host_baseline_ns;
+    report.host = HostCheck{.ran = true,
+                            .baseline_ns = baseline,
+                            .before_ns = before_ns,
+                            .after_ns = host_median(options, cpu),
+                            .drift = 0};
+    report.host.drift = std::max(std::abs(report.host.before_ns - baseline),
+                                 std::abs(report.host.after_ns - baseline)) /
+                        baseline;
+    if (report.status == BenchStatus::Ok && report.host.drift > options.host_tolerance) {
+        report.status = BenchStatus::Noisy;
+        report.noise_reason = std::format(
+            "the host drifted {:.1f}% from its calibration baseline around the measurement "
+            "(tolerance {:.1f}%)",
+            report.host.drift * 100, options.host_tolerance * 100);
+    }
 }
 
 cxxprobe::judge::detail::LinkOptions bench_link_options() {
@@ -224,8 +293,10 @@ cxxprobe::judge::detail::LinkOptions bench_link_options() {
 }
 
 void check_options(const BenchOptions& options) {
-    if (options.repetitions < 2 || options.warmups < 0 || options.max_attempts < 1 ||
-        !(options.noise_threshold > 0)) {
+    if (options.repetitions < 2 || options.warmups < 0 || options.warmup_ms < 0 ||
+        options.max_attempts < 1 || !(options.noise_threshold > 0) ||
+        !(options.host_tolerance > 0) ||
+        (options.host_baseline_ns && !(*options.host_baseline_ns > 0))) {
         throw std::runtime_error(
             "bench: repetitions must be at least 2, attempts at least 1, warmups non-negative "
             "and the noise threshold positive");
@@ -326,7 +397,12 @@ BenchReport run_benchmark(const cxxprobe::project::ProjectConfig& project,
         return report;
     }
 
+    const bool host_check = options.host_baseline_ns && options.calibration_binary;
+    const double host_before = host_check ? host_median(options, report.placement.cpu) : 0;
     measure(candidate.binary, input, expected.run.stdout_data, limits, options, report);
+    if (host_check && report.status != BenchStatus::FailedVerify) {
+        check_host(options, host_before, report.placement.cpu, report);
+    }
     if (report.status == BenchStatus::FailedVerify) {
         report.median_ns.reset();
         report.iqr_ns.reset();
@@ -377,6 +453,15 @@ Json to_json(const BenchReport& report) {
     j["result"] = result_record(report);
     if (!report.verify_reason.empty()) {
         j["verify_reason"] = report.verify_reason;
+    }
+    if (!report.noise_reason.empty()) {
+        j["noise_reason"] = report.noise_reason;
+    }
+    if (report.host.ran) {
+        j["host"] = Json{{"baseline_ns", report.host.baseline_ns},
+                         {"before_ns", report.host.before_ns},
+                         {"after_ns", report.host.after_ns},
+                         {"drift", report.host.drift}};
     }
     j["input_sha256"] = report.input_sha256;
     j["binary_sha256"] = report.binary_sha256;
@@ -462,35 +547,8 @@ CalibrationReport calibrate(const fs::path& self_binary, const CalibrationOption
     }
     CalibrationReport report;
     report.placement = place(options.cpu);
-    cxxprobe::sandbox::Limits base;
-    base.wall = std::chrono::milliseconds{30000};
-    base.cpu = std::chrono::milliseconds{30000};
-    const auto limits = pinned(base, report.placement.cpu);
-    const std::vector<std::string> argv{self_binary.string(), "bench", "calibrate-workload"};
-    (void)cxxprobe::sandbox::run(argv, "", limits);  // warmup
-    std::vector<std::int64_t> wall;
-    std::vector<std::uint64_t> instructions;
-    bool counted = true;
-    std::string checksum;
-    for (int i = 0; i < options.repetitions; ++i) {
-        const auto run = cxxprobe::sandbox::run(argv, "", limits);
-        if (run.exit_code != 0) {
-            throw std::runtime_error(std::format("calibrate: workload exited with code {}: {}",
-                                                 run.exit_code, run.stderr_data));
-        }
-        if (!checksum.empty() && run.stdout_data != checksum) {
-            throw std::runtime_error("calibrate: workload output changed between runs");
-        }
-        checksum = run.stdout_data;
-        wall.push_back(run.wall_time_ns.count());
-        if (run.instructions) {
-            instructions.push_back(*run.instructions);
-        } else {
-            counted = false;
-        }
-    }
-    report.batch = summarise(std::move(wall),
-                             counted ? std::move(instructions) : std::vector<std::uint64_t>{});
+    (void)calibration_batch(self_binary, report.placement.cpu, 1);  // warmup
+    report.batch = calibration_batch(self_binary, report.placement.cpu, options.repetitions);
     report.instructions = median_instructions(report.batch);
     report.noisy = noisy(report.batch, options.noise_threshold);
     report.ok = !report.noisy;

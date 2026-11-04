@@ -267,6 +267,34 @@ TEST_F(BenchPipelineTest, CalibrationPassesAgainstItselfAndFailsOnDrift) {
     EXPECT_GT(report["drift"].get<double>(), 1.0);
 }
 
+TEST_F(BenchPipelineTest, AHostAwayFromItsCalibrationBaselineIsNoisyNotANumber) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
+    // An evenly slowed host (a busy hyperthread sibling) passes the IQR gate
+    // with a tight spread around the wrong number; only the host check, the
+    // calibration workload timed around the measurement, catches it.
+    const auto calibrated = parsed(
+        cli({"bench", "calibrate", "--repetitions", "3", "--json", "--noise-threshold", "0.5"}));
+    const double baseline = calibrated["median_ns"];
+    const std::vector<std::string> lenient{"--noise-threshold", "0.25", "--attempts", "5"};
+
+    auto honest = lenient;
+    honest.insert(honest.end(), {"--host-baseline-ns", std::format("{:.0f}", baseline),
+                                 "--host-tolerance", "0.5"});
+    const auto ok = bench(honest, 0);
+    EXPECT_EQ(ok["result"]["status"], "OK") << ok.dump();
+    EXPECT_LE(ok["host"]["drift"].get<double>(), 0.5);
+
+    auto drifted = lenient;
+    drifted.insert(drifted.end(), {"--host-baseline-ns", std::format("{:.0f}", baseline / 3)});
+    const auto noisy = bench(drifted, 1);
+    EXPECT_EQ(noisy["result"]["status"], "NOISY");
+    EXPECT_GT(noisy["host"]["drift"].get<double>(), 1.0);
+    EXPECT_NE(noisy["noise_reason"].get<std::string>().find("drifted"), std::string::npos);
+    EXPECT_FALSE(noisy.contains("profile"));
+}
+
 TEST_F(BenchPipelineTest, AProjectWithoutABenchmarkEntrySaysSo) {
     fs::remove(root / "desk/benchmark/bench_main.cpp");
     const auto result = cli({"bench", "project", "desk", "--json"});
