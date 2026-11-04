@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DRAFT cxxprobe benchmark result contract",
+  "description": "Review proposal for issue #10; structural validity is not consumer eligibility. See benchmark-result.md. No runtime implementation is claimed.",
+  "$ref": "#/$defs/engineResult",
+  "$defs": {
+    "engineResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "median_ns",
+        "iqr_ns",
+        "instructions",
+        "repetitions",
+        "pinned_core"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "OK",
+            "NOISY",
+            "FAILED_VERIFY"
+          ]
+        },
+        "median_ns": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "iqr_ns": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "instructions": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "repetitions": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 7
+        },
+        "pinned_core": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAILED_VERIFY"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "median_ns": {
+                "type": "null"
+              },
+              "iqr_ns": {
+                "type": "null"
+              },
+              "instructions": {
+                "type": "null"
+              },
+              "repetitions": {
+                "const": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "median_ns": {
+                "type": "number"
+              },
+              "iqr_ns": {
+                "type": "number"
+              },
+              "repetitions": {
+                "minimum": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "description": "DRAFT standalone provenance projection, not a worker envelope API. Owned by Rasesh; joint review required.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "machine_id",
+        "calibration_ok",
+        "input_hash",
+        "revision_hash"
+      ],
+      "properties": {
+        "machine_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "calibration_ok": {
+          "type": "boolean"
+        },
+        "input_hash": {
+          "$ref": "#/$defs/identifier"
+        },
+        "revision_hash": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "not": {
+        "pattern": "[\\u0000-\\u0020\\u007f]"
+      }
+    }
+  }
+}

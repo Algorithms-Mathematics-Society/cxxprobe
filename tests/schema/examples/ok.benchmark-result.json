@@ -1,0 +1,8 @@
+{
+  "status": "OK",
+  "median_ns": 1200,
+  "iqr_ns": 40,
+  "instructions": 800,
+  "repetitions": 7,
+  "pinned_core": 2
+}
