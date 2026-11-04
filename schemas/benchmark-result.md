@@ -1,8 +1,9 @@
-# DRAFT benchmark result contract — issue #10
+# Benchmark result contract (issue #10)
 
-**Review handoff only; pending joint review by Shubh and Rasesh.**
-This schema-first draft adds no engine, counter, affinity, worker or scoring
-implementation. It does not complete or close [#10](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues/10).
+The inner record `cxxprobe bench project --json` emits under `result`, and the
+provenance projection the worker wraps it with. The engine is
+`src/bench/bench.cpp`; the decisions it makes are recorded under
+[Decisions](#decisions) below, replacing the open questions of the first draft.
 [Ownership comments on #10](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues/10#issuecomment-6612509872)
 and [#12](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues/12)
 establish the following seam; the proposal choices below are not agreed policy.
@@ -79,21 +80,61 @@ joint review. Calibration failure is a provenance/eligibility failure; do not
 invent a new status or conflate it with failed verification. Scoring implementation
 and cross-record comparison are outside this draft.
 
-## Decisions still open
+## Decisions
 
-- Exact timed region and wall-clock source; warmup and failed-run policy.
-- Median/IQR quantile algorithm, including even counts and small samples.
-- Instruction aggregate and user/kernel/child scope; unavailable-counter policy.
-- Unpinned local status/null semantics and trusted-fleet requirements.
-- Noise threshold, equality at the boundary, and bounded retry budget; which
-  attempt supplies diagnostics, and how exhaustion yields `NOISY`.
-- Worker envelope layout, provenance formats and evidence for calibration and
-  exact-artifact verification, owned by Rasesh.
+These were the open questions of the draft. `cxxprobe bench project` implements
+them; changing one is a contract change.
 
-No quantile algorithm, instruction aggregation, threshold or retry count is chosen
-here. They are not needed to review the shape and must be agreed before a producer
-or consumer relies on the numeric values. In particular, retries must eventually
-be bounded, but this draft does not prescribe a budget.
+- **Timed region.** Wall time from `execve` to child exit, measured by the
+  parent on `CLOCK_MONOTONIC` (`steady_clock`) at nanosecond resolution.
+  Sandbox setup, uid maps and output draining are outside it.
+- **Warmups and failed runs.** Discarded warmup runs until at least
+  `--warmups` (1) runs and `--warmup-ms` (1000 ms) have passed: on c7i.xlarge
+  the first timed second after building the parts was consistently 8-11%
+  noisier than the rest, which one run does not absorb. Any timed run that exits non-zero, times out, or prints
+  output that does not token-match the reference is `FAILED_VERIFY`; it is
+  never dropped and replaced.
+- **Verification.** The candidate is linked once. Its output on the benchmark
+  input must token-match the reference parts' output on the same input before
+  anything is timed, and that same binary is then timed (`binary_sha256` is
+  its hash). A part that does not compile, or parts that do not link, are
+  `FAILED_VERIFY` too.
+- **Quantiles.** Linear interpolation between order statistics (Hyndman-Fan
+  type 7, numpy's default): median = q(0.5), IQR = q(0.75) - q(0.25). For the
+  default 7 runs the median is the 4th order statistic.
+- **Noise gate and retries.** A batch is accepted when `iqr_ns <= threshold x
+  median_ns` (equality accepts), threshold 0.05 by default. A rejected batch
+  is re-run, up to 3 batches (`--attempts`). The record reports the accepted
+  batch, or the last batch with status `NOISY` when none was accepted;
+  `attempts[]` carries every batch's samples as diagnostics.
+- **Host check.** With `--host-baseline-ns` (the worker passes its
+  machine's calibration baseline), the calibration workload is timed on the
+  same CPU just before and just after the batches. If either is more than
+  `--host-tolerance` (5%) from the baseline, an otherwise `OK` result is
+  `NOISY` with `noise_reason`. This is the case the IQR gate cannot see: a
+  busy hyperthread sibling slowed a benchmark by 28% on c7i.xlarge while its
+  IQR stayed under 5%. Instruction counts did not move, which is how the two
+  are told apart.
+- **Instructions.** User-space retired instructions (`exclude_kernel`) of the
+  measured process and everything it starts (`inherit`), from exec to exit;
+  `instructions` is the median of the accepted batch's per-run counts. `null`
+  when the host exposes no hardware counter (most VMs without a vPMU);
+  `null` never means zero.
+- **Pinning.** `pinned_core` is the logical CPU the measured process was
+  bound to with `sched_setaffinity`. Chosen automatically as the first logical
+  CPU of the highest-numbered physical core that does not hold CPU 0 (`--cpu`
+  overrides). Its hyperthread siblings are reported in `cpu.siblings`; keeping
+  them idle is the host's job (the benchmark pool isolates them), and pinning
+  alone does not prove it.
+- **Unpinned or uncounted local runs.** An `OK` record with
+  `instructions: null` is a valid measurement of its host but carries no
+  provenance; only the worker, with a calibrated machine and the hashes below,
+  makes a record eligible to rank.
+- **Worker envelope.** The worker publishes the inner record unchanged with
+  `machine_id`, `calibration_ok`, `input_hash` (the SHA-256 of the input it
+  staged; the engine reports the same value as `input_sha256`) and
+  `revision_hash` (the job's revision) beside it. See the cxxprobe-worker
+  README for the full envelope.
 
 ## Executable proof
 

@@ -10,3 +10,7 @@ integration:
   dir: integration
   entry: integration_gtest.cpp
   fallback_dir: fallback
+benchmark:
+  dir: benchmark
+  entry: bench_main.cpp
+  input: input.txt

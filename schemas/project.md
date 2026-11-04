@@ -178,6 +178,27 @@ rather than failing later with a duplicate-symbol link error. Loading a part rea
 only the project's `shared` section, never the other parts. `package inspect` on
 a part lists the injected sources and include directory.
 
+## Benchmark
+
+`benchmark` is optional, like `integration`, and enabled by the presence of
+its entry file:
+
+```yaml
+benchmark:
+  dir: benchmark          # default
+  entry: bench_main.cpp   # default; resolved beneath benchmark.dir
+  input: input.txt        # default; a job may supply its own input instead
+```
+
+The entry is a driver with its own `main()` that reads the benchmark input on
+stdin and prints a result. `cxxprobe bench project <slug>` links it with every
+part (each part's `main()` renamed) and the shared sources, exactly as the
+integration suite is linked, with `-g -fno-omit-frame-pointer` added and
+`-no-pie`. It first verifies the candidate's output against the reference
+parts' output on the input, then times that same binary. See
+[benchmark-result.md](benchmark-result.md). Paths are contained beneath the
+project and `benchmark.dir` like every other section.
+
 ## Packing
 
 `package pack` carries a project whole, beneath its slug: `project.yaml`, the

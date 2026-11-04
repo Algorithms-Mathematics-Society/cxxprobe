@@ -9,6 +9,7 @@ add_executable(
   common/json_io.cpp
   common/contest_dir.cpp
   common/problem_resolve.cpp
+  common/project_args.cpp
   commands/run_cmd.cpp
   commands/new_cmd.cpp
   commands/test_cmd.cpp
@@ -16,7 +17,8 @@ add_executable(
   commands/package_cmd.cpp
   commands/judge_cmd.cpp
   commands/validate_cmd.cpp
-  commands/generate_cmd.cpp)
+  commands/generate_cmd.cpp
+  commands/bench_cmd.cpp)
 
 target_link_libraries(cxxprobe-cli PRIVATE cxxprobe CLI11::CLI11
                                            nlohmann_json::nlohmann_json)

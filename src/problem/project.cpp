@@ -255,6 +255,21 @@ void parse_integration(const YAML::Node& doc, ProjectConfig& cfg) {
     }
 }
 
+void parse_benchmark(const YAML::Node& doc, ProjectConfig& cfg) {
+    if (const auto benchmark = doc["benchmark"]) {
+        mapping(benchmark, "benchmark", {"dir", "entry", "input"});
+        if (benchmark["dir"]) {
+            cfg.benchmark.dir = relative_path(benchmark["dir"], "benchmark.dir");
+        }
+        if (benchmark["entry"]) {
+            cfg.benchmark.entry = relative_path(benchmark["entry"], "benchmark.entry");
+        }
+        if (benchmark["input"]) {
+            cfg.benchmark.input = relative_path(benchmark["input"], "benchmark.input");
+        }
+    }
+}
+
 void parse_parts(const YAML::Node& doc, ProjectConfig& cfg) {
     const auto parts = doc["parts"];
     if (!parts || !parts.IsSequence() || parts.size() == 0) {
@@ -315,7 +330,8 @@ ProjectConfig parse(const fs::path& project_dir, bool check_filesystem) {
     } catch (const YAML::Exception& ex) {
         fail("project.yaml", ex.what());
     }
-    mapping(doc, "project.yaml", {"version", "name", "shared", "parts", "integration"});
+    mapping(doc, "project.yaml",
+            {"version", "name", "shared", "parts", "integration", "benchmark"});
     const auto version = doc["version"];
     if (!version || !version.IsScalar() ||
         (version.Tag() != "?" && version.Tag() != "tag:yaml.org,2002:int") ||
@@ -335,6 +351,7 @@ ProjectConfig parse(const fs::path& project_dir, bool check_filesystem) {
     }
     parse_shared(doc, cfg);
     parse_integration(doc, cfg);
+    parse_benchmark(doc, cfg);
     parse_parts(doc, cfg);
     if (!check_filesystem) {
         return cfg;
@@ -351,6 +368,13 @@ ProjectConfig parse(const fs::path& project_dir, bool check_filesystem) {
         contained(integration_dir, fallback, "integration.fallback_dir");
         file_kind(fallback, "integration.fallback_dir", true, false);
     }
+    const auto benchmark_dir = cfg.project_dir / cfg.benchmark.dir;
+    contained(cfg.project_dir, benchmark_dir, "benchmark.dir");
+    file_kind(benchmark_dir, "benchmark.dir", true, false);
+    contained(benchmark_dir, benchmark_dir / cfg.benchmark.entry, "benchmark.entry");
+    file_kind(benchmark_dir / cfg.benchmark.entry, "benchmark.entry", false, false);
+    contained(benchmark_dir, benchmark_dir / cfg.benchmark.input, "benchmark.input");
+    file_kind(benchmark_dir / cfg.benchmark.input, "benchmark.input", false, false);
     for (std::size_t i = 0; i < cfg.parts.size(); ++i) {
         const auto field = std::format("parts[{}].dir", i);
         const auto part_dir = cfg.project_dir / cfg.parts[i].dir;

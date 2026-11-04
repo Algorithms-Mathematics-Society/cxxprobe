@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 #include <pthread.h>
+#include <sched.h>
 
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <format>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -298,4 +301,45 @@ TEST_F(SandboxTest, MultipleArgvPassedCorrectly) {
     Result res = run({"/bin/sh", "-c", "echo $1 $2", "sh", "foo", "bar"}, "", default_limits());
     EXPECT_EQ(res.exit_code, 0);
     EXPECT_EQ(res.stdout_data, "foo bar\n");
+}
+
+// ── pinning and counters (cxxprobe bench) ─────────────────────────────────────
+
+TEST_F(SandboxTest, ChildRunsOnlyOnTheRequestedCpu) {
+    cpu_set_t mine;
+    CPU_ZERO(&mine);
+    ASSERT_EQ(::sched_getaffinity(0, sizeof(mine), &mine), 0);
+    int cpu = 0;
+    while (cpu < CPU_SETSIZE && !CPU_ISSET(cpu, &mine)) {
+        ++cpu;
+    }
+    Limits lim = default_limits();
+    lim.cpu_affinity = {cpu};
+    Result res = run({"/bin/grep", "Cpus_allowed_list", "/proc/self/status"}, "", lim);
+    EXPECT_EQ(res.exit_code, 0);
+    EXPECT_EQ(res.stdout_data, std::format("Cpus_allowed_list:\t{}\n", cpu));
+}
+
+TEST_F(SandboxTest, AnImpossibleCpuIsRefusedBeforeAnythingRuns) {
+    Limits lim = default_limits();
+    lim.cpu_affinity = {CPU_SETSIZE};
+    EXPECT_THROW(run({"/bin/true"}, "", lim), std::runtime_error);
+}
+
+TEST_F(SandboxTest, WallTimeNsAndCountersAreReported) {
+    Limits lim = default_limits();
+    lim.count_instructions = true;
+    Result res =
+        run({"/bin/sh", "-c", "i=0; while [ $i -lt 20000 ]; do i=$((i+1)); done"}, "", lim);
+    EXPECT_EQ(res.exit_code, 0);
+    EXPECT_GT(res.wall_time_ns.count(), 0);
+    EXPECT_LE(res.wall_time_ns, std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    res.wall_time + std::chrono::milliseconds{1}));
+    // Unavailable counters are nullopt, never a fabricated zero.
+    if (res.instructions) {
+        EXPECT_GT(*res.instructions, 0U);
+    }
+    if (res.task_clock_ns) {
+        EXPECT_GT(*res.task_clock_ns, 0U);
+    }
 }

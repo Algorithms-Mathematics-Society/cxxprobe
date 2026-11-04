@@ -58,6 +58,9 @@ add_library(
   judge/judge.cpp
   judge/judge_json.cpp
   judge/integration.cpp
+  judge/project_link.cpp
+  bench/bench.cpp
+  bench/profile.cpp
   pack/pack.cpp
   pack/detail/zip_archive.cpp
   embedded_gtest/gtest_paths.cpp

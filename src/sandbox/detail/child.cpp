@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "pipe_sync.hpp"
@@ -109,6 +110,25 @@ void remount_proc() noexcept {
         rl.rlim_cur = static_cast<rlim_t>(args.cpu_limit_seconds);
         rl.rlim_max = static_cast<rlim_t>(args.cpu_limit_seconds);
         ::setrlimit(RLIMIT_CPU, &rl);
+    }
+
+    // ── 1e. CPU affinity ──────────────────────────────────────────────────
+    // Here, after joining the leaf cgroup, rather than from the parent: the
+    // cgroup we started in may have a cpuset that excludes the requested CPU
+    // (a benchmark host confines its system slices to housekeeping cores),
+    // while the cxxprobe leaf does not. Failing to pin is a setup failure the
+    // caller must hear about, never a silently unpinned measurement.
+    if (!args.cpu_affinity.empty()) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        for (int cpu : args.cpu_affinity) {
+            CPU_SET(cpu, &set);
+        }
+        if (::sched_setaffinity(0, sizeof(set), &set) != 0) {
+            constexpr std::string_view kMessage = "cxxprobe: cannot pin to the requested CPU\n";
+            (void)::write(args.fds.stderr_write, kMessage.data(), kMessage.size());
+            ::_exit(kAffinityFailedExit);
+        }
     }
 
     // ── 2. Wait for parent to signal exec ─────────────────────────────────

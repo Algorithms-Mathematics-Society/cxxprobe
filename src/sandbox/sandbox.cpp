@@ -14,6 +14,7 @@
 #include <csignal>
 #include <cstring>
 #include <format>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@
 
 #include "detail/cgroup.hpp"
 #include "detail/child.hpp"
+#include "detail/perf_counter.hpp"
 #include "detail/pipe_io.hpp"
 #include "detail/pipe_sync.hpp"
 #include "detail/uidmap.hpp"
@@ -108,6 +110,18 @@ OwnedFd open_pidfd(pid_t pid) {
 int clone_entry(void* arg) {
     detail::child_main(std::move(*static_cast<detail::ChildArgs*>(arg)));
     std::unreachable();
+}
+
+// ── CPU affinity ─────────────────────────────────────────────────────────────
+
+// The child pins itself (child.cpp); this only refuses impossible requests
+// before any process exists.
+void check_affinity(const std::vector<int>& cpus) {
+    for (int cpu : cpus) {
+        if (cpu < 0 || cpu >= CPU_SETSIZE) {
+            throw std::runtime_error{std::format("cpu_affinity: no such CPU {}", cpu)};
+        }
+    }
 }
 
 // ── ChildGuard ───────────────────────────────────────────────────────────────
@@ -196,6 +210,8 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     std::string stdin_data,         // NOLINT(performance-unnecessary-value-param)
     Limits limits) {                // NOLINT(performance-unnecessary-value-param)
 
+    check_affinity(limits.cpu_affinity);
+
     // ── pipes ────────────────────────────────────────────────────────────
     auto stdin_pipe = make_pipe();
     auto stdout_pipe = make_pipe();
@@ -230,6 +246,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         .cpu_limit_seconds = limits.cpu.count() > 0
                                  ? static_cast<unsigned long>((limits.cpu.count() + 999) / 1000)
                                  : 0UL,
+        .cpu_affinity = limits.cpu_affinity,
     };
 
     // ── clone ─────────────────────────────────────────────────────────────
@@ -262,6 +279,15 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     // Child adds itself to the cgroup after receiving MapsAck (see child.cpp).
     // The parent cannot migrate arbitrary PIDs under nsdelegate; self-migration
     // always works.
+
+    // The counters attach to the child before it execs and start at exec
+    // (enable_on_exec). The child has pinned itself by now if asked to.
+    std::optional<detail::PerfCounter> instructions;
+    std::optional<detail::PerfCounter> task_clock;
+    if (limits.count_instructions) {
+        instructions.emplace(child_pid, PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS);
+        task_clock.emplace(child_pid, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK);
+    }
 
     parent_sync.send(detail::SyncMsg::ExecNow);
     auto wall_start = std::chrono::steady_clock::now();
@@ -313,6 +339,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     }
 
     WaitResult wr = wait_for_child(child_pid, pidfd, tfd, cgroup);
+    const auto exited = std::chrono::steady_clock::now();
     child_guard.mark_reaped();  // waitpid already called inside wait_for_child
 
     t_stdin.join();
@@ -332,10 +359,21 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     if (wr.timed_out) {
         result.exit_code = -SIGKILL;
     }
+    if (!limits.cpu_affinity.empty() && result.exit_code == detail::kAffinityFailedExit &&
+        stderr_data.starts_with("cxxprobe: cannot pin")) {
+        throw std::runtime_error{"sandbox: cannot pin the child to the requested CPUs"};
+    }
     result.peak_memory_bytes = stats.peak_memory_bytes;
     result.cpu_time = std::chrono::duration_cast<std::chrono::milliseconds>(stats.cpu_usage);
     result.wall_time = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
     result.wall_timed_out = wr.timed_out;
+    result.wall_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(exited - wall_start);
+    if (instructions) {
+        result.instructions = instructions->read();
+    }
+    if (task_clock) {
+        result.task_clock_ns = task_clock->read();
+    }
     result.stdout_data = std::move(stdout_data);
     result.stderr_data = std::move(stderr_data);
     return result;
