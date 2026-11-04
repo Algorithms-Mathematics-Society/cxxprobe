@@ -8,6 +8,8 @@
 #include <format>
 #include <stdexcept>
 
+#include "cxxprobe/project_discovery.hpp"
+
 namespace cxxprobe::problem {
 
 namespace {
@@ -494,7 +496,7 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
 
     ProblemConfig cfg;
     cfg.problem_dir = std::filesystem::absolute(problem_yaml_path.parent_path());
-    cfg.slug = cfg.problem_dir.filename().string();
+    cfg.slug = cxxprobe::project::problem_slug(cfg.problem_dir);
     cfg.name = doc["name"].as<std::string>();
 
     cfg.statement = parse_statement_section(doc);
@@ -557,13 +559,8 @@ cxxprobe::sandbox::Limits resolve_limits(const LimitsOverride& override_cfg,
 
 std::vector<std::filesystem::path> find_problem_dirs(const std::filesystem::path& contest_dir) {
     std::vector<std::filesystem::path> dirs;
-    for (const auto& entry : std::filesystem::directory_iterator(contest_dir)) {
-        if (!entry.is_directory()) {
-            continue;
-        }
-        if (std::filesystem::exists(entry.path() / "problem.yaml")) {
-            dirs.push_back(entry.path());
-        }
+    for (const auto& entry : cxxprobe::project::discover_problems(contest_dir)) {
+        dirs.push_back(entry.dir);
     }
     return dirs;
 }

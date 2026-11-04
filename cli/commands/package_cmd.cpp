@@ -13,6 +13,7 @@
 #include "../common/problem_resolve.hpp"
 #include "cxxprobe/pack.hpp"
 #include "cxxprobe/problem.hpp"
+#include "cxxprobe/project.hpp"
 
 namespace cxxprobe::cli {
 
@@ -257,7 +258,8 @@ int PackageCommand::execute_init() {
 namespace {
 
 std::optional<fs::path> locate_problem(const std::string& dir_override,
-                                       const std::string& problem_name) {
+                                       const std::string& problem_name,
+                                       bool allow_project = false) {
     fs::path contest_dir;
     if (!dir_override.empty()) {
         contest_dir = fs::absolute(dir_override);
@@ -270,6 +272,15 @@ std::optional<fs::path> locate_problem(const std::string& dir_override,
             return std::nullopt;
         }
         contest_dir = *found;
+    }
+
+    if (allow_project && fs::is_directory(contest_dir)) {
+        for (const auto& entry : fs::directory_iterator(contest_dir)) {
+            if (entry.is_directory() && entry.path().filename() == problem_name &&
+                fs::exists(entry.path() / "project.yaml")) {
+                return entry.path();
+            }
+        }
     }
 
     std::vector<std::string> available;
@@ -291,12 +302,15 @@ std::optional<fs::path> locate_problem(const std::string& dir_override,
 }  // namespace
 
 int PackageCommand::execute_validate() {
-    auto problem_dir = locate_problem(dir_override_, problem_name_);
+    auto problem_dir = locate_problem(dir_override_, problem_name_, true);
     if (!problem_dir) {
         return 2;
     }
 
-    cxxprobe::problem::PackageReport report = cxxprobe::problem::validate_package(*problem_dir);
+    cxxprobe::problem::PackageReport report =
+        fs::exists(*problem_dir / "project.yaml")
+            ? cxxprobe::project::validate_package(*problem_dir)
+            : cxxprobe::problem::validate_package(*problem_dir);
 
     if (json_output_) {
         nlohmann::ordered_json j;

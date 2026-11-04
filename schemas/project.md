@@ -4,8 +4,9 @@ This is the schema-first deliverable for [#3](https://github.com/Algorithms-Math
 and the Wave 1 handoff in [#13](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues/13).
 [project.schema.json](project.schema.json) is JSON Schema draft 2020-12 over the
 YAML document's JSON-compatible value model. MUST requirements below are normative.
-This PR adds no runtime project support. Existing `problem.yaml` v2, plain problem
-slugs, discovery and CLI behavior are unchanged. Do not close #3 with this PR.
+The C++ loader implements this contract. Existing `problem.yaml` v2 and plain
+problem identities and output remain unchanged. Project packaging and execution
+as a linked unit remain separate features.
 
 ## Shape and defaults
 
@@ -42,7 +43,7 @@ of this contract.
 | `integration.entry` | `integration_gtest.cpp` | resolved `integration.dir` |
 | `integration.fallback_dir` | absent; no fallback directory configured | resolved `integration.dir` |
 
-JSON Schema defaults are annotations, not mutations: a future loader MUST apply
+JSON Schema defaults are annotations, not mutations: the loader MUST apply
 the defaults. An empty sources list permits header-only shared content and does
 not require `shared.dir` to exist. An absent integration entry MUST remain valid;
 the future integration judge reports SKIPPED, following the presence-based checker
@@ -92,7 +93,7 @@ visit only declared parts (one project-to-part level), not recursively discover
 arbitrary descendants or nested projects. A part is an ordinary problem directory
 with its existing `problem.yaml`; its schema is unchanged. A directory MUST NOT
 be both a problem and a project. Plain contest problems keep their current
-unqualified slug. Future discovery MUST reject any identity collision rather than
+unqualified slug. Discovery MUST reject any identity collision rather than
 silently overwriting an entry.
 
 ## Worker handoff
@@ -138,23 +139,36 @@ label and basename uniqueness, which standard JSON Schema cannot express by
 property projection. Tests deliberately show that schema validation alone accepts
 those duplicate-label/basename documents and that semantic checks reject them.
 The test helper is a reference oracle, not a public loader or package validator.
-Filesystem/discovery behavior is specified here and is **not** tested as working.
+Filesystem/discovery behavior is also covered by C++ unit tests and real CLI
+integration tests.
 
-Remaining work before #3 can close:
+## Runtime loading and validation
 
-- Implement `ProjectConfig`, `PartEntry`, `SharedConfig`, `IntegrationConfig` and
-  the YAML loader using the existing yaml-cpp idioms; reject duplicate keys and
-  apply defaults. Every malformed field MUST name its field/index in diagnostics.
-- Enforce label/basename uniqueness, directory existence, and a `problem.yaml`
-  in every part. Require `shared.dir` when sources are nonempty. Check path
-  containment, including symlinks, and extend `warn_if_absolute_reference` to
-  project paths (absolute project references are invalid, not merely warnings).
-- Implement declared-part discovery and qualified identity/collision handling.
-  Preserve byte-identical plain-problem behavior and test mixed contests plus
-  two projects reusing a label/local slug.
-- Wire project structural validation into `cxxprobe package validate`; test all
-  malformed fields and missing directories against real filesystem fixtures.
+`cxxprobe::project::load_from_dir` loads a project and checks its fields, declared
+parts and path containment. `discover_problems` visits immediate contest entries
+and declared parts only, returning qualified identities alongside directories.
+The existing `find_problem_dirs` API returns those discovered directories.
+
+From a contest directory, run:
+
+```sh
+cxxprobe package validate order-desk --json
+cxxprobe package validate order-desk/1-ingest --json
+cxxprobe package inspect order-desk/1-ingest --json
+```
+
+Project validation includes each ordinary part's existing package checks and
+prefixes diagnostics with the part index and label. A missing optional integration
+entry is valid. The loader does not inject shared sources or execute integration
+checks. Project-part identities survive symlink aliases, and discovery rejects
+colliding identities rather than flattening them.
+
+Until #7 supplies the project archive format, packing an entire contest containing
+a project fails before writing an archive. Selecting ordinary problems explicitly
+with `package pack --problems warmup` remains supported. Project paths are checked
+by the strict loader before packaging is rejected, so absolute references produce
+field diagnostics rather than silently disappearing from an archive.
 
 Shared source injection (#4), integration judging (#5/#6), project packaging
-(#7), and benchmarking are separate followups. No closing keyword for #3 belongs
-in this schema PR.
+(#7), and benchmarking are separate followups. Schema PR #18 remains the separate
+contract handoff; the runtime implementation is stacked on that contract.
