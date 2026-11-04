@@ -132,6 +132,12 @@ struct SolutionsConfig {
 
 struct AttachmentsConfig {
     std::string dir{"attachments"};
+    bool declared{false};
+};
+
+struct AttachmentFiles {
+    std::string dir;
+    std::vector<std::string> files;  // sorted, relative to dir; pack filters apply
 };
 
 struct ProblemConfig {
@@ -149,6 +155,10 @@ struct ProblemConfig {
     SymbolicConfig symbolic;
     AttachmentsConfig attachments;
 };
+
+// Packaging-only filesystem inspection; never used by the runtime preview.
+// Throws on unsafe paths or traversal limits. Does not follow symlinks.
+AttachmentFiles inspect_attachments(const ProblemConfig& config);
 
 // Project-wide fallback used to resolve any field a problem.yaml leaves unset.
 struct ProjectDefaults {

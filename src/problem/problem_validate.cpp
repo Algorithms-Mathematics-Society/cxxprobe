@@ -4,6 +4,7 @@
 
 #include "cxxprobe/generator.hpp"
 #include "cxxprobe/problem.hpp"
+#include "detail/package_files.hpp"
 
 namespace cxxprobe::problem {
 
@@ -101,6 +102,22 @@ void check_generators(const ProblemConfig& cfg, PackageReport& out) {
 
 }  // namespace
 
+AttachmentFiles inspect_attachments(const ProblemConfig& config) {
+    auto dir = detail::attachment_dir(config);
+    // Scan only the configured subtree, rejecting symlink ancestors first.
+    fs::path root = config.problem_dir;
+    if (!fs::is_directory(fs::symlink_status(root))) {
+        throw std::runtime_error("attachments: unsafe problem directory");
+    }
+    for (const auto& part : fs::path(dir)) {
+        root /= part;
+        if (detail::denied_dir(part.string()) || !fs::is_directory(fs::symlink_status(root))) {
+            return {.dir = dir, .files = {}};
+        }
+    }
+    return {.dir = dir, .files = detail::package_files(root)};
+}
+
 PackageReport validate_package(const fs::path& problem_dir) {
     PackageReport out;
 
@@ -130,6 +147,16 @@ PackageReport validate_package(const fs::path& problem_dir) {
                         cfg.problem_dir / cfg.validator.dir / cfg.validator.entry, "validator",
                         out);
     check_generators(cfg, out);
+    try {
+        auto attachments = inspect_attachments(cfg);
+        if (attachments.files.empty() &&
+            (cfg.attachments.declared || fs::exists(cfg.problem_dir / attachments.dir))) {
+            out.warnings.push_back("attachments directory '" + attachments.dir +
+                                   "' is missing or contains no packable candidate files");
+        }
+    } catch (const std::exception& ex) {
+        out.errors.emplace_back(ex.what());
+    }
 
     out.ok = out.errors.empty();
     return out;

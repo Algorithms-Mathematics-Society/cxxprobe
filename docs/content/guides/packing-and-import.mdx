@@ -12,8 +12,8 @@ checkers, reference solution — into a portable zip. `cxxprobe package unpack`
 extracts one back into a directly-servable contest directory. Together
 they're the transport format between wherever problems get authored and
 wherever they get judged, with zero new parsing on the receiving end: an
-unpacked pack is byte-identical to what `cxxprobe test problem` and
-`cxxprobe serve` already understand.
+unpacked pack preserves regular files in the layout that `cxxprobe test problem`
+and `cxxprobe serve` already understand.
 
 <Callout type="info">
   This is a transport format for a separate system (e.g. a contest
@@ -49,9 +49,9 @@ Useful flags:
 
 ### Inspect the manifest
 
-The zip's `manifest.json` is a preview index — the same JSON shape `GET
-/problems/{slug}` returns for every packed problem (statement, limits,
-sample tests) — meant for an importing system's UI to show a preview
+The zip's `manifest.json` is a preview index — the preview JSON returned by `GET
+/problems/{slug}` for every packed problem (statement, limits,
+sample tests), plus packaging-only `attachments` metadata — meant for an importing system's UI to show a preview
 without unpacking and parsing cxxprobe's own YAML schema:
 
 ```bash
@@ -71,11 +71,46 @@ unzip -p ams-ascent.zip manifest.json | jq .
       "statement_markdown": "# A: beet cast\n...",
       "limits": { "memory_mb": 256, "cpu_ms": 5000, "wall_ms": 10000 },
       "language": "cpp",
-      "sample_tests": [{ "label": "1", "input": "...", "expected_output": "..." }]
+      "sample_tests": [{ "label": "1", "input": "...", "expected_output": "..." }],
+      "attachments": { "dir": "candidate/start", "files": ["main.cpp", "include/helper.hpp"] }
     }
   ]
 }
 ```
+
+The setter chooses `attachments.dir` in `problem.yaml` (default: `attachments`);
+it is not necessarily `public`. Every packed problem carries `attachments: {dir, files}`.
+`dir` is normalized relative to the problem root. `files` is a sorted list of
+regular files **relative to that directory**, including nested paths. Importers
+read each listed file at `<slug>/<dir>/<file>` in the zip. Read this metadata
+rather than guessing a directory or scanning other files; an empty list means
+there are no candidate files. Older packs may lack this additive metadata;
+`format_version` remains 1. The plain runtime preview JSON is unchanged.
+
+Before uploading, check exactly what candidates will receive:
+
+```bash
+cxxprobe package validate a-beet-cast
+cxxprobe package inspect a-beet-cast
+cxxprobe package inspect a-beet-cast --json
+```
+
+Both validate and pack warn if declared attachments are missing or contain no
+packable files. Omitted attachments with no default directory remain optional.
+Inspect lists the candidate files in text and JSON, without reading their contents.
+Empty lists also cover directories containing only excluded files or symlinks.
+
+Attachment paths must stay inside the problem: absolute paths, `..`, empty/root
+paths, backslashes, drive/colon syntax and ASCII control characters (0–31 and DEL) are rejected. Attachment directories
+cannot overlap the configured solutions, checker, tests, validator or generators
+directories (including ancestor/descendant overlaps). Their default names are
+reserved only while those defaults are in use: for example, `solutions.dir: private`
+allows `attachments.dir: solutions`. Symlinks (including
+file symlinks), special files and denylisted files/directories do not ship.
+Attachment lists use the same filters as the archive. File walks are sorted and
+limited to 100,000 visited entries and 64 directory levels; exceeding either
+limit fails rather than silently truncating the list. Pack paths should be
+stable during packing; concurrent filesystem mutation is not supported.
 
 The rest of the zip is a verbatim, denylist-filtered copy of each problem
 directory — see [Folder Structure](/architecture/folder-structure#packing-for-import)
