@@ -57,6 +57,7 @@ add_library(
   cases/cases.cpp
   judge/judge.cpp
   judge/judge_json.cpp
+  judge/integration.cpp
   pack/pack.cpp
   pack/detail/zip_archive.cpp
   embedded_gtest/gtest_paths.cpp

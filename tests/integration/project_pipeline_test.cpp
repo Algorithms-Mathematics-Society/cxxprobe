@@ -15,7 +15,9 @@
 #include <vector>
 
 #include "../../src/pack/detail/zip_archive.hpp"
+#include "cxxprobe/integration.hpp"
 #include "cxxprobe/problem.hpp"
+#include "cxxprobe/project.hpp"
 #include "cxxprobe/project_discovery.hpp"
 
 namespace {
@@ -347,6 +349,123 @@ TEST_F(ProjectPipelineTest, SymlinkedSharedSourceIsNeverPacked) {
     EXPECT_NE(result.text.find("shared source 'shared/order.cpp'"), std::string::npos)
         << result.text;
     EXPECT_FALSE(fs::exists(root / "desk.zip"));
+}
+
+// Two parts linked through one shared header: part 1 defines ingest(), part 2
+// defines book(), and the integration suite exercises both together.
+void write_part(const fs::path& dir, const std::string& name, const std::string& body) {
+    write_file(dir / "problem.yaml", "version: 2\nname: " + name + "\n");
+    write_file(dir / "solutions/main.cpp",
+               "#include \"desk.hpp\"\n" + body + "\nint main() { return 0; }\n");
+}
+
+void linked_project(const fs::path& desk, const std::string& integration_extra = "") {
+    write_file(desk / "project.yaml",
+               "version: 1\nname: Desk\nparts:\n  - {dir: parts/ingest, label: '1'}\n"
+               "  - {dir: parts/book, label: '2'}\n" +
+                   integration_extra);
+    write_file(desk / "shared/desk.hpp", "#pragma once\nint ingest(int);\nint book(int);\n");
+    write_part(desk / "parts/ingest", "Ingest", "int ingest(int x) { return x * 2; }");
+    write_part(desk / "parts/book", "Book", "int book(int x) { return x + 5; }");
+    write_file(desk / "integration/integration_gtest.cpp",
+               "#include <gtest/gtest.h>\n#include \"desk.hpp\"\n"
+               "TEST(Integration, Part1_Ingest) { EXPECT_EQ(ingest(2), 4); }\n"
+               "TEST(Integration, Part_2_Book) { EXPECT_EQ(book(1), 6); }\n"
+               "TEST(Integration, RoundTrip) { EXPECT_EQ(book(ingest(1)), 7); }\n");
+}
+
+cxxprobe::judge::IntegrationReport integrate(const fs::path& desk) {
+    const auto project = cxxprobe::project::load_from_dir(desk);
+    return cxxprobe::judge::run_integration(project, {},
+                                            cxxprobe::judge::reference_sources(project));
+}
+
+TEST_F(ProjectPipelineTest, CorrectPartsLinkAndTheSuitePasses) {
+    linked_project(root / "desk");
+    const auto report = integrate(root / "desk");
+    ASSERT_EQ(report.status, cxxprobe::judge::Status::Pass)
+        << report.error << report.link.diagnostics;
+    EXPECT_EQ(report.total, 3);
+    EXPECT_EQ(report.passed, 3);
+    ASSERT_EQ(report.parts.size(), 2U);
+    EXPECT_EQ(report.parts[0].origin, "reference");
+    EXPECT_EQ(report.parts[1].slug, "desk/book");
+    ASSERT_EQ(report.cases.size(), 3U);
+    EXPECT_EQ(report.cases[0].parts, (std::vector<std::string>{"1"}));
+    EXPECT_EQ(report.cases[1].parts, (std::vector<std::string>{"2"}));
+    EXPECT_TRUE(report.cases[2].parts.empty());
+}
+
+TEST_F(ProjectPipelineTest, MissingDefinitionIsALinkErrorNamingTheLinkedParts) {
+    linked_project(root / "desk");
+    // Compiles alone, but never defines the book() the header promises.
+    write_part(root / "desk/parts/book", "Book", "");
+    const auto report = integrate(root / "desk");
+    EXPECT_EQ(report.status, cxxprobe::judge::Status::Error);
+    EXPECT_FALSE(report.link.ok);
+    EXPECT_NE(report.link.diagnostics.find("book"), std::string::npos) << report.link.diagnostics;
+    EXPECT_NE(report.error.find("part '2' (reference)"), std::string::npos) << report.error;
+    EXPECT_NE(report.error.find("parts/book/solutions/main.cpp"), std::string::npos)
+        << report.error;
+}
+
+TEST_F(ProjectPipelineTest, FailingCaseIsAttributedToItsPart) {
+    linked_project(root / "desk");
+    write_part(root / "desk/parts/book", "Book", "int book(int x) { return x; }");
+    const auto report = integrate(root / "desk");
+    EXPECT_EQ(report.status, cxxprobe::judge::Status::Fail);
+    EXPECT_EQ(report.passed, 1);
+    const auto failed = std::ranges::find_if(report.cases, [](const auto& c) { return c.failed; });
+    ASSERT_NE(failed, report.cases.end());
+    EXPECT_EQ(failed->parts, (std::vector<std::string>{"2"}));
+    const auto json = cxxprobe::judge::to_json(report);
+    EXPECT_EQ(json["status"], "FAIL");
+    EXPECT_EQ(json["cases"][1]["parts"][0], "2");
+}
+
+TEST_F(ProjectPipelineTest, NoIntegrationEntryIsSkippedAndPartsStillJudge) {
+    linked_project(root / "desk");
+    fs::remove(root / "desk/integration/integration_gtest.cpp");
+    const auto report = integrate(root / "desk");
+    EXPECT_EQ(report.status, cxxprobe::judge::Status::Skipped);
+    EXPECT_FALSE(report.link.ran);
+    EXPECT_EQ(report.parts.size(), 2U);
+    const auto part = cli({"test", "problem", "desk/ingest", "--json"});
+    EXPECT_EQ(part.code, 0) << part.text;
+}
+
+TEST_F(ProjectPipelineTest, UncompilablePartIsReplacedByItsVisibleFallback) {
+    linked_project(root / "desk", "integration:\n  fallback_dir: fallback\n");
+    write_file(root / "desk/integration/fallback/2.cpp",
+               "#include \"desk.hpp\"\nint book(int x) { return x + 5; }\n");
+    const auto submission = root / "broken.cpp";
+    write_file(submission, "this is not C++\n");
+    const auto project = cxxprobe::project::load_from_dir(root / "desk");
+    auto sources = cxxprobe::judge::reference_sources(project);
+    sources[1] = {.label = "2", .source = submission, .origin = "submission"};
+    const auto report = cxxprobe::judge::run_integration(project, {}, sources);
+    EXPECT_EQ(report.status, cxxprobe::judge::Status::Pass) << report.error;
+    EXPECT_EQ(report.parts[1].origin, "fallback");
+    EXPECT_TRUE(report.parts[1].compiled);
+    EXPECT_FALSE(report.parts[1].diagnostics.empty());
+
+    fs::remove(root / "desk/integration/fallback/2.cpp");
+    const auto without = cxxprobe::judge::run_integration(project, {}, sources);
+    EXPECT_EQ(without.status, cxxprobe::judge::Status::Error);
+    EXPECT_NE(without.error.find("part(s) '2' failed to compile"), std::string::npos)
+        << without.error;
+}
+
+TEST(IntegrationAttribution, LabelsMustBeDelimited) {
+    const std::vector<std::string> labels{"1", "12", "a_b"};
+    using cxxprobe::judge::attributed_parts;
+    EXPECT_EQ(attributed_parts("Integration", "Part1_Ingest", labels),
+              (std::vector<std::string>{"1"}));
+    EXPECT_EQ(attributed_parts("part_12", "Books", labels), (std::vector<std::string>{"12"}));
+    EXPECT_EQ(attributed_parts("Integration", "Shared_a_b", labels),
+              (std::vector<std::string>{"a_b"}));
+    EXPECT_TRUE(attributed_parts("Integration", "Round123Trip", labels).empty());
+    EXPECT_TRUE(attributed_parts("Integration", "RoundTrip", labels).empty());
 }
 
 }  // namespace

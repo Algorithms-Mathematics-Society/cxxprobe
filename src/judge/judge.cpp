@@ -11,6 +11,7 @@
 #include "cxxprobe/compile.hpp"
 #include "cxxprobe/sandbox.hpp"
 #include "embedded_gtest/gtest_paths.hpp"
+#include "judge_detail.hpp"
 
 namespace cxxprobe::judge {
 
@@ -32,20 +33,8 @@ const char* status_str(Status s) {
 
 namespace {
 
-fs::path make_temp_path(std::string_view prefix) {
-    static std::atomic<unsigned long> counter{0};
-    return fs::temp_directory_path() /
-           std::format("{}-{}-{}", prefix, static_cast<long>(::getpid()), counter.fetch_add(1));
-}
-
-CompileStepReport to_compile_report(const cxxprobe::compile::Result& r) {
-    CompileStepReport rep;
-    rep.ran = true;
-    rep.ok = r.ok;
-    rep.exit_code = r.exit_code;
-    rep.diagnostics = r.diagnostics;
-    return rep;
-}
+using detail::make_temp_path;
+using detail::to_compile_report;
 
 ManualTestsReport run_manual_tests(const cxxprobe::problem::ProblemConfig& config,
                                    const cxxprobe::sandbox::Limits& limits,
