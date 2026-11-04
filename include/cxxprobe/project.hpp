@@ -25,6 +25,14 @@ struct IntegrationConfig {
     std::optional<std::string> fallback_dir;     // relative to integration.dir
 };
 
+// `cxxprobe bench project`: a driver with its own main() over a benchmark
+// input. Enabled by the presence of dir/entry, like the other checks.
+struct BenchmarkConfig {
+    std::string dir{"benchmark"};
+    std::string entry{"bench_main.cpp"};  // relative to benchmark.dir
+    std::string input{"input.txt"};       // relative to benchmark.dir; a job may supply its own
+};
+
 struct ProjectConfig {
     std::filesystem::path project_dir;  // absolute; set by loader
     std::string name;
@@ -32,6 +40,7 @@ struct ProjectConfig {
     SharedConfig shared;
     std::vector<PartEntry> parts;
     IntegrationConfig integration;
+    BenchmarkConfig benchmark;
 };
 
 // Strict project.yaml v1 contract (schemas/project.md), including filesystem

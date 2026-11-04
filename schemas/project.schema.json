@@ -4,18 +4,33 @@
   "description": "Structural contract only; see schemas/project.md for semantic and filesystem requirements.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "name", "parts"],
+  "required": [
+    "version",
+    "name",
+    "parts"
+  ],
   "properties": {
-    "version": { "type": "integer", "const": 1 },
-    "name": { "type": "string", "pattern": "\\S" },
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "\\S"
+    },
     "shared": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "dir": { "$ref": "#/$defs/path", "default": "shared" },
+        "dir": {
+          "$ref": "#/$defs/path",
+          "default": "shared"
+        },
         "sources": {
           "type": "array",
-          "items": { "$ref": "#/$defs/path" },
+          "items": {
+            "$ref": "#/$defs/path"
+          },
           "uniqueItems": true,
           "default": []
         }
@@ -27,10 +42,17 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["dir", "label"],
+        "required": [
+          "dir",
+          "label"
+        ],
         "properties": {
-          "dir": { "$ref": "#/$defs/path" },
-          "label": { "$ref": "#/$defs/label" }
+          "dir": {
+            "$ref": "#/$defs/path"
+          },
+          "label": {
+            "$ref": "#/$defs/label"
+          }
         }
       }
     },
@@ -38,9 +60,36 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "dir": { "$ref": "#/$defs/path", "default": "integration" },
-        "entry": { "$ref": "#/$defs/path", "default": "integration_gtest.cpp" },
-        "fallback_dir": { "$ref": "#/$defs/path" }
+        "dir": {
+          "$ref": "#/$defs/path",
+          "default": "integration"
+        },
+        "entry": {
+          "$ref": "#/$defs/path",
+          "default": "integration_gtest.cpp"
+        },
+        "fallback_dir": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "benchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional. Enabled by the presence of <dir>/<entry>: a driver with its own main(), linked with every part, timed by `cxxprobe bench project`.",
+      "properties": {
+        "dir": {
+          "$ref": "#/$defs/path",
+          "default": "benchmark"
+        },
+        "entry": {
+          "$ref": "#/$defs/path",
+          "default": "bench_main.cpp"
+        },
+        "input": {
+          "$ref": "#/$defs/path",
+          "default": "input.txt"
+        }
       }
     }
   },
@@ -51,14 +100,18 @@
       "minLength": 1,
       "maxLength": 64,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
-      "not": { "pattern": "[^A-Za-z0-9_-]" }
+      "not": {
+        "pattern": "[^A-Za-z0-9_-]"
+      }
     },
     "path": {
       "description": "Normalized nonempty relative POSIX path; no empty, dot, parent, drive, control or backslash components.",
       "type": "string",
       "minLength": 1,
       "pattern": "^[^/]+(/[^/]+)*$",
-      "not": { "pattern": "(^|/)\\.{1,2}(/|$)|[\\\\:\\u0000-\\u001f\\u007f]|/$" }
+      "not": {
+        "pattern": "(^|/)\\.{1,2}(/|$)|[\\\\:\\u0000-\\u001f\\u007f]|/$"
+      }
     }
   }
 }

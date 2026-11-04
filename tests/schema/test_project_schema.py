@@ -47,7 +47,8 @@ class ProjectSchemaTest(unittest.TestCase):
         ] + [
             (("parts",), value) for value in ([], {}, "parts", None)
         ] + [
-            (("shared",), []), (("integration",), None),
+            (("shared",), []), (("integration",), None), (("benchmark",), None),
+            (("benchmark",), []), (("benchmark", "entry"), 1),
             (("shared", "sources"), "driver.cpp"),
             (("shared", "sources"), ["driver.cpp", "driver.cpp"]),
             (("shared", "sources", 0), 1),
@@ -91,7 +92,8 @@ class ProjectSchemaTest(unittest.TestCase):
     def test_all_path_fields_reject_non_normalized_or_escaping_paths(self):
         paths = [("shared", "dir"), ("shared", "sources", 0),
                  ("parts", 0, "dir"), ("integration", "dir"),
-                 ("integration", "entry"), ("integration", "fallback_dir")]
+                 ("integration", "entry"), ("integration", "fallback_dir"),
+                 ("benchmark", "dir"), ("benchmark", "entry"), ("benchmark", "input")]
         for path in paths:
             for value in ["", ".", "..", "../x", "x/..", "x/../y", "x/./y",
                           "/tmp/x", "//server/x", "C:/x", "C:x", "x\\y",
@@ -107,7 +109,7 @@ class ProjectSchemaTest(unittest.TestCase):
     def test_optional_sections_and_members_have_documented_defaults(self):
         document = {"version": 1, "name": "Minimal", "parts": FULL["parts"]}
         self.assertEqual(contract_errors(document, SCHEMA), [])
-        document.update(shared={}, integration={})
+        document.update(shared={}, integration={}, benchmark={})
         self.assertEqual(contract_errors(document, SCHEMA), [])
         # Schema validation does not insert defaults or require integration files.
         self.assertEqual(document["shared"], {})
@@ -115,7 +117,9 @@ class ProjectSchemaTest(unittest.TestCase):
         for section, key, expected in [
             ("shared", "dir", "shared"), ("shared", "sources", []),
             ("integration", "dir", "integration"),
-            ("integration", "entry", "integration_gtest.cpp")
+            ("integration", "entry", "integration_gtest.cpp"),
+            ("benchmark", "dir", "benchmark"), ("benchmark", "entry", "bench_main.cpp"),
+            ("benchmark", "input", "input.txt"),
         ]:
             self.assertEqual(SCHEMA["properties"][section]["properties"][key]["default"], expected)
 

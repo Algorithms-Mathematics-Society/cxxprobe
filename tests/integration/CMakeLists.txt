@@ -3,6 +3,9 @@ add_executable(cxxprobe-integration-tests sandbox_run_test.cpp
 
 target_link_libraries(cxxprobe-integration-tests PRIVATE cxxprobe
                                                          GTest::gtest_main)
+# bench_pipeline_test.cpp checks hashes with src/bench/detail/sha256.hpp.
+target_include_directories(cxxprobe-integration-tests
+                           PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 # Inject helper binary paths as compile-time constants.
 target_compile_definitions(
@@ -20,7 +23,8 @@ if(TARGET cxxprobe-cli)
     cxxprobe-integration-tests
     PRIVATE problem_pipeline_test.cpp pack_pipeline_test.cpp
             validate_pipeline_test.cpp generate_pipeline_test.cpp
-            package_pipeline_test.cpp project_pipeline_test.cpp)
+            package_pipeline_test.cpp project_pipeline_test.cpp
+            bench_pipeline_test.cpp)
   target_compile_definitions(
     cxxprobe-integration-tests
     PRIVATE CXXPROBE_CLI_PATH="$<TARGET_FILE:cxxprobe-cli>")

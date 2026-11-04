@@ -261,6 +261,40 @@ worst of every part and the integration check.
 
 ---
 
+## `bench`
+
+```text
+cxxprobe bench project <slug> [-C/--dir DIR] [--submission LABEL=PATH]... [--fallback LABEL=reference|empty]...
+                              [--input FILE] [--repetitions N] [--warmups N] [--attempts N]
+                              [--noise-threshold F] [--cpu N] [--profile DIR] [--json]
+cxxprobe bench calibrate [--repetitions N] [--cpu N] [--baseline-ns NS] [--tolerance F]
+                         [--noise-threshold F] [--json]
+```
+
+`bench project` builds the project's benchmark driver with every part once,
+checks that its output on the benchmark input matches the reference parts'
+output, and only then times that same binary, pinned to one CPU: one warmup,
+then batches of 7 runs until a batch's IQR is within 5% of its median (3
+batches at most). `--json` prints `result` (the
+[benchmark result record](https://github.com/Algorithms-Mathematics-Society/cxxprobe/blob/main/schemas/benchmark-result.md):
+`status` `OK` / `NOISY` / `FAILED_VERIFY`, `median_ns`, `iqr_ns`,
+`instructions`, `repetitions`, `pinned_core`) plus `input_sha256`,
+`binary_sha256`, `cpu`, every batch under `attempts`, and `verify_reason` when
+verification failed. `--profile DIR` takes one extra, untimed, sampled run
+after an `OK` result and writes `DIR/stacks.folded` and `DIR/flamegraph.svg`;
+`profile.owners` gives each part's share of the samples and its hottest
+symbols (`shared`, `entry` and `other` cover the rest).
+
+Exit codes: `0` OK, `1` NOISY or FAILED_VERIFY (a result that must not rank),
+`2` the benchmark could not be set up.
+
+`bench calibrate` times a fixed built-in workload through the same pinned path.
+With `--baseline-ns`, a median more than `--tolerance` (default 5%) away from it,
+or a noisy batch, fails with exit `1`, so a host that has drifted can stop
+serving results.
+
+---
+
 ## `package`
 
 Everything that operates on a problem package *as a package*, rather than on
