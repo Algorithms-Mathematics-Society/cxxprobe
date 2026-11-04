@@ -116,6 +116,53 @@ protected:
         return problem_dir;
     }
 
+    // Hand-written package: independent of the scaffold checker regression.
+    fs::path declared_package(std::string_view expectation, std::string_view sections = "",
+                              bool wrong = true) {
+        fs::path problem = base_dir_ / "declared";
+        fs::create_directories(problem / "solutions");
+        fs::create_directories(problem / "tests");
+        fs::create_directories(problem / "checker");
+        write_file(base_dir_ / "contest.yaml", "version: 1\nname: Regression\n");
+        write_file(problem / "solutions" / "main.cpp", kCorrectSolution);
+        write_file(
+            problem / "solutions" / "other.cpp",
+            wrong ? "#include <iostream>\nint main(){std::cout<<8<<\"\\n\";}\n" : kCorrectSolution);
+        write_file(
+            problem / "problem.yaml",
+            std::format("version: 2\nname: Regression\nsolutions:\n  entries:\n"
+                        "    - {{ file: main.cpp, primary: true }}\n"
+                        "    - {{ file: other.cpp{} }}\n{}",
+                        expectation.empty() ? "" : ", " + std::string(expectation), sections));
+        return problem;
+    }
+
+    CliResult test_declared(bool as_json = true) {
+        std::vector<std::string> args{"test", "problem", "declared"};
+        if (as_json) {
+            args.emplace_back("--json");
+        }
+        return run_cli(args, base_dir_);
+    }
+
+    static void expect_skipped_check(const CliResult& r, const std::string& kind) {
+        ASSERT_EQ(r.exit_code, 1) << r.stdout_text;
+        auto check = json::parse(r.stdout_text)["additional_solutions"][0];
+        EXPECT_FALSE(check["matched"]);
+        ASSERT_EQ(check["checks"].size(), 1U);
+        EXPECT_EQ(check["checks"][0]["kind"], kind);
+        EXPECT_EQ(check["checks"][0]["actual"], "SKIPPED");
+        EXPECT_TRUE(check["checks"][0]["graded"]);
+    }
+
+    static void expect_reference_result(const CliResult& r, bool wrong, bool per_check) {
+        ASSERT_EQ(r.exit_code, wrong && !per_check ? 1 : 0) << r.stdout_text;
+        auto check = json::parse(r.stdout_text)["additional_solutions"][0];
+        EXPECT_EQ(check["actual_verdict"], wrong ? "WA" : "AC");
+        EXPECT_EQ(check["matched"], !wrong || per_check);
+        EXPECT_EQ(check["checks"][1]["graded"], !per_check);
+    }
+
     static bool sandbox_available_;
     static int counter_;
     fs::path base_dir_;
@@ -273,4 +320,130 @@ TEST_F(ProblemPipelineTest, SubmissionOverrideSkipsAdditionalSolutionVerificatio
                      problem_dir);
     json j = json::parse(r.stdout_text);
     EXPECT_FALSE(j.contains("additional_solutions")) << r.stdout_text;
+}
+
+// Explicit expectations must not disappear when their check is unavailable,
+// even if no other check is enabled. PASS and FAIL are both obligations.
+TEST_F(ProblemPipelineTest, MissingAndDisabledExpectedChecksMismatch) {
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"behavior", "PASS"}, {"behavior", "FAIL"}, {"symbolic", "PASS"},
+        {"symbolic", "FAIL"}, {"io", "AC"},         {"io", "WA"},
+    };
+    for (const auto& [kind, want] : cases) {
+        for (bool disabled : {false, true}) {
+            SCOPED_TRACE(std::format("{} {} disabled={}", kind, want, disabled));
+            auto problem = declared_package(
+                std::format("expected: {{ {}: {} }}", kind, want),
+                disabled ? "tests: { enabled: false }\nsymbolic:\n  enabled: false\n"
+                           "  must_include: [int]\nchecker:\n  behavior: { enabled: false }\n"
+                         : "");
+            if (disabled) {
+                write_file(problem / "tests" / "1.in", "3 4\n");
+                write_file(problem / "tests" / "1.ans", "7\n");
+                write_file(problem / "checker" / "behavior_gtest.cpp", "// disabled\n");
+            }
+            auto r = test_declared();
+            expect_skipped_check(r, kind);
+            fs::remove_all(problem);
+        }
+    }
+}
+
+TEST_F(ProblemPipelineTest, MissingExpectedCheckWithOtherEnabledCheckStillMismatches) {
+    declared_package("expected: { behavior: FAIL }", "symbolic:\n  must_include: [int]\n");
+    auto r = test_declared();
+    ASSERT_EQ(r.exit_code, 1) << r.stdout_text;
+    auto check = json::parse(r.stdout_text)["additional_solutions"][0];
+    EXPECT_FALSE(check["matched"]);
+    EXPECT_EQ(check["mismatch"], "expected behavior FAIL, got SKIPPED");
+    auto text = test_declared(false);
+    EXPECT_EQ(text.exit_code, 1);
+    EXPECT_NE(text.stdout_text.find("MISMATCH"), std::string::npos);
+    EXPECT_NE(text.stdout_text.find("SKIPPED"), std::string::npos);
+}
+
+TEST_F(ProblemPipelineTest, MissingSymbolicExpectationDoesNotGradeImplicitIoAc) {
+    auto problem = declared_package("expected: { symbolic: FAIL }");
+    write_file(problem / "tests" / "1.in", "3 4\n");
+    write_file(problem / "tests" / "1.ans", "7\n");
+    auto r = test_declared();
+    ASSERT_EQ(r.exit_code, 1) << r.stdout_text;
+    auto check = json::parse(r.stdout_text)["additional_solutions"][0];
+    EXPECT_FALSE(check["matched"]);
+    EXPECT_EQ(check["mismatch"], "expected symbolic FAIL, got SKIPPED");
+    EXPECT_EQ(check["actual_verdict"], "WA");
+    EXPECT_FALSE(check["checks"][1]["graded"]);
+}
+
+TEST_F(ProblemPipelineTest, SecondaryReferenceDefaultsToAcButPerCheckMutantDoesNot) {
+    for (const auto& expectation :
+         {"", "expected: {}", "expected_verdict: AC", "expected: { symbolic: PASS }"}) {
+        for (bool wrong : {false, true}) {
+            SCOPED_TRACE(std::format("{} wrong={}", expectation, wrong));
+            auto problem =
+                declared_package(expectation, "symbolic:\n  must_include: [int]\n", wrong);
+            write_file(problem / "tests" / "1.in", "3 4\n");
+            write_file(problem / "tests" / "1.ans", "7\n");
+            bool per_check = std::string(expectation) == "expected: { symbolic: PASS }";
+            auto r = test_declared();
+            expect_reference_result(r, wrong, per_check);
+            fs::remove_all(problem);
+        }
+    }
+}
+
+TEST_F(ProblemPipelineTest, SymbolicMutantFailsWhenRuleIsWeakened) {
+    auto problem =
+        declared_package("expected: { symbolic: FAIL }", "symbolic:\n  must_include: [return]\n");
+    auto caught = test_declared();
+    ASSERT_EQ(caught.exit_code, 0) << caught.stdout_text;
+    auto check = json::parse(caught.stdout_text)["additional_solutions"][0];
+    EXPECT_TRUE(check["matched"]);
+    EXPECT_EQ(check["checks"][0]["actual"], "FAIL");
+    declared_package("expected: { symbolic: FAIL }", "symbolic:\n  must_include: [int]\n");
+    auto weakened = test_declared();
+    ASSERT_EQ(weakened.exit_code, 1) << weakened.stdout_text;
+    check = json::parse(weakened.stdout_text)["additional_solutions"][0];
+    EXPECT_FALSE(check["matched"]);
+    EXPECT_EQ(check["checks"][0]["actual"], "PASS");
+}
+
+TEST_F(ProblemPipelineTest, BehaviorMutantFailsWhenCheckerIsWeakened) {
+    auto problem = declared_package("expected: { behavior: FAIL }");
+    write_file(problem / "solutions" / "main.cpp", "int value(){return 7;}\n");
+    write_file(problem / "solutions" / "other.cpp", "int value(){return 8;}\n");
+    auto checker = problem / "checker" / "behavior_gtest.cpp";
+    constexpr std::string_view header =
+        "#include <gtest/gtest.h>\n#include CXXPROBE_SOLUTION_FILE\n";
+    write_file(checker, std::string(header) + "TEST(Value, Correct){EXPECT_EQ(value(),7);}\n");
+    auto caught = test_declared();
+    ASSERT_EQ(caught.exit_code, 0) << caught.stdout_text;
+    auto check = json::parse(caught.stdout_text)["additional_solutions"][0];
+    EXPECT_TRUE(check["matched"]);
+    EXPECT_EQ(check["checks"][0]["actual"], "FAIL");
+    write_file(checker, std::string(header) + "TEST(Value, Weak){EXPECT_GT(value(),0);}\n");
+    auto weakened = test_declared();
+    ASSERT_EQ(weakened.exit_code, 1) << weakened.stdout_text;
+    check = json::parse(weakened.stdout_text)["additional_solutions"][0];
+    EXPECT_FALSE(check["matched"]);
+    EXPECT_EQ(check["checks"][0]["actual"], "PASS");
+}
+
+TEST_F(ProblemPipelineTest, IoMutantFailsWhenTestsAreWeakened) {
+    auto problem = declared_package("expected: { io: WA }");
+    write_file(problem / "solutions" / "other.cpp",
+               "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;"
+               "std::cout<<a+b+(a==3)<<\"\\n\";}\n");
+    write_file(problem / "tests" / "1.in", "3 4\n");
+    write_file(problem / "tests" / "1.ans", "7\n");
+    auto caught = test_declared();
+    ASSERT_EQ(caught.exit_code, 0) << caught.stdout_text;
+    EXPECT_TRUE(json::parse(caught.stdout_text)["additional_solutions"][0]["matched"]);
+    write_file(problem / "tests" / "1.in", "1 2\n");
+    write_file(problem / "tests" / "1.ans", "3\n");
+    auto weakened = test_declared();
+    ASSERT_EQ(weakened.exit_code, 1) << weakened.stdout_text;
+    auto check = json::parse(weakened.stdout_text)["additional_solutions"][0];
+    EXPECT_FALSE(check["matched"]);
+    EXPECT_EQ(check["actual_verdict"], "AC");
 }

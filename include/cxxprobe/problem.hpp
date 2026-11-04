@@ -103,7 +103,7 @@ struct GeneratorsConfig {
 
 // What a declared non-primary solution is expected to do to one check type.
 // Absent on an entry means the setter stated nothing about that check, and an
-// unstated check is never graded -- otherwise adding a behaviour checker to a
+// unstated behavior/symbolic check is never graded -- adding a checker to a
 // problem would retroactively fail every mutant already declared against I/O.
 enum class ExpectedCheck : std::uint8_t { Pass, Fail };
 

@@ -320,7 +320,7 @@ void record_outcome(SolutionCheck& out, std::string kind,
 
 // Runs the manual tests for one declared solution and records the I/O outcome.
 // The I/O expectation keeps its original meaning -- a verdict, not PASS/FAIL --
-// and is graded only when the setter actually wrote one down.
+// and defaults to AC for references without any explicit check expectation.
 void check_solution_io(const cxxprobe::problem::ProblemConfig& config,
                        const cxxprobe::problem::ResolvedCompiler& resolved,
                        const cxxprobe::sandbox::Limits& run_limits, const std::string& checker_bin,
@@ -352,7 +352,7 @@ void check_solution_io(const cxxprobe::problem::ProblemConfig& config,
     SolutionCheckOutcome io;
     io.kind = "io";
     io.actual = out.actual_verdict;
-    if (entry.verdict_declared) {
+    if (entry.verdict_declared || (!entry.expected_behavior && !entry.expected_symbolic)) {
         io.graded = true;
         io.expected = cxxprobe::cases::verdict_str(entry.expected_verdict);
         io.matched = (io.expected == io.actual);
@@ -382,9 +382,7 @@ void check_solution_behavior(const cxxprobe::problem::ProblemConfig& config,
     record_outcome(out, "behavior", entry.expected_behavior, status_str(status));
 }
 
-// Matched means every expectation the setter actually stated held. A solution
-// with nothing declared matches trivially, which is correct: that is a second
-// reference solution, not a mutant.
+// Match every explicit expectation and the implicit I/O AC for references.
 void grade_declared_expectations(SolutionCheck& out) {
     out.matched = true;
     for (const auto& o : out.outcomes) {
@@ -430,13 +428,24 @@ void check_one_solution(const cxxprobe::problem::ProblemConfig& config,
             actual = "ERROR";
         }
         record_outcome(out, "symbolic", entry.expected_symbolic, std::move(actual));
+    } else if (entry.expected_symbolic) {
+        record_outcome(out, "symbolic", entry.expected_symbolic, "SKIPPED");
     }
 
     if (config.tests.enabled) {
         check_solution_io(config, resolved, run_limits, checker_bin, source, entry, out);
+    } else if (entry.verdict_declared) {
+        SolutionCheckOutcome io;
+        io.kind = "io";
+        io.graded = true;
+        io.expected = cxxprobe::cases::verdict_str(entry.expected_verdict);
+        io.actual = "SKIPPED";
+        out.outcomes.push_back(std::move(io));
     }
     if (config.checker.behavior.enabled) {
         check_solution_behavior(config, defaults, resolved, source, entry, out);
+    } else if (entry.expected_behavior) {
+        record_outcome(out, "behavior", entry.expected_behavior, "SKIPPED");
     }
     grade_declared_expectations(out);
 }
@@ -610,13 +619,6 @@ std::vector<SolutionCheck> verify_additional_solutions(
     if (config.solutions.entries.size() <= 1) {
         return checks;
     }
-    // Any enabled check can grade a mutant. Gating on tests.enabled alone meant
-    // a problem checked only by behaviour assertions or symbolic rules could
-    // not declare a mutant at all.
-    if (!config.tests.enabled && !config.symbolic.enabled && !config.checker.behavior.enabled) {
-        return checks;
-    }
-
     cxxprobe::problem::ResolvedCompiler resolved =
         cxxprobe::problem::resolve_compiler(config.compiler, defaults);
     cxxprobe::sandbox::Limits run_limits =

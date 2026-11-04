@@ -352,7 +352,7 @@ solutions:
     EXPECT_FALSE(mutant.expected_behavior.has_value());
 }
 
-TEST_F(ProblemConfigTest, AnUndeclaredSolutionIsNotGradedOnTheAcDefault) {
+TEST_F(ProblemConfigTest, AnUndeclaredReferenceRetainsTheAcDefault) {
     write("problem.yaml", R"(version: 2
 name: P
 solutions:
@@ -362,9 +362,25 @@ solutions:
 )");
     auto cfg = load_from_dir(dir_);
     // A second reference solution, not a mutant. expected_verdict still reads
-    // AC for compatibility, but nothing about it was declared.
+    // AC as its implicit I/O expectation; the parser preserves explicitness.
     EXPECT_FALSE(cfg.solutions.entries.at(1).verdict_declared);
     EXPECT_EQ(cfg.solutions.entries.at(1).expected_verdict, cxxprobe::cases::Verdict::AC);
+}
+
+TEST_F(ProblemConfigTest, EmptyExpectedMapRetainsReferenceDefault) {
+    write("problem.yaml", R"(version: 2
+name: P
+solutions:
+  entries:
+    - { file: main.cpp, primary: true }
+    - { file: second_reference.cpp, expected: {} }
+)");
+    auto cfg = load_from_dir(dir_);
+    const auto& reference = cfg.solutions.entries.at(1);
+    EXPECT_FALSE(reference.verdict_declared);
+    EXPECT_FALSE(reference.expected_behavior.has_value());
+    EXPECT_FALSE(reference.expected_symbolic.has_value());
+    EXPECT_EQ(reference.expected_verdict, cxxprobe::cases::Verdict::AC);
 }
 
 TEST_F(ProblemConfigTest, ExpectedMapRejectsAMisspelledCheckName) {

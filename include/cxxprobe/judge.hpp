@@ -137,16 +137,13 @@ JudgeReport run_problem(
     const cxxprobe::problem::ProjectDefaults& defaults,
     const std::optional<std::filesystem::path>& submission_override = std::nullopt);
 
-// One non-primary solutions/ entry judged against the problem's own manual
-// tests, with the verdict it actually earned compared to the one its
-// problem.yaml entry declares.
 // One check type's result for a declared non-primary solution.
 struct SolutionCheckOutcome {
     std::string kind;      // "io" | "behavior" | "symbolic"
     std::string expected;  // what the setter declared; empty if nothing was
-    std::string actual;    // PASS/FAIL/ERROR, or an I/O verdict; empty if the
+    std::string actual;    // PASS/FAIL/ERROR/SKIPPED, or an I/O verdict; empty if the
                            // check could not be reached at all
-    bool graded{false};    // false when nothing was declared for this check
+    bool graded{false};    // explicit expectation or implicit reference AC
     bool matched{false};   // only meaningful when graded
 };
 
@@ -154,29 +151,20 @@ struct SolutionCheck {
     std::string file;
     std::string expected_verdict;
     std::string actual_verdict;  // empty if it never got as far as a verdict
-    bool matched{false};         // every *declared* expectation held
+    bool matched{false};         // every applicable expectation held
     std::string diagnostics;     // compile output / why no verdict was reached
-    // One entry per check type the problem enables. A mutant that only a
+    // One entry per enabled or explicitly expected check. A mutant that only a
     // behaviour assertion or a symbolic rule can catch has no I/O verdict to
     // declare, so the single expected_verdict above cannot express it.
     std::vector<SolutionCheckOutcome> outcomes;
     std::string mismatch;  // names the check that disagreed, empty if none
 };
 
-// Compiles and judges every *non-primary* declared solution against the
-// manual test set, reducing each one's per-case verdicts to a single worst
-// verdict (cases::worst_verdict) and comparing it to the entry's
-// expected_verdict.
-//
-// Deliberately runs only the manual tests, not run_problem()'s full 3-way
-// pipeline: the symbolic and behavior checks describe what the *primary*
-// solution must look like and do, which says nothing useful about a
-// solution that exists precisely to be wrong.
-//
-// A mismatch means the test data is too weak to catch the failure mode that
-// solution embodies (or the checker is buggy) — the whole point of
-// declaring it. Returns an empty vector when the problem declares one
-// solution or none, or when manual tests are disabled. Never throws.
+// Judges every non-primary solution against enabled checks. Explicit
+// expectations on disabled checks mismatch with SKIPPED, including when all
+// checks are disabled. Entries without any explicit expectation retain the
+// implicit AC expectation when manual tests are enabled; per-check mutants
+// have no implicit I/O expectation. Returns empty for one solution or none.
 std::vector<SolutionCheck> verify_additional_solutions(
     const cxxprobe::problem::ProblemConfig& config,
     const cxxprobe::problem::ProjectDefaults& defaults);
