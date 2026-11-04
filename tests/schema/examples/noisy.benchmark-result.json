@@ -1,0 +1,8 @@
+{
+  "status": "NOISY",
+  "median_ns": 1300.5,
+  "iqr_ns": 400,
+  "instructions": 800,
+  "repetitions": 8,
+  "pinned_core": 2
+}
