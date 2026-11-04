@@ -83,6 +83,10 @@ setup every install needs.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, code style,
 and PR process.
 
+The schema-first `project.yaml` v1 contract for team projects is in
+[schemas/project.md](schemas/project.md). Runtime project support is tracked in
+[#3](https://github.com/Algorithms-Mathematics-Society/cxxprobe/issues/3).
+
 ## License
 
 [GPLv3](LICENSE)
