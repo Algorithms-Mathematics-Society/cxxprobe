@@ -21,8 +21,9 @@ target_link_libraries(cxxprobe-unit-tests PRIVATE cxxprobe GTest::gtest_main)
 
 # Access to src/sandbox/detail/ and src/pack/detail/ headers.
 target_include_directories(
-  cxxprobe-unit-tests PRIVATE ${PROJECT_SOURCE_DIR}/src/sandbox
-                              ${PROJECT_SOURCE_DIR}/src/pack ${PROJECT_SOURCE_DIR}/src)
+  cxxprobe-unit-tests
+  PRIVATE ${PROJECT_SOURCE_DIR}/src/sandbox ${PROJECT_SOURCE_DIR}/src/pack
+          ${PROJECT_SOURCE_DIR}/src)
 
 if(CXXPROBE_ENABLE_ASAN)
   enable_sanitizers(cxxprobe-unit-tests)

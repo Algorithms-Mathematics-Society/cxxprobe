@@ -78,7 +78,19 @@ std::vector<int> core_of(int cpu) {
     return cpus.empty() ? std::vector<int>{cpu} : cpus;
 }
 
+// Online CPUs, not this process's own affinity: on a benchmark host the
+// caller (the worker) is deliberately confined to a housekeeping core, and
+// the measured child pins itself inside its own cxxprobe cgroup, which may
+// use every CPU.
 std::vector<int> allowed_cpus() {
+    std::ifstream in{"/sys/devices/system/cpu/online"};
+    std::string text;
+    if (std::getline(in, text)) {
+        auto cpus = parse_cpu_list(text);
+        if (!cpus.empty()) {
+            return cpus;
+        }
+    }
     cpu_set_t set;
     CPU_ZERO(&set);
     std::vector<int> cpus;
@@ -230,7 +242,7 @@ CpuPlacement place(int requested) {
     CpuPlacement placement;
     if (requested >= 0) {
         if (!std::ranges::contains(allowed, requested)) {
-            throw std::runtime_error(std::format("bench: CPU {} is not available", requested));
+            throw std::runtime_error(std::format("bench: CPU {} is not online", requested));
         }
         placement.cpu = requested;
     } else {

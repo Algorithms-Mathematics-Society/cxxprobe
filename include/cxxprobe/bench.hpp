@@ -45,7 +45,9 @@ struct CpuPlacement {
     bool reserved_core_free{false};  // a core other than CPU 0's was available
 };
 
-// `requested` < 0 chooses automatically from the CPUs this process may use.
+// `requested` < 0 chooses automatically from the online CPUs. Topology comes
+// from sysfs (thread_siblings_list): sibling numbering differs between hosts
+// (c7i.xlarge pairs CPUs 0+2 and 1+3), so nothing assumes adjacent pairs.
 CpuPlacement place(int requested);
 
 struct BenchOptions {
