@@ -166,9 +166,26 @@ TestCommand::TestCommand(CLI::App& parent) {
     problem_app_->add_flag("--json", json_output_, "Emit result as JSON");
     problem_app_->add_flag("-q,--quiet", quiet_, "Suppress per-case detail (human mode)");
     problem_app_->add_flag("--no-color", no_color_, "Disable ANSI color output");
+
+    project_app_ = test_app_->add_subcommand(
+        "project", "Judge every part of a project, then the integration check over all parts");
+    project_app_->add_option("slug", project_name_, "Project slug (its directory name)")
+        ->required();
+    project_app_->add_option("-C,--dir", dir_override_,
+                             "Contest directory (default: auto-detect via contest.yaml)");
+    project_app_->add_option("--submission", submission_pairs_,
+                             "<label>=<path>: grade this source for that part (repeatable)");
+    project_app_->add_option(
+        "--fallback", fallback_pairs_,
+        "<label>=reference|empty: what an unsupplied part becomes (default reference)");
+    project_app_->add_flag("--json", json_output_, "Emit result as JSON");
+    project_app_->add_flag("-q,--quiet", quiet_, "Suppress per-case detail (human mode)");
+    project_app_->add_flag("--no-color", no_color_, "Disable ANSI color output");
 }
 
-int TestCommand::execute() { return execute_test_problem(); }
+int TestCommand::execute() {
+    return project_app_->parsed() ? execute_test_project() : execute_test_problem();
+}
 
 int TestCommand::execute_test_problem() {
     fs::path contest_dir;

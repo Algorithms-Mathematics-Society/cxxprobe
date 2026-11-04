@@ -46,10 +46,10 @@ of this contract.
 JSON Schema defaults are annotations, not mutations: the loader MUST apply
 the defaults. An empty sources list permits header-only shared content and does
 not require `shared.dir` to exist. An absent integration entry MUST remain valid;
-the future integration judge reports SKIPPED, following the presence-based checker
-convention in `src/problem/problem.cpp` and issue #5. Setting `fallback_dir` names
-a directory; fallback file naming and substitution behavior belong to #5/#6,
-not this manifest schema.
+the integration check then reports SKIPPED, following the presence-based checker
+convention in `src/problem/problem.cpp`. Setting `fallback_dir` names a directory
+in which `<label>.cpp` replaces a part whose source does not compile; the
+substitution is always reported (see `cxxprobe test project`).
 
 ## Paths and identities
 
@@ -102,10 +102,12 @@ silently overwriting an entry.
 and [draft PR #17](https://github.com/Algorithms-Mathematics-Society/cxxprobe-worker/pull/17)
 use `project_slug: "order-desk"` and `parts: {"1": "<submission URI>", ...}`.
 The manifest's label set is authoritative. Missing labels MUST be diagnosed by
-label; an explicit fallback can cover a missing submission under the future
-#6 CLI contract. Reject unknown submission/fallback labels. Do not derive labels
+label; an explicit fallback can cover a missing submission. `cxxprobe test project`
+rejects unknown or repeated submission/fallback labels. Do not derive labels
 from directory names or display names, or implicitly substitute a reference for
-a missing worker submission. Existing problem jobs remain unchanged.
+a missing worker submission: the CLI's default for an unsupplied part is
+`reference`, a setter convenience, so the worker passes `--fallback <label>=...`
+explicitly for every part it did not receive. Existing problem jobs remain unchanged.
 
 The package metadata seam PR #17 already reads is `manifest.json`:
 
@@ -113,8 +115,8 @@ The package metadata seam PR #17 already reads is `manifest.json`:
 {"projects": [{"slug": "order-desk", "parts": [{"label": "1"}, {"label": "2"}]}]}
 ```
 
-This is the minimum identity projection expected of future project packaging,
-not a complete package-manifest schema. `projects[].slug` MUST equal the project
+This is the minimum identity projection project packaging provides (see
+[Packing](#packing) for the full shape), not a complete package-manifest schema. `projects[].slug` MUST equal the project
 slug above and `parts[].label` MUST preserve each manifest label as a string.
 Additional packaging metadata, CLI argv, result formats, and substitution policy
 are outside this PR. The parent coordinates the worker contract handoff; this
@@ -159,16 +161,45 @@ cxxprobe package inspect order-desk/1-ingest --json
 
 Project validation includes each ordinary part's existing package checks and
 prefixes diagnostics with the part index and label. A missing optional integration
-entry is valid. The loader does not inject shared sources or execute integration
-checks. Project-part identities survive symlink aliases, and discovery rejects
+entry is valid. Project-part identities survive symlink aliases, and discovery rejects
 colliding identities rather than flattening them.
 
-Until #7 supplies the project archive format, packing an entire contest containing
-a project fails before writing an archive. Selecting ordinary problems explicitly
-with `package pack --problems warmup` remains supported. Project paths are checked
-by the strict loader before packaging is rejected, so absolute references produce
-field diagnostics rather than silently disappearing from an archive.
+## Shared sources
 
-Shared source injection (#4), integration judging (#5/#6), project packaging
-(#7), and benchmarking are separate followups. Schema PR #18 remains the separate
+Loading a part (`cxxprobe::problem::load_from_dir`) prepends the project's
+`shared.sources` to the part's `compiler.extra_sources`, as paths relative to the
+part directory, and adds `shared.dir` to the include path when it exists. Both
+the manual-test build and the behavior-checker build therefore compile against
+the shared contract with no `extra_sources` line in the part's own `problem.yaml`;
+the I/O checker build does not, since it has its own `main`. Shared sources come
+first, so a part's own `extra_sources` may depend on shared symbols. A part that
+also lists a shared source in its own `extra_sources` is rejected at load time
+rather than failing later with a duplicate-symbol link error. Loading a part reads
+only the project's `shared` section, never the other parts. `package inspect` on
+a part lists the injected sources and include directory.
+
+## Packing
+
+`package pack` carries a project whole, beneath its slug: `project.yaml`, the
+`shared.dir` and `integration.dir` subtrees, and every declared part directory.
+Undeclared directories under the project are left out, and symlinks never enter
+an archive, so a shared source or part manifest that is a symlink stops the pack
+rather than producing an archive that cannot compile. `--problems order-desk`
+takes the project whole; `--problems order-desk/1-ingest` is an error, since a
+part does not compile without its shared sources.
+
+`manifest.json` keeps `problems[]` for plain problems exactly as before and adds
+`projects[]` only when a project is packed:
+
+```json
+{"projects": [{"slug": "order-desk", "name": "The Order Desk",
+  "parts": [{"label": "1", "slug": "order-desk/1-ingest", "dir": "parts/1-ingest",
+             "preview": {"slug": "order-desk/1-ingest", "...": "..."}}]}]}
+```
+
+`preview` is the same object a plain problem gets in `problems[]`, including its
+attachments. A contest without projects has no `projects` key at all. Unpacking
+restores the project layout, so a packed project round-trips.
+
+Benchmarking is a separate followup. Schema PR #18 remains the separate
 contract handoff; the runtime implementation is stacked on that contract.

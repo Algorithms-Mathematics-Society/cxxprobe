@@ -8,6 +8,7 @@
 #include <format>
 #include <stdexcept>
 
+#include "cxxprobe/project.hpp"
 #include "cxxprobe/project_discovery.hpp"
 
 namespace cxxprobe::problem {
@@ -543,6 +544,40 @@ std::string slugify(std::string_view title) {
     return out;
 }
 
+namespace {
+
+// A project part compiles against its project's shared sources and headers.
+// Prepended so a part's own extra_sources may use shared symbols; naming a
+// shared source again would only surface later as a duplicate-symbol link error.
+void inject_project_shared(ProblemConfig& cfg) {
+    const auto project_dir = cxxprobe::project::owning_project(cfg.problem_dir);
+    if (!project_dir) {
+        return;
+    }
+    const auto shared = cxxprobe::project::shared_inputs(*project_dir);
+    std::vector<std::string> injected;
+    injected.reserve(shared.sources.size());
+    for (const auto& source : shared.sources) {
+        for (const auto& own : cfg.compiler.extra_sources) {
+            if (std::filesystem::weakly_canonical(cfg.problem_dir / own) == source) {
+                throw std::runtime_error{std::format(
+                    "compiler.extra_sources: '{}' is already a shared source of project '{}'", own,
+                    project_dir->filename().string())};
+            }
+        }
+        injected.push_back(std::filesystem::relative(source, cfg.problem_dir).generic_string());
+    }
+    cfg.compiler.extra_sources.insert(cfg.compiler.extra_sources.begin(), injected.begin(),
+                                      injected.end());
+    cfg.compiler.shared_sources = std::move(injected);
+    if (shared.dir_exists) {
+        cfg.compiler.include_dirs.push_back(
+            std::filesystem::relative(shared.dir, cfg.problem_dir).generic_string());
+    }
+}
+
+}  // namespace
+
 ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     if (!std::filesystem::exists(problem_yaml_path)) {
         throw std::runtime_error{
@@ -578,6 +613,7 @@ ProblemConfig load(const std::filesystem::path& problem_yaml_path) {
     cfg.solutions = parse_solutions_section(doc, cfg.problem_dir);
     cfg.symbolic = parse_symbolic_section(doc);
     cfg.attachments = parse_attachments_section(doc);
+    inject_project_shared(cfg);
 
     return cfg;
 }
@@ -605,6 +641,8 @@ ResolvedCompiler resolve_compiler(const CompilerConfig& override_cfg,
         .std_flag = override_cfg.std_flag.value_or(defaults.std_flag),
         .flags = override_cfg.flags.value_or(defaults.flags),
         .extra_sources = override_cfg.extra_sources,
+        .shared_sources = override_cfg.shared_sources,
+        .include_dirs = override_cfg.include_dirs,
     };
 }
 

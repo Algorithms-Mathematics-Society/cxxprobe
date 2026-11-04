@@ -26,6 +26,11 @@ struct CompilerConfig {
     std::optional<std::string> std_flag;
     std::optional<std::vector<std::string>> flags;
     std::vector<std::string> extra_sources;
+    // Set by the loader for a project part, never read from problem.yaml:
+    // the project's shared.sources, already prepended to extra_sources, and
+    // shared.dir as an include directory. Relative to problem_dir.
+    std::vector<std::string> shared_sources;
+    std::vector<std::string> include_dirs;
 };
 
 struct LimitsOverride {
@@ -172,7 +177,9 @@ struct ResolvedCompiler {
     std::string cxx;
     std::string std_flag;
     std::vector<std::string> flags;
-    std::vector<std::string> extra_sources;
+    std::vector<std::string> extra_sources;   // shared sources first, then the part's own
+    std::vector<std::string> shared_sources;  // subset of extra_sources
+    std::vector<std::string> include_dirs;
 };
 
 // Throws std::runtime_error on parse/schema errors: unknown `version`,

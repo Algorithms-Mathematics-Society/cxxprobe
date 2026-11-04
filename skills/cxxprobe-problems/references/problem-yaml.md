@@ -205,3 +205,7 @@ one or the other, never both.
 Additional `.cpp` files compiled alongside the submission — a provided
 implementation the contestant is meant to use rather than write. Pair with
 `attachments/` for the matching header.
+
+In a project part, the project's `shared.sources` are prepended automatically and
+`shared.dir` is on the include path, so a part lists only its own extras here.
+Repeating a shared source is an error.

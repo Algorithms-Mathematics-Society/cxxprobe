@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
     if (new_cmd.contest_invoked()) {
         return new_cmd.execute();
     }
-    if (test_cmd.problem_invoked()) {
+    if (test_cmd.problem_invoked() || test_cmd.project_invoked()) {
         return test_cmd.execute();
     }
     if (package_cmd.invoked()) {

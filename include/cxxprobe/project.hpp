@@ -45,6 +45,18 @@ ProjectConfig load_from_dir(const std::filesystem::path& project_dir);
 std::optional<std::string> declared_part_slug(const std::filesystem::path& project_dir,
                                               const std::filesystem::path& part_dir);
 
+// What every part of a project compiles against, resolved through symlinks
+// and checked for containment exactly as load_from_dir checks them.
+struct SharedInputs {
+    std::filesystem::path dir;                   // resolved shared.dir
+    bool dir_exists{false};                      // header-only projects may omit it
+    std::vector<std::filesystem::path> sources;  // resolved, in manifest order
+};
+
+// Reads the manifest and checks only its shared section, so loading one part
+// never inspects the others. Throws std::runtime_error naming the field.
+SharedInputs shared_inputs(const std::filesystem::path& project_dir);
+
 // Never throws: core project errors and child problem package diagnostics are
 // returned with field/index and label context. Does not compile or run anything.
 problem::PackageReport validate_package(const std::filesystem::path& project_dir);

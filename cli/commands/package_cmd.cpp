@@ -14,6 +14,7 @@
 #include "cxxprobe/pack.hpp"
 #include "cxxprobe/problem.hpp"
 #include "cxxprobe/project.hpp"
+#include "cxxprobe/project_discovery.hpp"
 
 namespace cxxprobe::cli {
 
@@ -153,6 +154,41 @@ TEST(Behavior, Placeholder) {
 )TEMPLATE";
 // clang-format on
 
+// Optional validator/, generators/ and attachments/ stay absent until the
+// setter supplies them. checker/ contains the active behavior check.
+void scaffold_problem(const fs::path& dir, const std::string& name, const std::string& slug) {
+    fs::create_directories(dir / "statement");
+    fs::create_directories(dir / "tests");
+    fs::create_directories(dir / "solutions");
+    fs::create_directories(dir / "checker");
+    write_file(dir / "tests" / ".gitkeep", "");
+    write_file(dir / "problem.yaml",
+               std::vformat(kProblemYamlTemplate, std::make_format_args(name, slug, slug)));
+    write_file(dir / "statement" / "problem.md",
+               std::vformat(kProblemMdTemplate, std::make_format_args(name)));
+    write_file(dir / "solutions" / "main.cpp", kSolutionTemplate);
+    write_file(dir / "checker" / "behavior_gtest.cpp", kBehaviorTemplate);
+}
+
+// clang-format off
+constexpr std::string_view kSharedHeaderTemplate = R"TEMPLATE(#pragma once
+
+// The contract between parts: declare here what each part must define.
+// Every part, and the integration suite, compiles with shared/ on its include path.
+)TEMPLATE";
+constexpr std::string_view kIntegrationTemplate = R"TEMPLATE(// Replace this placeholder with checks of the parts working together.
+// Every part's source is linked in with its main() renamed. A test whose
+// name carries a part label (Part1_..., part_1) is attributed to that part.
+#include <gtest/gtest.h>
+
+#include "contract.hpp"
+
+TEST(Integration, Placeholder) {
+    EXPECT_TRUE(true);
+}
+)TEMPLATE";
+// clang-format on
+
 const char* status_word(const cxxprobe::problem::PackageReport& report) {
     if (!report.ok) {
         return "INVALID";
@@ -171,6 +207,10 @@ PackageCommand::PackageCommand(CLI::App& parent) {
     init_app_->add_option(
         "-C,--dir", init_dir_override_,
         "Contest directory (default: auto-detect via contest.yaml, walking up from cwd)");
+    init_app_->add_flag("--project", init_project_,
+                        "Scaffold a project (linked parts) instead of a single problem");
+    init_app_->add_option("--parts", init_parts_, "Number of parts for --project (default 2)")
+        ->needs(init_app_->get_option("--project"));
 
     validate_app_ =
         package_app_->add_subcommand("validate", "Lint a package's structure (not its test data)");
@@ -247,24 +287,47 @@ int PackageCommand::execute_init() {
         std::cerr << "cxxprobe: '" << dir.string() << "' already exists\n";
         return 2;
     }
+    if (init_project_) {
+        return init_project(dir, slug);
+    }
 
-    // Optional validator/, generators/ and attachments/ stay absent until
-    // the setter supplies them. checker/ contains the active behavior check.
-    fs::create_directories(dir / "statement");
-    fs::create_directories(dir / "tests");
-    fs::create_directories(dir / "solutions");
-    fs::create_directories(dir / "checker");
-    write_file(dir / "tests" / ".gitkeep", "");
-    write_file(dir / "problem.yaml",
-               std::vformat(kProblemYamlTemplate, std::make_format_args(init_name_, slug, slug)));
-    write_file(dir / "statement" / "problem.md",
-               std::vformat(kProblemMdTemplate, std::make_format_args(init_name_)));
-    write_file(dir / "solutions" / "main.cpp", kSolutionTemplate);
-    write_file(dir / "checker" / "behavior_gtest.cpp", kBehaviorTemplate);
-
+    scaffold_problem(dir, init_name_, slug);
     std::cout << "Created package '" << init_name_ << "' in " << dir.string() << "\n";
     std::cout << "Next: fill in solutions/main.cpp, add tests/1.in + tests/1.ans, then run:\n";
     std::cout << "  cxxprobe test problem " << slug << "\n";
+    return 0;
+}
+
+int PackageCommand::init_project(const fs::path& dir, const std::string& slug) {
+    if (init_parts_ < 1 || init_parts_ > 64) {
+        std::cerr << "cxxprobe: --parts must be between 1 and 64\n";
+        return 2;
+    }
+    std::string parts;
+    for (int i = 1; i <= init_parts_; ++i) {
+        const auto part = std::format("part-{}", i);
+        parts += std::format("  - {{dir: parts/{}, label: \"{}\"}}\n", part, i);
+        scaffold_problem(dir / "parts" / part, std::format("{} part {}", init_name_, i),
+                         slug + "/" + part);
+    }
+    write_file(dir / "project.yaml",
+               std::format("version: 1\nname: \"{}\"\n\n"
+                           "# Every part compiles against shared/; list .cpp files there under\n"
+                           "# sources to link them into every part as well.\n"
+                           "shared:\n  dir: shared\n  sources: []\n\nparts:\n{}\n"
+                           "# integration/integration_gtest.cpp links every part together.\n"
+                           "integration:\n  dir: integration\n  entry: integration_gtest.cpp\n",
+                           init_name_, parts));
+    fs::create_directories(dir / "shared");
+    fs::create_directories(dir / "integration");
+    write_file(dir / "shared" / "contract.hpp", kSharedHeaderTemplate);
+    write_file(dir / "integration" / "integration_gtest.cpp", kIntegrationTemplate);
+
+    std::cout << "Created project '" << init_name_ << "' with " << init_parts_ << " part(s) in "
+              << dir.string() << "\n";
+    std::cout
+        << "Next: declare the contract in shared/contract.hpp, fill in each part, then run:\n";
+    std::cout << "  cxxprobe test project " << slug << "\n";
     return 0;
 }
 
@@ -366,6 +429,12 @@ int PackageCommand::execute_inspect() {
     cxxprobe::problem::ProjectDefaults defaults;
     nlohmann::ordered_json preview = cxxprobe::problem::preview_to_json(config, defaults);
     preview["attachments"] = {{"dir", attachments.dir}, {"files", attachments.files}};
+    // What a project part actually compiles with, beyond its own problem.yaml.
+    // Absent for plain problems so their inspect output is unchanged.
+    if (cxxprobe::project::owning_project(config.problem_dir)) {
+        preview["shared_sources"] = config.compiler.shared_sources;
+        preview["include_dirs"] = config.compiler.include_dirs;
+    }
     if (json_output_) {
         std::cout << preview.dump(2) << "\n";
         return 0;
@@ -393,6 +462,16 @@ int PackageCommand::execute_inspect() {
         std::cout << "    " << file << "\n";
     }
     std::cout << std::format("  generators      {}\n", preview["generator_count"].get<int>());
+    if (!config.compiler.shared_sources.empty() || !config.compiler.include_dirs.empty()) {
+        std::cout << std::format("  shared sources  {} (from project)\n",
+                                 config.compiler.shared_sources.size());
+        for (const auto& source : config.compiler.shared_sources) {
+            std::cout << "    " << source << "\n";
+        }
+        for (const auto& dir : config.compiler.include_dirs) {
+            std::cout << "    -I " << dir << "\n";
+        }
+    }
     return 0;
 }
 
@@ -433,6 +512,13 @@ int PackageCommand::execute_pack() {
     for (const auto& p : result.problems) {
         std::cout << "  " << p.slug << "  (" << p.name << ")\n";
     }
+    if (!result.projects.empty()) {
+        std::cout << "Packed " << result.projects.size() << " project(s)\n";
+        for (const auto& project : result.projects) {
+            std::cout << "  " << project.slug << "  (" << project.name << ", "
+                      << project.parts.size() << " parts)\n";
+        }
+    }
     return 0;
 }
 
@@ -452,6 +538,12 @@ int PackageCommand::execute_unpack() {
               << result.dest_dir.string() << "\n";
     for (const auto& slug : result.problem_slugs) {
         std::cout << "  " << slug << "\n";
+    }
+    if (!result.project_slugs.empty()) {
+        std::cout << "Unpacked " << result.project_slugs.size() << " project(s)\n";
+        for (const auto& slug : result.project_slugs) {
+            std::cout << "  " << slug << "\n";
+        }
     }
     return 0;
 }

@@ -41,21 +41,27 @@ std::vector<ProblemLocation> discover_problems(const fs::path& contest_dir) {
 }
 
 namespace {
-std::optional<std::string> declared_slug(const fs::path& absolute) {
+struct DeclaredPart {
+    std::string slug;
+    fs::path project_dir;
+};
+
+std::optional<DeclaredPart> declared_part(const fs::path& absolute) {
     if (fs::exists(absolute / "project.yaml")) {
         throw std::runtime_error("project.yaml: a directory cannot also contain problem.yaml");
     }
-    std::optional<std::string> result;
+    std::optional<DeclaredPart> result;
     for (auto parent = absolute.parent_path(); !parent.empty(); parent = parent.parent_path()) {
         if (fs::exists(parent / "project.yaml")) {
             if (result) {
                 throw std::runtime_error("project.yaml parts: nested projects are not permitted");
             }
-            result = declared_part_slug(parent, absolute);
-            if (!result) {
+            auto slug = declared_part_slug(parent, absolute);
+            if (!slug) {
                 throw std::runtime_error(
                     "project.yaml parts: problem directory is not a declared part");
             }
+            result = DeclaredPart{.slug = std::move(*slug), .project_dir = parent};
         }
         if (fs::exists(parent / "contest.yaml") || parent == parent.parent_path()) {
             break;
@@ -63,21 +69,33 @@ std::optional<std::string> declared_slug(const fs::path& absolute) {
     }
     return result;
 }
-}  // namespace
 
-std::string problem_slug(const fs::path& problem_dir) {
+std::optional<DeclaredPart> owning_part(const fs::path& problem_dir) {
     const auto absolute = fs::absolute(problem_dir).lexically_normal();
-    if (const auto slug = declared_slug(absolute)) {
-        return *slug;
+    if (auto part = declared_part(absolute)) {
+        return part;
     }
     // A plain-looking symlink to a project part must retain its project identity.
     const auto canonical = fs::weakly_canonical(absolute);
     if (canonical != absolute) {
-        if (const auto slug = declared_slug(canonical)) {
-            return *slug;
-        }
+        return declared_part(canonical);
     }
-    return absolute.filename().string();
+    return std::nullopt;
+}
+}  // namespace
+
+std::string problem_slug(const fs::path& problem_dir) {
+    if (const auto part = owning_part(problem_dir)) {
+        return part->slug;
+    }
+    return fs::absolute(problem_dir).lexically_normal().filename().string();
+}
+
+std::optional<fs::path> owning_project(const fs::path& problem_dir) {
+    if (auto part = owning_part(problem_dir)) {
+        return std::move(part->project_dir);
+    }
+    return std::nullopt;
 }
 
 }  // namespace cxxprobe::project

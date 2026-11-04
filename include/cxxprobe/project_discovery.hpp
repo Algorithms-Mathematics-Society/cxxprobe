@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,5 +17,9 @@ std::vector<ProblemLocation> discover_problems(const std::filesystem::path& cont
 
 // Retain project-qualified identity even when a part is loaded through an alias.
 std::string problem_slug(const std::filesystem::path& problem_dir);
+
+// The project directory whose declared part problem_dir is, resolved the same
+// way as problem_slug (including symlink aliases); nullopt for a plain problem.
+std::optional<std::filesystem::path> owning_project(const std::filesystem::path& problem_dir);
 
 }  // namespace cxxprobe::project

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <CLI/CLI.hpp>
+#include <filesystem>
+#include <string>
 
 namespace cxxprobe::cli {
 
@@ -32,6 +34,8 @@ private:
     // init
     std::string init_name_;
     std::string init_dir_override_;
+    bool init_project_{false};
+    int init_parts_{2};
 
     // validate / inspect
     std::string problem_name_;
@@ -50,6 +54,7 @@ private:
     bool force_{false};
 
     int execute_init();
+    int init_project(const std::filesystem::path& dir, const std::string& slug);
     int execute_validate();
     int execute_inspect();
     int execute_pack();

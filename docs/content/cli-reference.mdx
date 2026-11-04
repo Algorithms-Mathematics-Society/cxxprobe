@@ -209,13 +209,65 @@ compile error) as opposed to a genuine test failure.
 
 ---
 
+## `test project`
+
+Judges a project: each part against its own checks (exactly as `test problem`
+would), then the integration check over every part linked together. See
+[project.yaml](https://github.com/Algorithms-Mathematics-Society/cxxprobe/blob/main/schemas/project.md).
+
+```text
+cxxprobe test project <slug> [-C/--dir CONTEST_DIR]
+                             [--submission LABEL=PATH]... [--fallback LABEL=reference|empty]...
+                             [--json] [-q/--quiet] [--no-color]
+```
+
+| Flag | Description |
+|---|---|
+| `--submission LABEL=PATH` | Grade this source for the part with that label. Repeatable; unsupplied parts fall back. |
+| `--fallback LABEL=reference\|empty` | What an unsupplied part becomes. `reference` (the default) keeps the other parts gradeable; `empty` links nothing for it, proving the integration genuinely needs it. |
+
+Labels must be declared in `project.yaml` and named at most once. With no
+options this is the setter's proof that every reference part links and passes.
+
+The integration check is enabled by `integration/<entry>` (default
+`integration_gtest.cpp`), a GTest suite compiled with every part's source
+(its `main()` renamed), the project's `shared.sources` and `shared.dir` on the
+include path. It reports `SKIPPED` without an entry and `ERROR` for any
+compile or link failure, listing which source was linked for each part. A
+case whose name carries a part label (`Part2_RejectsBadOrder`, `part_2`) is
+attributed to that part. When `integration.fallback_dir` contains
+`<label>.cpp`, a part whose source does not compile is replaced by it, and
+the replacement is listed under `substitutions`, never silent.
+
+```json
+{
+  "project": "The Order Desk",
+  "slug": "order-desk",
+  "overall": "FAIL",
+  "parts": [
+    {"label": "1", "slug": "order-desk/1-ingest", "origin": "reference", "status": "PASS",
+     "source": "...", "report": {"...": "same shape as test problem --json"}},
+    {"label": "2", "slug": "order-desk/2-book", "origin": "submission", "status": "FAIL", "...": "..."}
+  ],
+  "integration": {"status": "FAIL", "passed": 2, "total": 3,
+                  "cases": [{"name": "Integration.Part2_Book", "failed": true, "parts": ["2"]}],
+                  "parts": [{"label": "2", "origin": "submission", "compiled": true, "...": "..."}]},
+  "substitutions": [{"label": "1", "origin": "reference", "reason": "not supplied"}]
+}
+```
+
+Exit codes follow `test problem`: `0` PASS, `1` FAIL, `2` ERROR, taking the
+worst of every part and the integration check.
+
+---
+
 ## `package`
 
 Everything that operates on a problem package *as a package*, rather than on
 what's inside it.
 
 ```text
-cxxprobe package init     "Name" [-C/--dir DIR]
+cxxprobe package init     "Name" [-C/--dir DIR] [--project [--parts N]]
 cxxprobe package validate <name> [-C/--dir DIR] [--json] [--no-color]
 cxxprobe package inspect  <name> [-C/--dir DIR] [--json]
 cxxprobe package pack            [-C/--dir DIR] [--problems LIST] [-o/--out PATH]
@@ -229,6 +281,11 @@ Scaffolds a v2 package: `problem.yaml`, `statement/problem.md`,
 `generators/`, and `attachments/` are deliberately not created — each is
 enabled by the presence of its entry file, so an empty directory would only
 be noise. See [Problem Packages](/guides/problem-packages).
+
+With `--project`, scaffolds a project instead: `project.yaml`,
+`shared/contract.hpp`, `integration/integration_gtest.cpp`, and `N` parts
+(default 2) under `parts/part-<i>` labelled `"1"`..`"N"`, each an ordinary
+problem package. `cxxprobe test project <slug>` passes on the fresh scaffold.
 
 ### `package validate`
 

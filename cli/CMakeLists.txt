@@ -12,6 +12,7 @@ add_executable(
   commands/run_cmd.cpp
   commands/new_cmd.cpp
   commands/test_cmd.cpp
+  commands/test_project_cmd.cpp
   commands/package_cmd.cpp
   commands/judge_cmd.cpp
   commands/validate_cmd.cpp
