@@ -429,6 +429,173 @@ TEST_F(ProjectPipelineTest, CorrectPartsLinkAndTheSuitePasses) {
     EXPECT_TRUE(report.cases[2].parts.empty());
 }
 
+// These binaries deliberately replace their own report from inside a TEST,
+// rather than defining main (the integration link supplies gtest_main).
+struct VerificationScenario {
+    std::string name;
+    std::string report;
+    std::string finish{"std::_Exit(0);"};
+};
+
+nlohmann::json passing_verification_report() {
+    return {{"tests", 1},
+            {"failures", 0},
+            {"disabled", 0},
+            {"errors", 0},
+            {"testsuites",
+             {{{"name", "Verification"},
+               {"tests", 1},
+               {"failures", 0},
+               {"disabled", 0},
+               {"errors", 0},
+               {"testsuite",
+                {{{"name", "Part1_Executed"}, {"status", "RUN"}, {"result", "COMPLETED"}}}}}}}};
+}
+
+std::vector<VerificationScenario> verification_scenarios() {
+    const auto passing = passing_verification_report();
+    std::vector<VerificationScenario> scenarios{
+        {"EmptyReportNonzeroExit", "{}", "std::_Exit(1);"},
+        {"PassingReportNonzeroExit", passing.dump(), "std::_Exit(7);"},
+        {"PassingReportSignal", passing.dump(), "std::raise(SIGKILL);"},
+        {"PassingReportTimeout", passing.dump(), "for (;;) { ::pause(); }"},
+        {"MissingReport", ""},
+        {"MalformedReport", "{broken"},
+        {"EmptyReport", "{}"},
+        {"EmptySuite", R"({"tests":0,"failures":0,"disabled":0,"errors":0,"testsuites":[]})"}};
+    auto add = [&](const std::string& name, const nlohmann::json& report) {
+        scenarios.push_back({name, report.dump()});
+    };
+    for (const auto* field : {"tests", "failures", "disabled", "errors", "testsuites"}) {
+        auto incomplete = passing;
+        incomplete.erase(field);
+        add(std::string{"Missing_"} + field, incomplete);
+    }
+    auto changed = passing;
+    changed["tests"] = 2;
+    add("RootCountMismatch", changed);
+    changed = passing;
+    changed["testsuites"][0]["tests"] = 2;
+    add("SuiteCountMismatch", changed);
+    changed = passing;
+    changed["failures"] = -1;
+    add("NegativeCount", changed);
+    changed = passing;
+    changed["tests"] = "1";
+    add("WrongCountType", changed);
+    changed = passing;
+    changed["testsuites"][0].erase("testsuite");
+    add("MissingCases", changed);
+    changed = passing;
+    changed["testsuites"][0]["testsuite"][0].erase("status");
+    add("MissingCaseStatus", changed);
+    changed = passing;
+    changed["testsuites"][0]["testsuite"][0]["result"] = "SKIPPED";
+    add("SkippedCase", changed);
+    changed = passing;
+    changed["disabled"] = 1;
+    changed["testsuites"][0]["disabled"] = 1;
+    changed["testsuites"][0]["testsuite"][0]["status"] = "NOTRUN";
+    changed["testsuites"][0]["testsuite"][0]["result"] = "SUPPRESSED";
+    add("SuppressedCase", changed);
+    changed = passing;
+    changed["testsuites"][0]["testsuite"][0]["failures"] = {{{"failure", "hidden case failure"}}};
+    add("FailureCountMismatch", changed);
+    return scenarios;
+}
+
+class IntegrationVerificationTest : public ProjectPipelineTest,
+                                    public ::testing::WithParamInterface<VerificationScenario> {};
+
+TEST_P(IntegrationVerificationTest, IncompleteOrFailedExecutionCannotPass) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
+    const auto& scenario = GetParam();
+    linked_project(root / "desk");
+    const auto marker = root / "executed";
+    write_file(root / "desk/integration/integration_gtest.cpp",
+               "#include <gtest/gtest.h>\n#include <fstream>\n#include <cstdlib>\n"
+               "#include <cstdio>\n#include <csignal>\n#include <unistd.h>\n"
+               "TEST(Verification, Part1_Executed) {\n"
+               "{ std::ofstream marker{" +
+                   nlohmann::json(marker.string()).dump() + "}; marker << \"executed\"; }\n" +
+                   (scenario.report.empty()
+                        ? std::string{}
+                        : "{ std::ofstream report{::testing::GTEST_FLAG(output).substr(5)}; "
+                          "report << R\"report(" +
+                              scenario.report + ")report\"; }\n") +
+                   "std::fputs(\"verification stdout marker\\n\", stdout); std::fflush(stdout);\n"
+                   "std::fputs(\"verification stderr marker\\n\", stderr); std::fflush(stderr);\n" +
+                   scenario.finish + "\n}\n");
+    const auto project = cxxprobe::project::load_from_dir(root / "desk");
+    cxxprobe::problem::ProjectDefaults defaults;
+    defaults.limits.wall = std::chrono::milliseconds{500};
+    const auto report = cxxprobe::judge::run_integration(
+        project, defaults, cxxprobe::judge::reference_sources(project));
+    ASSERT_TRUE(report.link.ran);
+    ASSERT_TRUE(report.link.ok) << report.error << report.link.diagnostics;
+    ASSERT_TRUE(fs::exists(marker)) << "the test body must execute: " << report.error;
+    EXPECT_TRUE(report.status == cxxprobe::judge::Status::Fail ||
+                report.status == cxxprobe::judge::Status::Error)
+        << cxxprobe::judge::to_json(report).dump(2);
+    EXPECT_NE(report.error.find("verification stdout marker"), std::string::npos) << report.error;
+    EXPECT_NE(report.error.find("verification stderr marker"), std::string::npos) << report.error;
+    ASSERT_FALSE(report.error.empty());
+    EXPECT_NE(cxxprobe::judge::to_json(report)["error"].get<std::string>().find(
+                  "verification stderr marker"),
+              std::string::npos);
+    if (scenario.name == "PassingReportNonzeroExit") {
+        EXPECT_NE(report.error.find("code 7"), std::string::npos) << report.error;
+        ASSERT_EQ(report.cases.size(), 1U);
+        EXPECT_EQ(report.cases[0].parts, (std::vector<std::string>{"1"}));
+    } else if (scenario.name == "PassingReportSignal") {
+        EXPECT_NE(report.error.find("code -9"), std::string::npos) << report.error;
+    } else if (scenario.name == "PassingReportTimeout") {
+        EXPECT_NE(report.error.find("timed out"), std::string::npos) << report.error;
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(RealBinaries, IntegrationVerificationTest,
+                         ::testing::ValuesIn(verification_scenarios()),
+                         [](const auto& info) { return info.param.name; });
+
+TEST_F(ProjectPipelineTest, SkippedIntegrationCaseDoesNotCountAsPassed) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
+    linked_project(root / "desk");
+    write_file(root / "desk/integration/integration_gtest.cpp",
+               "#include <gtest/gtest.h>\n"
+               "TEST(Verification, Completed) { EXPECT_TRUE(true); }\n"
+               "TEST(Verification, Skipped) { GTEST_SKIP() << \"not verified\"; }\n");
+    const auto report = integrate(root / "desk");
+    ASSERT_TRUE(report.link.ok) << report.error << report.link.diagnostics;
+    ASSERT_EQ(report.cases.size(), 2U) << report.error;
+    EXPECT_EQ(report.status, cxxprobe::judge::Status::Fail);
+    EXPECT_EQ(report.total, 2);
+    EXPECT_EQ(report.passed, 1);
+    EXPECT_NE(report.error.find("not verified"), std::string::npos) << report.error;
+}
+
+TEST_F(ProjectPipelineTest, DisabledIntegrationCaseCannotPassWithACompletedCase) {
+    if (!sandbox_available()) {
+        GTEST_SKIP() << kNoSandbox;
+    }
+    linked_project(root / "desk");
+    write_file(root / "desk/integration/integration_gtest.cpp",
+               "#include <gtest/gtest.h>\n"
+               "TEST(Verification, Completed) { EXPECT_TRUE(true); }\n"
+               "TEST(Verification, DISABLED_Unverified) { FAIL(); }\n");
+    const auto report = integrate(root / "desk");
+    ASSERT_TRUE(report.link.ok) << report.error << report.link.diagnostics;
+    ASSERT_EQ(report.cases.size(), 2U) << report.error;
+    EXPECT_EQ(report.status, cxxprobe::judge::Status::Fail);
+    EXPECT_EQ(report.total, 2);
+    EXPECT_EQ(report.passed, 1);
+    EXPECT_NE(report.error.find("disabled"), std::string::npos) << report.error;
+}
+
 TEST_F(ProjectPipelineTest, MissingDefinitionIsALinkErrorNamingTheLinkedParts) {
     if (!sandbox_available()) {
         GTEST_SKIP() << kNoSandbox;
