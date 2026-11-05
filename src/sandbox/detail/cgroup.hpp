@@ -40,7 +40,7 @@ public:
     // Read memory.peak and cpu.stat after the child exits.
     [[nodiscard]] CgroupStats read_stats() const;
 
-    // Write "1" to cgroup.kill — kills all processes in the cgroup instantly.
+    // Write "1" to cgroup.kill; throws if whole-workload cleanup is unavailable.
     // Safe to call if the cgroup is already empty.
     void kill_all() const;
 

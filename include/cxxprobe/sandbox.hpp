@@ -12,6 +12,7 @@ namespace cxxprobe::sandbox {
 struct Limits {
     std::size_t memory_bytes{256ULL * 1024 * 1024};
     std::chrono::milliseconds cpu{5000};
+    // Positive deadline for the whole workload, including descendant I/O.
     std::chrono::milliseconds wall{10000};
     unsigned max_pids{64};
     // Logical CPUs the program may run on; empty leaves the scheduler's
@@ -39,6 +40,8 @@ struct Result {
     std::string stderr_data;
 };
 
+// Requires child cgroup membership and writable cgroup.kill; missing support
+// throws before exec. A memory-only fallback cannot guarantee descendant cleanup.
 Result run(std::vector<std::string> argv, std::string stdin_data, Limits limits);
 
 }  // namespace cxxprobe::sandbox

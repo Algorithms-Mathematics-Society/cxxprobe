@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 
 namespace cxxprobe::sandbox::detail {
 
@@ -97,8 +98,18 @@ CgroupLeaf::~CgroupLeaf() {
         kill_all();
     } catch (...) {
     }
+    // Kernel population/release notifications can lag the final waitpid.
+    // Retry EBUSY briefly without classifying that lag as live descendants.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{250};
     std::error_code ec;
-    std::filesystem::remove(path_, ec);
+    while (true) {
+        std::filesystem::remove(path_, ec);
+        if (ec != std::errc::device_or_resource_busy ||
+            std::chrono::steady_clock::now() >= deadline) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
 }
 
 void CgroupLeaf::add_pid(pid_t pid) const { write_file("cgroup.procs", std::format("{}", pid)); }
@@ -134,10 +145,18 @@ CgroupStats CgroupLeaf::read_stats() const {
 }
 
 void CgroupLeaf::kill_all() const {
-    // cgroup.kill is a Linux 5.14+ interface; ignore errors on older kernels.
-    try {
-        write_file("cgroup.kill", "1");
-    } catch (...) {
+    // Require Linux 5.14+ and delegated kill permission. Killing only the
+    // leader would leave descendants running with our I/O descriptors.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    const int fd = ::open((path_ / "cgroup.kill").c_str(), O_WRONLY | O_CLOEXEC);
+    if (fd < 0) {
+        throw std::runtime_error{std::format("open cgroup.kill: {}", std::strerror(errno))};
+    }
+    const ssize_t sent = ::write(fd, "1", 1);
+    const int error = sent < 0 ? errno : EIO;
+    ::close(fd);
+    if (sent != 1) {
+        throw std::runtime_error{std::format("write cgroup.kill: {}", std::strerror(error))};
     }
 }
 
