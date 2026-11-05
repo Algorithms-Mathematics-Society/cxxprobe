@@ -285,7 +285,8 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     std::optional<detail::PerfCounter> instructions;
     std::optional<detail::PerfCounter> task_clock;
     if (limits.count_instructions) {
-        instructions.emplace(child_pid, PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS);
+        instructions.emplace(child_pid, PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS,
+                             limits.cpu_affinity);
         task_clock.emplace(child_pid, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK);
     }
 

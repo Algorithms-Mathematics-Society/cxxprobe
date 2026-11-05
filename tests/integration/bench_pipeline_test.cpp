@@ -186,6 +186,7 @@ TEST_F(BenchPipelineTest, InstructionCountsAreStableAcrossRepetitionsWhenCounted
     }
     std::vector<double> values(counts.begin(), counts.end());
     const auto [low, high] = std::ranges::minmax(values);
+    ASSERT_GT(low, 0) << "an instruction event that never ran must be unavailable";
     EXPECT_LE((high - low) / low, 0.01);
 }
 
