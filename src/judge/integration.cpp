@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -36,6 +38,70 @@ bool names_label(std::string_view text, std::string_view label) {
     return false;
 }
 
+// Integration requires a complete verification report. Keep this validation
+// local: the shared parser is also used by ordinary behavior checks.
+cxxprobe::gtest_report::Report parse_suite_report(const fs::path& path) {
+    std::ifstream input{path};
+    if (!input) {
+        throw std::runtime_error("missing test report");
+    }
+    const auto doc = Json::parse(input);
+    auto require = [](bool valid, const std::string& reason) {
+        if (!valid) {
+            throw std::runtime_error("invalid integration test report: " + reason);
+        }
+    };
+    auto count = [&](const Json& node, const char* field) {
+        require(node.is_object() && node.contains(field) && node[field].is_number_integer() &&
+                    node[field] >= 0 && node[field] <= std::numeric_limits<int>::max(),
+                std::string{"missing or invalid count: "} + field);
+        return node[field].get<std::size_t>();
+    };
+    auto named = [](const Json& node) {
+        return node.is_object() && node.contains("name") && node["name"].is_string() &&
+               !node["name"].get<std::string>().empty();
+    };
+    const auto tests = count(doc, "tests");
+    require(tests > 0 && doc.contains("testsuites") && doc["testsuites"].is_array() &&
+                !doc["testsuites"].empty(),
+            "no test cases");
+    std::size_t total = 0;
+    std::size_t failures = 0;
+    std::size_t disabled = 0;
+    std::size_t errors = 0;
+    for (const auto& suite : doc["testsuites"]) {
+        const auto suite_tests = count(suite, "tests");
+        require(named(suite) && suite.contains("testsuite") && suite["testsuite"].is_array() &&
+                    suite_tests > 0 && suite["testsuite"].size() == suite_tests,
+                "incomplete suite or mismatched test count");
+        std::size_t failed_cases = 0;
+        for (const auto& test : suite["testsuite"]) {
+            require(named(test) && test.contains("status") && test["status"].is_string() &&
+                        test.contains("result") && test["result"].is_string(),
+                    "incomplete test case");
+            if (test.contains("failures")) {
+                require(test["failures"].is_array() && !test["failures"].empty(),
+                        "invalid case failures");
+                for (const auto& failure : test["failures"]) {
+                    require(failure.is_object() && failure.contains("failure") &&
+                                failure["failure"].is_string(),
+                            "invalid failure message");
+                }
+                ++failed_cases;
+            }
+        }
+        require(count(suite, "failures") == failed_cases, "mismatched suite failure count");
+        total += suite_tests;
+        failures += failed_cases;
+        disabled += count(suite, "disabled");
+        errors += count(suite, "errors");
+    }
+    require(total == tests && failures == count(doc, "failures") &&
+                disabled == count(doc, "disabled") && errors == count(doc, "errors"),
+            "mismatched report counts");
+    return cxxprobe::gtest_report::parse_string(doc.dump());
+}
+
 void run_suite(const fs::path& binary, const cxxprobe::project::ProjectConfig& project,
                const cxxprobe::problem::ProjectDefaults& defaults, detail::TempFiles& temps,
                IntegrationReport& report) {
@@ -49,13 +115,22 @@ void run_suite(const fs::path& binary, const cxxprobe::project::ProjectConfig& p
         report.error = std::format("integration suite could not start: {}", ex.what());
         return;
     }
+    auto diagnostics = [&](const std::string& reason) {
+        report.error = std::format("integration suite exited with code {}{}: {}", run.exit_code,
+                                   run.wall_timed_out ? " (wall timed out)" : "", reason);
+        if (!run.stdout_data.empty()) {
+            report.error += "\nstdout:\n" + run.stdout_data;
+        }
+        if (!run.stderr_data.empty()) {
+            report.error += "\nstderr:\n" + run.stderr_data;
+        }
+    };
     cxxprobe::gtest_report::Report parsed;
     try {
-        parsed = cxxprobe::gtest_report::parse_file(results);
-    } catch (const std::exception&) {
+        parsed = parse_suite_report(results);
+    } catch (const std::exception& ex) {
         report.status = Status::Error;
-        report.error = std::format("integration suite exited with code {} without a test report",
-                                   run.exit_code);
+        diagnostics(ex.what());
         return;
     }
     std::vector<std::string> labels;
@@ -63,7 +138,13 @@ void run_suite(const fs::path& binary, const cxxprobe::project::ProjectConfig& p
     for (const auto& part : project.parts) {
         labels.push_back(part.label);
     }
+    bool completed = parsed.disabled == 0;
     for (auto& c : parsed.cases) {
+        const bool ran = c.status == "RUN" && c.result == "COMPLETED";
+        completed = completed && ran;
+        if (ran && !c.failed) {
+            ++report.passed;
+        }
         report.cases.push_back(IntegrationCase{.suite = c.suite,
                                                .name = c.name,
                                                .failed = c.failed,
@@ -72,8 +153,13 @@ void run_suite(const fs::path& binary, const cxxprobe::project::ProjectConfig& p
                                                .parts = attributed_parts(c.suite, c.name, labels)});
     }
     report.total = parsed.tests;
-    report.passed = parsed.tests - parsed.failures - parsed.errors;
-    report.status = cxxprobe::gtest_report::all_passed(parsed) ? Status::Pass : Status::Fail;
+    const bool passed = run.exit_code == 0 && !run.wall_timed_out && completed &&
+                        cxxprobe::gtest_report::all_passed(parsed);
+    report.status = passed ? Status::Pass : Status::Fail;
+    if (!passed) {
+        diagnostics(completed ? "verification failed"
+                              : "verification contains skipped, disabled or incomplete tests");
+    }
 }
 
 }  // namespace
