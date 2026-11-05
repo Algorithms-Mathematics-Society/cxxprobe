@@ -108,11 +108,36 @@ The release workflow handles versioning automatically on merge — see below.
 
 ## Release workflow
 
-Triggered on every push to `main`. Uses
-[semantic-release](https://semantic-release.gitbook.io/) to analyze commit
-messages, bump the version in `CMakeLists.txt` and `CHANGELOG.md`, create a
-git tag, and publish a GitHub Release. Requires a `GITHUB_TOKEN` with write
-permissions — no manual version bumps.
+Triggered on pushes to `main`. [semantic-release](https://semantic-release.gitbook.io/)
+analyzes commits, creates a version tag on the existing source commit, and
+publishes GitHub Release notes. It uses the workflow's built-in `GITHUB_TOKEN`;
+no personal `GH_TOKEN` secret or branch-protection bypass is required. Release
+publishing does not commit changes to `main` or update the checked-in changelog.
+
+After a new release is published, the workflow explicitly calls the reusable
+Release Assets workflow. Events created by `GITHUB_TOKEN` do not trigger another
+release-event workflow, so this handoff is necessary. A release with no qualifying
+commits produces no tag output and no asset build. Manually published releases
+still use the `release: published` trigger.
+
+Assets build from the exact tag with
+`-DCXXPROBE_RELEASE_VERSION=MAJOR.MINOR.PATCH`. Both the CLI and package manifest
+use that CMake project version; packaging checks the CLI's exact version before
+uploading. Source builds default to `1.0.0`; when building a release from a source
+archive, pass the version override explicitly to match its tag.
+
+For an authentication check without publishing, manually run **Release** on
+`main` with `dry_run` left enabled. Dry runs do not create tags, release records,
+or assets. A successful check is evidence about authentication, not a completed
+release.
+
+If assets fail after a release is published, rerun the failed asset job or run
+**Release Assets** with the existing tag. A full release rerun may be a no-op
+because the version tag already exists. If tag creation succeeds but GitHub
+release creation fails, inspect and repair that incomplete release explicitly;
+this workflow does not delete/recreate tags or silently publish a new version.
+Built-in-token permissions and tag rules still apply. No production release is
+performed by the local validation tests.
 
 <Callout type="warning">
   Because the release workflow parses commit messages, an incorrectly typed

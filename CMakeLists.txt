@@ -1,7 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
+# Release tags are immutable source commits; publication never rewrites main.
+set(CXXPROBE_RELEASE_VERSION
+    "1.0.0"
+    CACHE STRING "Version embedded in release binaries")
+if(NOT CXXPROBE_RELEASE_VERSION MATCHES
+   "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+  message(FATAL_ERROR "CXXPROBE_RELEASE_VERSION must be MAJOR.MINOR.PATCH")
+endif()
 project(
   cxxprobe
-  VERSION 1.0.0
+  VERSION ${CXXPROBE_RELEASE_VERSION}
   LANGUAGES CXX)
 
 option(CXXPROBE_BUILD_TESTS "Build tests" ON)

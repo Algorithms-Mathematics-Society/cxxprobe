@@ -3,16 +3,34 @@ name: Release Assets
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Stable release tag already published by semantic-release
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable release tag whose assets need rebuilding
+        type: string
+        required: true
 
 jobs:
   build-and-attach:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
+      - name: Validate release tag
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -39,6 +57,7 @@ jobs:
         run: |
           cmake -B build-release -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=build-release/conan_toolchain.cmake \
+            -DCXXPROBE_RELEASE_VERSION="${RELEASE_TAG#v}" \
             -DCXXPROBE_STATIC_LINK=ON \
             -DCXXPROBE_BUILD_TESTS=OFF
 
@@ -52,14 +71,14 @@ jobs:
           strip dist/cxxprobe-x86_64-linux
           cd dist
           sha256sum cxxprobe-x86_64-linux | cut -d' ' -f1 > cxxprobe-x86_64-linux.sha256
-          ./cxxprobe-x86_64-linux --version
+          test "$(./cxxprobe-x86_64-linux --version)" = "cxxprobe ${RELEASE_TAG#v}"
           ldd cxxprobe-x86_64-linux
 
       - name: Attach to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          gh release upload "$RELEASE_TAG" \
             dist/cxxprobe-x86_64-linux \
             dist/cxxprobe-x86_64-linux.sha256 \
             --clobber
