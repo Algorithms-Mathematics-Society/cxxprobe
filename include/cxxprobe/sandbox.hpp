@@ -33,7 +33,11 @@ struct Result {
     // rather than when its output has been drained.
     std::chrono::nanoseconds wall_time_ns{0};
     // Only with Limits::count_instructions; nullopt when the host has no such
-    // counter, which is unavailable rather than zero.
+    // counter or full scheduling coverage. Hybrid instruction counts require
+    // affinity within one CPU PMU domain. Unknown/mixed placement, never-run
+    // events, and multiplexed/partial counts are unavailable, never scaled.
+    // Full process-tree totals additionally require inherited descendants to
+    // have finished; scheduling coverage alone does not establish that.
     std::optional<std::uint64_t> instructions;
     std::optional<std::uint64_t> task_clock_ns;
     std::string stdout_data;

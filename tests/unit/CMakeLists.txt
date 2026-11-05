@@ -2,6 +2,7 @@ add_executable(
   cxxprobe-unit-tests
   pipe_sync_test.cpp
   pipe_io_test.cpp
+  perf_counter_test.cpp
   cgroup_test.cpp
   cli_util_test.cpp
   symbolic_test.cpp
