@@ -321,9 +321,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     ChildGuard child_guard{child_pid, cgroup};
     // Drop the parent's copy of the child endpoint, so child setup failures
     // cannot leave recv() waiting on an endpoint held by the parent itself.
-    {
-        detail::SyncEnd dying{std::move(child_args.sync)};
-    }
+    { detail::SyncEnd dying{std::move(child_args.sync)}; }
     stdin_pipe.read_end.close();
     stdout_pipe.write_end.close();
     stderr_pipe.write_end.close();

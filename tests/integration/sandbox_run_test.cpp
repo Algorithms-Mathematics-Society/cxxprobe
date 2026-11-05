@@ -182,7 +182,7 @@ TEST_F(SandboxTest, StdinWriterLeavesTheSigpipeDispositionAlone) {
     // which silently changes the signal behaviour of whatever process is
     // embedding the judge. Blocking on the writer thread must not be visible
     // from out here.
-    struct sigaction before{};
+    struct sigaction before {};
     ASSERT_EQ(::sigaction(SIGPIPE, nullptr, &before), 0);
 
     sigset_t mask_before;
@@ -192,7 +192,7 @@ TEST_F(SandboxTest, StdinWriterLeavesTheSigpipeDispositionAlone) {
     Result res = run({kEarlycloser, "16"}, input, default_limits());
     EXPECT_EQ(res.exit_code, 0);
 
-    struct sigaction after{};
+    struct sigaction after {};
     ASSERT_EQ(::sigaction(SIGPIPE, nullptr, &after), 0);
     EXPECT_EQ(before.sa_handler, after.sa_handler);
 

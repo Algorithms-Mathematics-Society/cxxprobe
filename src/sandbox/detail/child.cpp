@@ -98,7 +98,7 @@ void join_cgroup(const ChildArgs& args) {
     // TLE classification), but it stops a CPU-bound runaway well before the
     // (typically much larger) wall-clock limit would.
     if (args.cpu_limit_seconds > 0) {
-        struct rlimit rl{};
+        struct rlimit rl {};
         rl.rlim_cur = static_cast<rlim_t>(args.cpu_limit_seconds);
         rl.rlim_max = static_cast<rlim_t>(args.cpu_limit_seconds);
         ::setrlimit(RLIMIT_CPU, &rl);
@@ -155,9 +155,7 @@ void join_cgroup(const ChildArgs& args) {
     // The sync SyncEnd destructor will close its fd when args goes out of
     // scope — but we're about to exec so we need it gone now.
     // Move-destroy the sync channel fd before exec.
-    {
-        SyncEnd dying{std::move(args.sync)};
-    }  // closes the fd
+    { SyncEnd dying{std::move(args.sync)}; }  // closes the fd
 
     // ── 5. Exec the target ────────────────────────────────────────────────
     auto raw_argv = make_argv(args.argv);
