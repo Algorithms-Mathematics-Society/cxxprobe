@@ -54,6 +54,28 @@ void remount_proc() noexcept {
     ::mount("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr);
 }
 
+// Migration must satisfy delegation boundaries and permissions, including
+// access to the source/destination common ancestor. Report both open and write
+// failures instead of silently losing whole-workload cleanup.
+void join_cgroup(const ChildArgs& args) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    const int fd = ::open(args.cgroup_procs_path.c_str(), O_WRONLY | O_CLOEXEC);
+    if (fd < 0) {
+        args.sync.send(SyncMsg::Error, errno);
+        ::_exit(1);
+    }
+    std::array<char, 32> buf{};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    const int len = ::snprintf(buf.data(), buf.size(), "%d", static_cast<int>(::getpid()));
+    const ssize_t written = ::write(fd, buf.data(), static_cast<std::size_t>(len));
+    const int error = written < 0 ? errno : EIO;
+    ::close(fd);
+    if (written != len) {
+        args.sync.send(SyncMsg::Error, error);
+        ::_exit(1);
+    }
+}
+
 }  // namespace
 
 [[noreturn]] void child_main(ChildArgs args) {
@@ -62,39 +84,9 @@ void remount_proc() noexcept {
     if (msg != SyncMsg::MapsWritten) {
         ::_exit(1);
     }
-    args.sync.send(SyncMsg::MapsAck);
-
-    // ── 1b. Add self to cgroup ────────────────────────────────────────────
-    // With nsdelegate the parent cannot migrate us: the kernel requires the
-    // writing process to be in an ancestor cgroup of the target.  Self-migration
-    // (child writing its own PID) only works when the child's current cgroup is
-    // also an ancestor of the target, which is NOT guaranteed on systems where
-    // the test binary itself is in a sibling subtree (e.g. /2 vs /cxxprobe/).
-    // When the write fails we fall back to RLIMIT_AS set below.
-    bool cgroup_joined = false;
-    if (!args.cgroup_procs_path.empty()) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-        int fd = ::open(args.cgroup_procs_path.c_str(), O_WRONLY | O_CLOEXEC);
-        if (fd >= 0) {
-            std::array<char, 32> buf{};
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-            int len = ::snprintf(buf.data(), buf.size(), "%d", static_cast<int>(::getpid()));
-            ssize_t w = ::write(fd, buf.data(), static_cast<std::size_t>(len));
-            cgroup_joined = (w > 0);
-            ::close(fd);
-        }
-    }
-
-    // ── 1c. RLIMIT_AS fallback ────────────────────────────────────────────
-    // If cgroup membership failed (nsdelegate blocks migration when the process
-    // is not in an ancestor cgroup) enforce the memory cap via RLIMIT_AS so
-    // that malloc/mmap for over-limit allocations returns ENOMEM.
-    if (!cgroup_joined && args.memory_limit_bytes > 0) {
-        struct rlimit rl {};
-        rl.rlim_cur = static_cast<rlim_t>(args.memory_limit_bytes);
-        rl.rlim_max = static_cast<rlim_t>(args.memory_limit_bytes);
-        ::setrlimit(RLIMIT_AS, &rl);
-    }
+    // A memory-only fallback cannot contain descendants. Membership must be
+    // established before acknowledging setup or allowing the target to exec.
+    join_cgroup(args);
 
     // ── 1d. RLIMIT_CPU enforcement ────────────────────────────────────────
     // rlim_cur == rlim_max: the kernel delivers an uncatchable SIGKILL as
@@ -106,7 +98,7 @@ void remount_proc() noexcept {
     // TLE classification), but it stops a CPU-bound runaway well before the
     // (typically much larger) wall-clock limit would.
     if (args.cpu_limit_seconds > 0) {
-        struct rlimit rl {};
+        struct rlimit rl{};
         rl.rlim_cur = static_cast<rlim_t>(args.cpu_limit_seconds);
         rl.rlim_max = static_cast<rlim_t>(args.cpu_limit_seconds);
         ::setrlimit(RLIMIT_CPU, &rl);
@@ -127,9 +119,15 @@ void remount_proc() noexcept {
         if (::sched_setaffinity(0, sizeof(set), &set) != 0) {
             constexpr std::string_view kMessage = "cxxprobe: cannot pin to the requested CPU\n";
             (void)::write(args.fds.stderr_write, kMessage.data(), kMessage.size());
+            args.sync.send(SyncMsg::MapsAck);
+            (void)args.sync.recv();  // Keep the exec gate alive until the parent releases it.
             ::_exit(kAffinityFailedExit);
         }
     }
+
+    // Ack only after cgroup membership and affinity are established: the
+    // parent attaches perf counters next, before releasing the exec gate.
+    args.sync.send(SyncMsg::MapsAck);
 
     // ── 2. Wait for parent to signal exec ─────────────────────────────────
     msg = args.sync.recv();
@@ -157,7 +155,9 @@ void remount_proc() noexcept {
     // The sync SyncEnd destructor will close its fd when args goes out of
     // scope — but we're about to exec so we need it gone now.
     // Move-destroy the sync channel fd before exec.
-    { SyncEnd dying{std::move(args.sync)}; }  // closes the fd
+    {
+        SyncEnd dying{std::move(args.sync)};
+    }  // closes the fd
 
     // ── 5. Exec the target ────────────────────────────────────────────────
     auto raw_argv = make_argv(args.argv);

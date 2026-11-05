@@ -1,16 +1,23 @@
 #include <gtest/gtest.h>
 #include <pthread.h>
 #include <sched.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdlib>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "cxxprobe/sandbox.hpp"
+#include "sandbox/detail/cgroup_population.hpp"
+#include "sandbox/detail/child.hpp"
 
 using cxxprobe::sandbox::Limits;
 using cxxprobe::sandbox::Result;
@@ -52,6 +59,9 @@ protected:
     }
 
     void SetUp() override {
+        if (std::getenv("CXXPROBE_REQUIRE_SANDBOX") != nullptr) {
+            ASSERT_TRUE(sandbox_available_) << "required sandbox unavailable: " << skip_reason_;
+        }
         if (!sandbox_available_) {
             GTEST_SKIP() << "sandbox not available (" << skip_reason_
                          << ") — needs user namespaces + writable cgroup";
@@ -172,7 +182,7 @@ TEST_F(SandboxTest, StdinWriterLeavesTheSigpipeDispositionAlone) {
     // which silently changes the signal behaviour of whatever process is
     // embedding the judge. Blocking on the writer thread must not be visible
     // from out here.
-    struct sigaction before {};
+    struct sigaction before{};
     ASSERT_EQ(::sigaction(SIGPIPE, nullptr, &before), 0);
 
     sigset_t mask_before;
@@ -182,7 +192,7 @@ TEST_F(SandboxTest, StdinWriterLeavesTheSigpipeDispositionAlone) {
     Result res = run({kEarlycloser, "16"}, input, default_limits());
     EXPECT_EQ(res.exit_code, 0);
 
-    struct sigaction after {};
+    struct sigaction after{};
     ASSERT_EQ(::sigaction(SIGPIPE, nullptr, &after), 0);
     EXPECT_EQ(before.sa_handler, after.sa_handler);
 
@@ -225,6 +235,177 @@ TEST_F(SandboxTest, WallTimeoutRespectedWithinTolerance) {
     EXPECT_EQ(res.exit_code, -SIGKILL);
     // Should finish within 1 second even with cleanup overhead.
     EXPECT_LT(elapsed.count(), 1000);
+}
+
+// A killed orphan can remain a zombie until the host's reaper runs; kill(pid, 0)
+// would mistake that for a live descendant.
+static bool process_is_live(int pid) {
+    std::ifstream stat{std::format("/proc/{}/stat", pid)};
+    std::string line;
+    std::getline(stat, line);
+    const auto name_end = line.rfind(')');
+    return name_end != std::string::npos && name_end + 2 < line.size() &&
+           line[name_end + 2] != 'Z' && line[name_end + 2] != 'X';
+}
+
+static void expect_descendant_timeout(const std::string& command, const std::string& input = "") {
+    using namespace std::chrono;
+    Limits limits;
+    limits.wall = milliseconds{100};
+    const auto start = steady_clock::now();
+    Result result = run({"/bin/sh", "-c", command}, input, limits);
+    const auto elapsed = steady_clock::now() - start;
+    EXPECT_TRUE(result.wall_timed_out);
+    EXPECT_EQ(result.exit_code, -SIGKILL);
+    EXPECT_GE(result.wall_time, limits.wall);
+    EXPECT_LT(elapsed, seconds{1});
+    // The published measurement API still records leader exit separately.
+    EXPECT_LT(result.wall_time_ns, duration_cast<nanoseconds>(result.wall_time));
+    ASSERT_FALSE(result.stdout_data.empty());
+    const int descendant = std::stoi(result.stdout_data);
+    ASSERT_GT(descendant, 0);
+    EXPECT_FALSE(process_is_live(descendant)) << "descendant " << descendant << " survived";
+}
+
+TEST_F(SandboxTest, DescendantHoldingOutputCannotBypassWallTimeout) {
+    expect_descendant_timeout("sleep 2 & echo $!; exit 0");
+}
+
+TEST_F(SandboxTest, DescendantHoldingOnlyStderrCannotBypassWallTimeout) {
+    expect_descendant_timeout("sleep 2 >/dev/null & echo $!; exit 0");
+}
+
+TEST_F(SandboxTest, DescendantHoldingStdinCannotBlockTheInputPump) {
+    expect_descendant_timeout("exec 3<&0; sleep 2 <&3 >/dev/null 2>&1 & echo $!; exit 0",
+                              std::string(1024UL * 1024UL, 'q'));
+}
+
+TEST_F(SandboxTest, DescendantWithAllPipesClosedStillHasAWallBound) {
+    expect_descendant_timeout("sleep 2 </dev/null >/dev/null 2>&1 & echo $!; exit 0");
+}
+
+TEST_F(SandboxTest, DescendantInAnotherSessionStillHasAWallBound) {
+    expect_descendant_timeout("setsid sleep 2 </dev/null >/dev/null 2>&1 & echo $!; exit 0");
+}
+
+TEST_F(SandboxTest, ContinuousDescendantOutputCannotStarveTheDeadline) {
+    Limits limits;
+    limits.wall = std::chrono::milliseconds{100};
+    const auto start = std::chrono::steady_clock::now();
+    Result result = run({"/bin/sh", "-c", "yes x & exit 0"}, "", limits);
+    EXPECT_TRUE(result.wall_timed_out);
+    EXPECT_EQ(result.exit_code, -SIGKILL);
+    EXPECT_LE(result.stdout_data.size(), 4UL * 1024UL * 1024UL);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds{1});
+}
+
+TEST_F(SandboxTest, ShortLivedDescendantPreservesNormalExitAndOutput) {
+    Limits limits;
+    limits.wall = std::chrono::milliseconds{1000};
+    Result result = run({"/bin/sh", "-c", "(sleep 0.02; echo done) & exit 7"}, "", limits);
+    EXPECT_FALSE(result.wall_timed_out);
+    EXPECT_EQ(result.exit_code, 7);
+    EXPECT_EQ(result.stdout_data, "done\n");
+}
+
+TEST_F(SandboxTest, DescendantCanFinishReadingInputAfterLeaderExit) {
+    Limits limits;
+    limits.wall = std::chrono::milliseconds{1000};
+    const std::string input(1024UL * 1024UL, 'q');
+    Result result = run({"/bin/sh", "-c", "exec 3<&0; cat <&3 & exit 0"}, input, limits);
+    EXPECT_FALSE(result.wall_timed_out);
+    EXPECT_EQ(result.exit_code, 0);
+    EXPECT_EQ(result.stdout_data, input);
+}
+
+TEST_F(SandboxTest, RepeatedNormalExitsAreNotTimedOutByPopulationLag) {
+    Limits limits;
+    limits.wall = std::chrono::milliseconds{100};
+    for (int iteration = 0; iteration < 50; ++iteration) {
+        Result result = run({"/bin/true"}, "", limits);
+        ASSERT_EQ(result.exit_code, 0) << "iteration " << iteration;
+        ASSERT_FALSE(result.wall_timed_out) << "iteration " << iteration;
+    }
+}
+
+TEST(SandboxSetupTest, RequiresAPositiveWallLimitBeforeSetup) {
+    Limits limits;
+    limits.wall = std::chrono::milliseconds{0};
+    EXPECT_THROW(run({"/bin/true"}, "", limits), std::invalid_argument);
+    limits.wall = std::chrono::milliseconds{-1};
+    EXPECT_THROW(run({"/bin/true"}, "", limits), std::invalid_argument);
+}
+
+TEST(SandboxSetupTest, RejectsCgroupMembershipFailureBeforeExec) {
+    using namespace cxxprobe::sandbox::detail;
+    for (const auto* path : {"/cxxprobe-no-such-cgroup/cgroup.procs", "/dev/full"}) {
+        SyncChannel channel;
+        const pid_t child = ::fork();
+        ASSERT_GE(child, 0);
+        if (child == 0) {
+            ::alarm(2);
+            child_main({.argv = {"/bin/true"},
+                        .fds = {.stdin_read = 0, .stdout_write = 1, .stderr_write = 2},
+                        .sync = channel.child_end(),
+                        .cgroup_procs_path = path,
+                        .cpu_affinity = {}});
+        }
+        auto parent = channel.parent_end();
+        parent.send(SyncMsg::MapsWritten);
+        EXPECT_THROW((void)parent.recv(), std::runtime_error) << path;
+        // Also bound cleanup when this test is run against the pre-fix code,
+        // where MapsAck is returned and the child waits for ExecNow forever.
+        ::kill(child, SIGKILL);
+        int status = 0;
+        ASSERT_EQ(::waitpid(child, &status, 0), child);
+    }
+}
+
+class SandboxPopulationTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        std::string pattern =
+            (std::filesystem::temp_directory_path() / "cxxprobe-25-XXXXXX").string();
+        char* created = ::mkdtemp(pattern.data());
+        ASSERT_NE(created, nullptr);
+        path_ = created;
+        std::ofstream{path_ / "cgroup.procs"};
+        std::ofstream{path_ / "cgroup.stat"} << "nr_descendants 0\nnr_dying_descendants 0\n";
+        std::ofstream{path_ / "cgroup.events"} << "populated 1\nfrozen 0\n";
+    }
+    void TearDown() override { std::filesystem::remove_all(path_); }
+    std::filesystem::path path_;
+};
+
+TEST_F(SandboxPopulationTest, StalePopulatedNotificationDoesNotMeanLiveDescendants) {
+    EXPECT_FALSE(cxxprobe::sandbox::detail::has_live_processes(path_));
+}
+
+TEST_F(SandboxPopulationTest, AProcessIsLiveEvenWithAnEmptyPopulationNotification) {
+    std::ofstream{path_ / "cgroup.events"} << "populated 0\n";
+    std::ofstream{path_ / "cgroup.procs"} << "123\n";
+    EXPECT_TRUE(cxxprobe::sandbox::detail::has_live_processes(path_));
+}
+
+TEST_F(SandboxPopulationTest, NestedCgroupCannotBeMistakenForAnEmptyWorkload) {
+    std::ofstream{path_ / "cgroup.stat"} << "nr_descendants 1\nnr_dying_descendants 0\n";
+    EXPECT_TRUE(cxxprobe::sandbox::detail::has_live_processes(path_));
+}
+
+TEST_F(SandboxPopulationTest, ExecRequiresTheChildToActuallyBeInTheLeaf) {
+    using cxxprobe::sandbox::detail::require_cgroup_member;
+    EXPECT_THROW(require_cgroup_member(path_, 123), std::runtime_error);
+    std::ofstream{path_ / "cgroup.procs"} << "456\n";
+    EXPECT_THROW(require_cgroup_member(path_, 123), std::runtime_error);
+    std::ofstream{path_ / "cgroup.procs"} << "123\n";
+    EXPECT_NO_THROW(require_cgroup_member(path_, 123));
+}
+
+TEST_F(SandboxPopulationTest, UnreadableOrInvalidStateFailsClosed) {
+    std::ofstream{path_ / "cgroup.procs"} << "invalid\n";
+    EXPECT_THROW(cxxprobe::sandbox::detail::has_live_processes(path_), std::runtime_error);
+    std::filesystem::remove(path_ / "cgroup.procs");
+    EXPECT_THROW(cxxprobe::sandbox::detail::has_live_processes(path_), std::runtime_error);
 }
 
 // ── memory limit ─────────────────────────────────────────────────────────────

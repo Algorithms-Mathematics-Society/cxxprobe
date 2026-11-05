@@ -1,10 +1,9 @@
 #include "cxxprobe/sandbox.hpp"
 
 #include <fcntl.h>
+#include <poll.h>
 #include <sched.h>
-#include <sys/epoll.h>
 #include <sys/syscall.h>
-#include <sys/timerfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -15,7 +14,6 @@
 #include <cstring>
 #include <format>
 #include <optional>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -24,6 +22,7 @@
 #include <vector>
 
 #include "detail/cgroup.hpp"
+#include "detail/cgroup_population.hpp"
 #include "detail/child.hpp"
 #include "detail/perf_counter.hpp"
 #include "detail/pipe_io.hpp"
@@ -40,21 +39,17 @@ struct OwnedFd {
     int raw{-1};
 
     explicit OwnedFd(int fd) noexcept : raw{fd} {}
-    ~OwnedFd() {
+    ~OwnedFd() { close(); }
+    void close() noexcept {
         if (raw >= 0) {
             ::close(raw);
+            raw = -1;
         }
     }
     OwnedFd(const OwnedFd&) = delete;
     OwnedFd& operator=(const OwnedFd&) = delete;
     OwnedFd(OwnedFd&& other) noexcept : raw{other.raw} { other.raw = -1; }
     OwnedFd& operator=(OwnedFd&&) = delete;
-
-    [[nodiscard]] int release() noexcept {
-        int tmp = raw;
-        raw = -1;
-        return tmp;
-    }
 };
 
 struct PipePair {
@@ -75,23 +70,49 @@ PipePair make_pipe() {
 constexpr std::size_t kMaxOutputBytes = 4ULL * 1024ULL * 1024ULL;
 constexpr std::size_t kReadChunk = 4096;
 
-// Reads fd into a string capped at kMaxOutputBytes; continues draining
-// (discarding) until EOF so the child's pipe buffer never fills.
-std::string drain_fd(int read_fd) {
-    std::string buf;
-    std::array<char, kReadChunk> tmp{};
-    while (true) {
-        ssize_t got = ::read(read_fd, tmp.data(), tmp.size());
-        if (got <= 0) {
-            break;
-        }
-        auto chunk = static_cast<std::size_t>(got);
-        if (buf.size() < kMaxOutputBytes) {
-            std::size_t space = kMaxOutputBytes - buf.size();
-            buf.append(tmp.data(), std::min(chunk, space));
-        }
+void nonblocking(const OwnedFd& fd) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    const int flags = ::fcntl(fd.raw, F_GETFL);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    if (flags < 0 || ::fcntl(fd.raw, F_SETFL, flags | O_NONBLOCK) < 0) {
+        throw std::runtime_error{"sandbox: cannot make pipe nonblocking"};
     }
-    return buf;
+}
+
+// One bounded read per pump iteration: continuous output must not starve the
+// wall deadline. Keep draining after reaching the capture cap.
+void read_output(OwnedFd& fd, short events, std::string& output) {
+    if (fd.raw < 0 || events == 0) {
+        return;
+    }
+    std::array<char, kReadChunk> bytes{};
+    const ssize_t got = ::read(fd.raw, bytes.data(), bytes.size());
+    if (got > 0) {
+        output.append(bytes.data(),
+                      std::min(static_cast<std::size_t>(got), kMaxOutputBytes - output.size()));
+    } else if (got == 0) {
+        fd.close();
+    } else if (errno != EINTR && errno != EAGAIN) {
+        throw std::runtime_error{"sandbox: output read failed"};
+    }
+}
+
+void write_input(OwnedFd& fd, short events, std::string_view data, std::size_t& sent) {
+    if (fd.raw < 0 || events == 0) {
+        return;
+    }
+    // At most Linux PIPE_BUF: nonblocking writes are all-or-EAGAIN, so
+    // write_all cannot partially advance and lose our offset. It also retains
+    // the existing thread-local SIGPIPE handling for early stdin closure.
+    const auto chunk = data.substr(sent, kReadChunk);
+    const auto written = detail::write_all(fd.raw, chunk);
+    if (written.status == detail::PipeWriteStatus::complete) {
+        sent += chunk.size();
+    } else if (written.status == detail::PipeWriteStatus::peer_closed) {
+        fd.close();
+    } else if (written.error != EAGAIN && written.error != EINTR) {
+        throw std::runtime_error{"sandbox: stdin write failed"};
+    }
 }
 
 // ── pidfd via syscall ────────────────────────────────────────────────────────
@@ -124,81 +145,111 @@ void check_affinity(const std::vector<int>& cpus) {
     }
 }
 
-// ── ChildGuard ───────────────────────────────────────────────────────────────
-// Kills and reaps the cloned child on destruction unless mark_reaped() was
-// called (used after wait_for_child already called waitpid).
-struct ChildGuard {
-    pid_t pid{-1};
-    bool reaped_{false};
+using Clock = std::chrono::steady_clock;
+constexpr auto kCleanupBudget = std::chrono::milliseconds{250};
 
-    explicit ChildGuard(pid_t p) noexcept : pid{p} {}
+// Every exception path kills the workload, including errors after leader exit.
+// Even a child stuck in uninterruptible kernel sleep must not block the caller
+// forever during stack unwinding.
+struct ChildGuard {
+    pid_t pid;
+    const detail::CgroupLeaf& group;
+    bool reaped{false};
+
+    ChildGuard(pid_t child, const detail::CgroupLeaf& cgroup) noexcept
+        : pid{child}, group{cgroup} {}
     ~ChildGuard() {
-        if (!reaped_ && pid > 0) {
+        try {
+            group.kill_all();
+        } catch (...) {
+        }
+        if (!reaped) {
             ::kill(pid, SIGKILL);
-            int st = 0;
-            ::waitpid(pid, &st, 0);
+            const auto deadline = Clock::now() + kCleanupBudget;
+            int status = 0;
+            while (Clock::now() < deadline) {
+                const pid_t waited = ::waitpid(pid, &status, WNOHANG);
+                if (waited == pid || (waited < 0 && errno != EINTR)) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
         }
     }
     ChildGuard(const ChildGuard&) = delete;
     ChildGuard(ChildGuard&&) = delete;
     ChildGuard& operator=(const ChildGuard&) = delete;
     ChildGuard& operator=(ChildGuard&&) = delete;
-    void mark_reaped() noexcept { reaped_ = true; }
 };
-
-// ── Epoll wait loop ──────────────────────────────────────────────────────────
 
 struct WaitResult {
     bool timed_out{false};
     int wstatus{0};
+    Clock::time_point exited;
+    std::string stdout_data;
+    std::string stderr_data;
 };
 
-WaitResult wait_for_child(pid_t child_pid, const OwnedFd& pidfd, const OwnedFd& tfd,
-                          detail::CgroupLeaf& cgroup) {
-    OwnedFd epfd{::epoll_create1(EPOLL_CLOEXEC)};
-    if (epfd.raw < 0) {
-        throw std::runtime_error{std::format("epoll_create1: {}", std::strerror(errno))};
+void reap_ready_child(ChildGuard& child, OwnedFd& pidfd, WaitResult& result) {
+    const pid_t waited = ::waitpid(child.pid, &result.wstatus, WNOHANG);
+    if (waited < 0 && errno != EINTR) {
+        throw std::runtime_error{"sandbox: waitpid failed"};
     }
+    if (waited == child.pid) {
+        child.reaped = true;
+        result.exited = Clock::now();
+        pidfd.close();
+    }
+}
 
-    auto epoll_add = [epfd_raw = epfd.raw](int target_fd) {
-        struct epoll_event ev {};
-        ev.events = EPOLLIN;
-        ev.data.fd = target_fd;  // NOLINT(cppcoreguidelines-pro-type-union-access)
-        ::epoll_ctl(epfd_raw, EPOLL_CTL_ADD, target_fd, &ev);
-    };
-    epoll_add(pidfd.raw);
-    epoll_add(tfd.raw);
-
+// The leader's pidfd is only one event in the workload lifecycle. Continue
+// pumping pipes and enforcing the original deadline after that pid is reaped.
+WaitResult wait_for_workload(ChildGuard& child, OwnedFd& pidfd, const detail::CgroupLeaf& group,
+                             PipePair& input, PipePair& output, PipePair& errors,
+                             std::string_view data, Clock::time_point start,
+                             std::chrono::milliseconds wall) {
+    const auto deadline = start + wall;
+    auto cleanup_deadline = deadline + kCleanupBudget;
     WaitResult result;
-    std::array<struct epoll_event, 2> events{};
+    std::size_t sent = 0;
     while (true) {
-        int nfds = ::epoll_wait(epfd.raw, events.data(), static_cast<int>(events.size()), -1);
-        if (nfds < 0) {
-            if (errno == EINTR) {
-                continue;
+        const auto now = Clock::now();
+        if (!result.timed_out && now >= deadline) {
+            result.timed_out = true;
+            cleanup_deadline = now + kCleanupBudget;
+            group.kill_all();
+            if (!child.reaped) {
+                ::kill(child.pid, SIGKILL);
             }
-            break;
+            input.write_end.close();
         }
-
-        bool child_ready = false;
-        for (const auto& ev : std::span{events}.first(static_cast<std::size_t>(nfds))) {
-            int fired = ev.data.fd;  // NOLINT(cppcoreguidelines-pro-type-union-access)
-            if (fired == tfd.raw) {
-                result.timed_out = true;
-                cgroup.kill_all();
-                ::kill(child_pid, SIGKILL);  // belt-and-suspenders
-            }
-            if (fired == pidfd.raw) {
-                child_ready = true;
-            }
+        if (child.reaped && output.read_end.raw < 0 && errors.read_end.raw < 0 &&
+            !detail::has_live_processes(group.path())) {
+            return result;
         }
-        if (child_ready) {
-            break;
+        if (result.timed_out && now >= cleanup_deadline) {
+            throw std::runtime_error{"sandbox: workload did not terminate within cleanup budget"};
         }
+        if (sent == data.size()) {
+            input.write_end.close();
+        }
+        std::array<pollfd, 4> fds{{
+            {.fd = pidfd.raw, .events = POLLIN, .revents = 0},
+            {.fd = output.read_end.raw, .events = POLLIN, .revents = 0},
+            {.fd = errors.read_end.raw, .events = POLLIN, .revents = 0},
+            {.fd = input.write_end.raw, .events = POLLOUT, .revents = 0},
+        }};
+        const int ready = ::poll(fds.data(), fds.size(), 1);
+        if (ready < 0 && errno != EINTR) {
+            throw std::runtime_error{"sandbox: workload poll failed"};
+        }
+        if ((fds[0].revents & POLLIN) != 0) {
+            reap_ready_child(child, pidfd, result);
+        }
+        read_output(output.read_end, fds[1].revents, result.stdout_data);
+        read_output(errors.read_end, fds[2].revents, result.stderr_data);
+        write_input(input.write_end, fds[3].revents, data, sent);
     }
-
-    ::waitpid(child_pid, &result.wstatus, 0);
-    return result;
 }
 
 }  // namespace
@@ -210,6 +261,9 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     std::string stdin_data,         // NOLINT(performance-unnecessary-value-param)
     Limits limits) {                // NOLINT(performance-unnecessary-value-param)
 
+    if (limits.wall.count() <= 0) {
+        throw std::invalid_argument{"sandbox requires a positive wall limit"};
+    }
     check_affinity(limits.cpu_affinity);
 
     // ── pipes ────────────────────────────────────────────────────────────
@@ -224,6 +278,7 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     // 100 % of one core per 100 ms period; total-time cap via wall timeout.
     constexpr std::size_t kCpuPeriodUs = 100'000;
     detail::CgroupLeaf cgroup{limits.memory_bytes, kCpuPeriodUs, kCpuPeriodUs, limits.max_pids};
+    cgroup.kill_all();  // Require whole-workload kill support before creating a child.
 
     // ── sync channel + child args ─────────────────────────────────────────
     // split() before clone(): both SyncEnds are pre-built. The child's SyncEnd
@@ -236,13 +291,12 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         .argv = std::move(argv),
         .fds =
             detail::ChildFds{
-                .stdin_read = stdin_pipe.read_end.release(),
-                .stdout_write = stdout_pipe.write_end.release(),
-                .stderr_write = stderr_pipe.write_end.release(),
+                .stdin_read = stdin_pipe.read_end.raw,
+                .stdout_write = stdout_pipe.write_end.raw,
+                .stderr_write = stderr_pipe.write_end.raw,
             },
         .sync = std::move(child_sync),
         .cgroup_procs_path = (cgroup.path() / "cgroup.procs").string(),
-        .memory_limit_bytes = limits.memory_bytes,
         .cpu_limit_seconds = limits.cpu.count() > 0
                                  ? static_cast<unsigned long>((limits.cpu.count() + 999) / 1000)
                                  : 0UL,
@@ -264,8 +318,15 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         throw std::runtime_error{std::format("clone: {}", std::strerror(errno))};
     }
 
-    // Kill and reap the child if anything throws before wait_for_child().
-    ChildGuard child_guard{child_pid};
+    ChildGuard child_guard{child_pid, cgroup};
+    // Drop the parent's copy of the child endpoint, so child setup failures
+    // cannot leave recv() waiting on an endpoint held by the parent itself.
+    {
+        detail::SyncEnd dying{std::move(child_args.sync)};
+    }
+    stdin_pipe.read_end.close();
+    stdout_pipe.write_end.close();
+    stderr_pipe.write_end.close();
 
     // parent_sync_pre was built before clone() via split() — valid immediately.
     detail::SyncEnd& parent_sync = parent_sync_pre;
@@ -275,10 +336,10 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
     detail::write_gid_map(child_pid);
     parent_sync.send(detail::SyncMsg::MapsWritten);
     (void)parent_sync.recv();  // MapsAck
+    detail::require_cgroup_member(cgroup.path(), child_pid);
 
-    // Child adds itself to the cgroup after receiving MapsAck (see child.cpp).
-    // The parent cannot migrate arbitrary PIDs under nsdelegate; self-migration
-    // always works.
+    // MapsAck confirms that child self-migration and requested affinity have
+    // finished. Migration failure is a setup error before any target can exec.
 
     // The counters attach to the child before it execs and start at exec
     // (enable_on_exec). The child has pinned itself by now if asked to.
@@ -289,63 +350,16 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         task_clock.emplace(child_pid, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK);
     }
 
-    parent_sync.send(detail::SyncMsg::ExecNow);
-    auto wall_start = std::chrono::steady_clock::now();
-
-    // Close the child-bound pipe ends in the parent now that the child has
-    // them. The parent released these into child_args.fds (plain ints, no
-    // RAII) so they are still open in the parent's fd table after clone().
-    // Keeping them open prevents the I/O drain threads from ever seeing EOF
-    // (a pipe read end sees EOF only when ALL write ends are closed — if the
-    // parent holds one, the thread blocks forever even after the child exits).
-    ::close(child_args.fds.stdin_read);
-    ::close(child_args.fds.stdout_write);
-    ::close(child_args.fds.stderr_write);
-
-    // ── I/O threads ───────────────────────────────────────────────────────
-    std::string stdout_data;
-    std::string stderr_data;
-    int stdout_rfd = stdout_pipe.read_end.release();
-    int stderr_rfd = stderr_pipe.read_end.release();
-    int stdin_wfd = stdin_pipe.write_end.release();
-
-    std::thread t_stdout{[&stdout_data, stdout_rfd] {
-        stdout_data = drain_fd(stdout_rfd);
-        ::close(stdout_rfd);
-    }};
-    std::thread t_stderr{[&stderr_data, stderr_rfd] {
-        stderr_data = drain_fd(stderr_rfd);
-        ::close(stderr_rfd);
-    }};
-    // Capture stdin_data by value in the thread (safe: run() owns it until join).
-    std::thread t_stdin{[data = std::string_view{stdin_data}, stdin_wfd] {
-        (void)detail::write_all(stdin_wfd, data);
-        ::close(stdin_wfd);
-    }};
-
-    // ── timerfd + pidfd + epoll ────────────────────────────────────────────
     OwnedFd pidfd = open_pidfd(child_pid);
+    nonblocking(stdin_pipe.write_end);
+    nonblocking(stdout_pipe.read_end);
+    nonblocking(stderr_pipe.read_end);
+    auto wall_start = Clock::now();
+    parent_sync.send(detail::SyncMsg::ExecNow);
 
-    OwnedFd tfd{::timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK)};
-    if (tfd.raw < 0) {
-        throw std::runtime_error{std::format("timerfd_create: {}", std::strerror(errno))};
-    }
-    {
-        auto ms = limits.wall.count();
-        struct itimerspec ts {};
-        ts.it_value.tv_sec = ms / 1000;
-        ts.it_value.tv_nsec = (ms % 1000) * 1'000'000L;
-        ::timerfd_settime(tfd.raw, 0, &ts, nullptr);
-    }
-
-    WaitResult wr = wait_for_child(child_pid, pidfd, tfd, cgroup);
-    const auto exited = std::chrono::steady_clock::now();
-    child_guard.mark_reaped();  // waitpid already called inside wait_for_child
-
-    t_stdin.join();
-    t_stdout.join();
-    t_stderr.join();
-    auto wall_end = std::chrono::steady_clock::now();
+    WaitResult wr = wait_for_workload(child_guard, pidfd, cgroup, stdin_pipe, stdout_pipe,
+                                      stderr_pipe, stdin_data, wall_start, limits.wall);
+    auto wall_end = Clock::now();
 
     // ── result ────────────────────────────────────────────────────────────
     detail::CgroupStats stats = cgroup.read_stats();
@@ -360,22 +374,23 @@ Result run(                         // NOLINT(performance-unnecessary-value-para
         result.exit_code = -SIGKILL;
     }
     if (!limits.cpu_affinity.empty() && result.exit_code == detail::kAffinityFailedExit &&
-        stderr_data.starts_with("cxxprobe: cannot pin")) {
+        wr.stderr_data.starts_with("cxxprobe: cannot pin")) {
         throw std::runtime_error{"sandbox: cannot pin the child to the requested CPUs"};
     }
     result.peak_memory_bytes = stats.peak_memory_bytes;
     result.cpu_time = std::chrono::duration_cast<std::chrono::milliseconds>(stats.cpu_usage);
     result.wall_time = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
     result.wall_timed_out = wr.timed_out;
-    result.wall_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(exited - wall_start);
+    result.wall_time_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(wr.exited - wall_start);
     if (instructions) {
         result.instructions = instructions->read();
     }
     if (task_clock) {
         result.task_clock_ns = task_clock->read();
     }
-    result.stdout_data = std::move(stdout_data);
-    result.stderr_data = std::move(stderr_data);
+    result.stdout_data = std::move(wr.stdout_data);
+    result.stderr_data = std::move(wr.stderr_data);
     return result;
 }
 
