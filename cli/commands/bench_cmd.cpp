@@ -23,6 +23,8 @@ BenchCommand::BenchCommand(CLI::App& parent) {
     project_app_->add_option("-C,--dir", dir_override_, "Contest directory");
     project_app_->add_option("--submission", submission_pairs_,
                              "<label>=<path>: time this source for that part (repeatable)");
+    project_app_->add_flag("--candidate-bundle", candidate_bundle_,
+                           "Require at least one explicit candidate file manifest");
     project_app_->add_option("--fallback", fallback_pairs_,
                              "<label>=reference|empty: what an unsupplied part becomes");
     project_app_->add_option("--input", input_,
@@ -87,6 +89,14 @@ int BenchCommand::execute_project() {
     try {
         const auto project = cxxprobe::project::load_from_dir(contest_dir / slug_);
         const auto submissions = label_map(submission_pairs_, "--submission", project);
+        if (candidate_bundle_) {
+            bool found = false;
+            for (const auto& [label, path] : submissions) {
+                (void)label;
+                found = found || fs::is_regular_file(fs::absolute(path).string() + ".cxxprobe.json");
+            }
+            if (!found) throw std::runtime_error("candidate bundle manifest is missing");
+        }
         const auto fallbacks = label_map(fallback_pairs_, "--fallback", project);
         cxxprobe::bench::BenchOptions options{
             .input = std::nullopt,

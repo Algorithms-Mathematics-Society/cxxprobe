@@ -192,6 +192,14 @@ int TestCommand::execute_test_project() {
     try {
         project = cxxprobe::project::load_from_dir(contest_dir / project_name_);
         const auto submissions = label_map(submission_pairs_, "--submission", project);
+        if (candidate_bundle_) {
+            bool found = false;
+            for (const auto& [label, path] : submissions) {
+                (void)label;
+                found = found || fs::is_regular_file(fs::absolute(path).string() + ".cxxprobe.json");
+            }
+            if (!found) throw std::runtime_error("candidate bundle manifest is missing");
+        }
         const auto fallbacks = label_map(fallback_pairs_, "--fallback", project);
         any_supplied = !submissions.empty();
         const auto sources = choose_sources(project, submissions, fallbacks);

@@ -1,4 +1,5 @@
 #include "cxxprobe/symbolic.hpp"
+#include "../../src/judge/candidate_files.hpp"
 
 #include <gtest/gtest.h>
 
@@ -10,6 +11,84 @@ using cxxprobe::problem::SymbolicCheck;
 using cxxprobe::problem::SymbolicConfig;
 using cxxprobe::symbolic::evaluate;
 using cxxprobe::symbolic::strip_comments_and_literals;
+
+TEST(SymbolicBundle, UnterminatedCommentInHeaderCannotHideForbiddenUnit) {
+    const auto root = std::filesystem::temp_directory_path() / "cxxprobe-symbolic-bundle-regression";
+    std::filesystem::create_directories(root);
+    const auto header = root / "a.h";
+    const auto unit = root / "z.cpp";
+    { std::ofstream out(header); out << "/*"; }
+    { std::ofstream out(unit); out << "std::vector<int> forbidden;\n"; }
+    SymbolicConfig config;
+    config.enabled = true;
+    config.must_not_include.push_back(SymbolicCheck{.pattern = "vector"});
+    const auto result = cxxprobe::symbolic::run(config, std::vector<std::filesystem::path>{header, unit});
+    EXPECT_FALSE(result.passed);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SymbolicBundle, PatternCannotSpanTwoSeparateFiles) {
+    const auto root = std::filesystem::temp_directory_path() / "cxxprobe-symbolic-file-boundary";
+    std::filesystem::create_directories(root);
+    const auto first = root / "a.h";
+    const auto second = root / "b.cpp";
+    { std::ofstream(first) << "foo"; }
+    { std::ofstream(second) << "bar"; }
+    SymbolicConfig config;
+    config.must_not_include.push_back(SymbolicCheck{.pattern = "foo\\s*bar", .regex = true});
+    const auto result = cxxprobe::symbolic::run(config, std::vector<std::filesystem::path>{first, second});
+    EXPECT_TRUE(result.passed);
+    std::filesystem::remove_all(root);
+}
+
+TEST(CandidateFiles, ExplicitManifestKeepsUnitsAndHeadersSeparate) {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "cxxprobe-candidate-manifest-regression";
+    fs::create_directories(root);
+    { std::ofstream(root / "main.cpp") << "int main(){return answer();}"; }
+    { std::ofstream(root / "lib.cpp") << "int answer(){return 42;}"; }
+    { std::ofstream(root / "lib.hpp") << "int answer();"; }
+    { std::ofstream(root / "main.cpp.cxxprobe.json")
+        << nlohmann::json{{"format", "cxxprobe-candidate-v1"}, {"root", root.string()},
+                          {"units", {"main.cpp", "lib.cpp"}},
+                          {"files", {"main.cpp", "lib.cpp", "lib.hpp"}}}.dump(); }
+    const auto staged = cxxprobe::judge::detail::candidate_files(root / "main.cpp");
+    EXPECT_TRUE(staged.bundled);
+    EXPECT_EQ(staged.units.size(), 2);
+    EXPECT_EQ(staged.files.size(), 3);
+    fs::remove_all(root);
+}
+
+TEST(CandidateFiles, RefusesPathEscapeFromManifest) {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "cxxprobe-candidate-escape-regression";
+    fs::create_directories(root);
+    { std::ofstream(root / "main.cpp") << "int main(){}"; }
+    { std::ofstream(root / "main.cpp.cxxprobe.json")
+        << nlohmann::json{{"format", "cxxprobe-candidate-v1"}, {"root", root.string()},
+                          {"units", {"../escape.cpp"}},
+                          {"files", {"main.cpp", "../escape.cpp"}}}.dump(); }
+    EXPECT_THROW(cxxprobe::judge::detail::candidate_files(root / "main.cpp"), std::runtime_error);
+    fs::remove_all(root);
+}
+
+TEST(CandidateFiles, CandidateHeadersPrecedePackagedReferenceHeaders) {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "cxxprobe-candidate-include-precedence";
+    const auto public_dir = root / "pack/attachments";
+    fs::create_directories(public_dir);
+    { std::ofstream(public_dir / ".cxxprobe-sanitized") << "readonly references only\n"; }
+    const cxxprobe::judge::detail::CandidateFiles candidate{
+        .root = root / "submission", .units = {}, .files = {}, .bundled = true};
+    std::vector<std::string> flags{"-I" + (root / "pack/shared").string()};
+    cxxprobe::judge::detail::prepend_candidate_includes(
+        flags, candidate, root / "submission/nested/main.cpp", public_dir);
+    EXPECT_EQ(flags[0], "-I" + (root / "submission/nested").string());
+    EXPECT_EQ(flags[1], "-I" + (root / "submission").string());
+    EXPECT_EQ(flags[2], "-I" + public_dir.string());
+    EXPECT_EQ(flags[3], "-I" + (root / "pack/shared").string());
+    fs::remove_all(root);
+}
 
 // ─── strip_comments_and_literals ───────────────────────────────────────────────
 

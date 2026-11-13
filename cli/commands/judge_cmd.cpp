@@ -110,6 +110,8 @@ JudgeCommand::JudgeCommand(CLI::App& parent) {
 
     app_->add_option("--submission", submission_path_, "Submission source file to grade")
         ->required();
+    app_->add_flag("--candidate-bundle", candidate_bundle_,
+                   "Require the explicit candidate file manifest beside --submission");
     app_->add_option("--output", output_path_, "Write the JSON report to this file");
     app_->add_flag("--json", json_output_, "Also print the JSON report to stdout");
     app_->add_option("--custom-cases", custom_cases_path_,
@@ -118,6 +120,10 @@ JudgeCommand::JudgeCommand(CLI::App& parent) {
 }
 
 int JudgeCommand::execute() {
+    if (candidate_bundle_ && !fs::is_regular_file(fs::absolute(submission_path_).string() + ".cxxprobe.json")) {
+        std::cerr << "cxxprobe: candidate bundle manifest is missing\n";
+        return 2;
+    }
     fs::path problem_dir;
     // Only set when judging from a --package zip: the temp dir must outlive
     // the judge() call below, so it's declared here rather than inside the
