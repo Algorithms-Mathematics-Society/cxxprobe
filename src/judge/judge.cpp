@@ -7,12 +7,12 @@
 #include <format>
 #include <stdexcept>
 
+#include "candidate_files.hpp"
 #include "cxxprobe/cases.hpp"
 #include "cxxprobe/compile.hpp"
 #include "cxxprobe/sandbox.hpp"
 #include "embedded_gtest/gtest_paths.hpp"
 #include "judge_detail.hpp"
-#include "candidate_files.hpp"
 
 namespace cxxprobe::judge {
 
@@ -143,7 +143,9 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
     req.sources = {checker_src};
     if (candidate.bundled) {
         for (const auto& unit : candidate.units) {
-            if (unit != fs::canonical(submission_path)) req.sources.push_back(unit);
+            if (unit != fs::canonical(submission_path)) {
+                req.sources.push_back(unit);
+            }
         }
     }
     for (const auto& extra : resolved.extra_sources) {
@@ -599,8 +601,8 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     // the submission ends up compiling cleanly.
     if (config.symbolic.enabled) {
         try {
-            cxxprobe::symbolic::Report sym =
-                cxxprobe::symbolic::run(config.symbolic, detail::candidate_files(submission_path).files);
+            cxxprobe::symbolic::Report sym = cxxprobe::symbolic::run(
+                config.symbolic, detail::candidate_files(submission_path).files);
             report.symbolic.status = sym.passed ? Status::Pass : Status::Fail;
             report.symbolic.checks = std::move(sym.outcomes);
         } catch (const std::exception&) {

@@ -4,9 +4,9 @@
 #include <format>
 #include <stdexcept>
 
+#include "candidate_files.hpp"
 #include "cxxprobe/compile.hpp"
 #include "embedded_gtest/gtest_paths.hpp"
-#include "candidate_files.hpp"
 
 namespace cxxprobe::judge::detail {
 
@@ -87,8 +87,8 @@ const PartSource& source_for(const std::vector<PartSource>& sources, const std::
 // Returns false only when the part ends up without a usable object.
 bool build_part(const cxxprobe::project::ProjectConfig& project, const Toolchain& tool,
                 const LinkOptions& options, const PartSource& chosen, std::size_t index,
-                const fs::path& public_dir,
-                IntegrationPart& part, ProjectLink& out, TempFiles& temps) {
+                const fs::path& public_dir, IntegrationPart& part, ProjectLink& out,
+                TempFiles& temps) {
     part.origin = chosen.origin;
     if (!chosen.source) {
         return true;

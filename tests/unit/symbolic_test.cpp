@@ -1,5 +1,4 @@
 #include "cxxprobe/symbolic.hpp"
-#include "../../src/judge/candidate_files.hpp"
 
 #include <gtest/gtest.h>
 
@@ -7,22 +6,32 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "../../src/judge/candidate_files.hpp"
+
 using cxxprobe::problem::SymbolicCheck;
 using cxxprobe::problem::SymbolicConfig;
 using cxxprobe::symbolic::evaluate;
 using cxxprobe::symbolic::strip_comments_and_literals;
 
 TEST(SymbolicBundle, UnterminatedCommentInHeaderCannotHideForbiddenUnit) {
-    const auto root = std::filesystem::temp_directory_path() / "cxxprobe-symbolic-bundle-regression";
+    const auto root =
+        std::filesystem::temp_directory_path() / "cxxprobe-symbolic-bundle-regression";
     std::filesystem::create_directories(root);
     const auto header = root / "a.h";
     const auto unit = root / "z.cpp";
-    { std::ofstream out(header); out << "/*"; }
-    { std::ofstream out(unit); out << "std::vector<int> forbidden;\n"; }
+    {
+        std::ofstream out(header);
+        out << "/*";
+    }
+    {
+        std::ofstream out(unit);
+        out << "std::vector<int> forbidden;\n";
+    }
     SymbolicConfig config;
     config.enabled = true;
     config.must_not_include.push_back(SymbolicCheck{.pattern = "vector"});
-    const auto result = cxxprobe::symbolic::run(config, std::vector<std::filesystem::path>{header, unit});
+    const auto result =
+        cxxprobe::symbolic::run(config, std::vector<std::filesystem::path>{header, unit});
     EXPECT_FALSE(result.passed);
     std::filesystem::remove_all(root);
 }
@@ -36,7 +45,8 @@ TEST(SymbolicBundle, PatternCannotSpanTwoSeparateFiles) {
     { std::ofstream(second) << "bar"; }
     SymbolicConfig config;
     config.must_not_include.push_back(SymbolicCheck{.pattern = "foo\\s*bar", .regex = true});
-    const auto result = cxxprobe::symbolic::run(config, std::vector<std::filesystem::path>{first, second});
+    const auto result =
+        cxxprobe::symbolic::run(config, std::vector<std::filesystem::path>{first, second});
     EXPECT_TRUE(result.passed);
     std::filesystem::remove_all(root);
 }
@@ -48,10 +58,13 @@ TEST(CandidateFiles, ExplicitManifestKeepsUnitsAndHeadersSeparate) {
     { std::ofstream(root / "main.cpp") << "int main(){return answer();}"; }
     { std::ofstream(root / "lib.cpp") << "int answer(){return 42;}"; }
     { std::ofstream(root / "lib.hpp") << "int answer();"; }
-    { std::ofstream(root / "main.cpp.cxxprobe.json")
-        << nlohmann::json{{"format", "cxxprobe-candidate-v1"}, {"root", root.string()},
-                          {"units", {"main.cpp", "lib.cpp"}},
-                          {"files", {"main.cpp", "lib.cpp", "lib.hpp"}}}.dump(); }
+    {
+        std::ofstream(root / "main.cpp.cxxprobe.json") << nlohmann::json{
+            {"format", "cxxprobe-candidate-v1"},
+            {"root", root.string()},
+            {"units", {"main.cpp", "lib.cpp"}},
+            {"files", {"main.cpp", "lib.cpp", "lib.hpp"}}}.dump();
+    }
     const auto staged = cxxprobe::judge::detail::candidate_files(root / "main.cpp");
     EXPECT_TRUE(staged.bundled);
     EXPECT_EQ(staged.units.size(), 2);
@@ -64,10 +77,13 @@ TEST(CandidateFiles, RefusesPathEscapeFromManifest) {
     const auto root = fs::temp_directory_path() / "cxxprobe-candidate-escape-regression";
     fs::create_directories(root);
     { std::ofstream(root / "main.cpp") << "int main(){}"; }
-    { std::ofstream(root / "main.cpp.cxxprobe.json")
-        << nlohmann::json{{"format", "cxxprobe-candidate-v1"}, {"root", root.string()},
-                          {"units", {"../escape.cpp"}},
-                          {"files", {"main.cpp", "../escape.cpp"}}}.dump(); }
+    {
+        std::ofstream(root / "main.cpp.cxxprobe.json") << nlohmann::json{
+            {"format", "cxxprobe-candidate-v1"},
+            {"root", root.string()},
+            {"units", {"../escape.cpp"}},
+            {"files", {"main.cpp", "../escape.cpp"}}}.dump();
+    }
     EXPECT_THROW(cxxprobe::judge::detail::candidate_files(root / "main.cpp"), std::runtime_error);
     fs::remove_all(root);
 }

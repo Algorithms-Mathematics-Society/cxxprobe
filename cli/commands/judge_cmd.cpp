@@ -120,7 +120,8 @@ JudgeCommand::JudgeCommand(CLI::App& parent) {
 }
 
 int JudgeCommand::execute() {
-    if (candidate_bundle_ && !fs::is_regular_file(fs::absolute(submission_path_).string() + ".cxxprobe.json")) {
+    if (candidate_bundle_ &&
+        !fs::is_regular_file(fs::absolute(submission_path_).string() + ".cxxprobe.json")) {
         std::cerr << "cxxprobe: candidate bundle manifest is missing\n";
         return 2;
     }

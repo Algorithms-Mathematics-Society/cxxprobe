@@ -93,9 +93,12 @@ int BenchCommand::execute_project() {
             bool found = false;
             for (const auto& [label, path] : submissions) {
                 (void)label;
-                found = found || fs::is_regular_file(fs::absolute(path).string() + ".cxxprobe.json");
+                found =
+                    found || fs::is_regular_file(fs::absolute(path).string() + ".cxxprobe.json");
             }
-            if (!found) throw std::runtime_error("candidate bundle manifest is missing");
+            if (!found) {
+                throw std::runtime_error("candidate bundle manifest is missing");
+            }
         }
         const auto fallbacks = label_map(fallback_pairs_, "--fallback", project);
         cxxprobe::bench::BenchOptions options{
