@@ -175,6 +175,8 @@ TestCommand::TestCommand(CLI::App& parent) {
                              "Contest directory (default: auto-detect via contest.yaml)");
     project_app_->add_option("--submission", submission_pairs_,
                              "<label>=<path>: grade this source for that part (repeatable)");
+    project_app_->add_flag("--candidate-bundle", candidate_bundle_,
+                           "Require at least one explicit candidate file manifest");
     project_app_->add_option(
         "--fallback", fallback_pairs_,
         "<label>=reference|empty: what an unsupplied part becomes (default reference)");

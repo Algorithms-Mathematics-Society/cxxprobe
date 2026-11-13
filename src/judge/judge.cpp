@@ -7,6 +7,7 @@
 #include <format>
 #include <stdexcept>
 
+#include "candidate_files.hpp"
 #include "cxxprobe/cases.hpp"
 #include "cxxprobe/compile.hpp"
 #include "cxxprobe/sandbox.hpp"
@@ -112,6 +113,9 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
     cxxprobe::embedded_gtest::ResolvedPaths gtest_paths = cxxprobe::embedded_gtest::resolve();
 
     std::vector<std::string> extra_flags;
+    const auto candidate = detail::candidate_files(submission_path);
+    detail::prepend_candidate_includes(extra_flags, candidate, submission_path,
+                                       config.problem_dir / config.attachments.dir);
     extra_flags.push_back("-I" + gtest_paths.include_dir.string());
     extra_flags.push_back("-L" + gtest_paths.lib_dir.string());
     for (const auto& f : config.checker.behavior.extra_flags) {
@@ -137,6 +141,13 @@ BehaviorReport run_behavior_checker(const cxxprobe::problem::ProblemConfig& conf
 
     cxxprobe::compile::Request req;
     req.sources = {checker_src};
+    if (candidate.bundled) {
+        for (const auto& unit : candidate.units) {
+            if (unit != fs::canonical(submission_path)) {
+                req.sources.push_back(unit);
+            }
+        }
+    }
     for (const auto& extra : resolved.extra_sources) {
         req.sources.push_back(config.problem_dir / extra);
     }
@@ -217,7 +228,8 @@ cxxprobe::compile::Result compile_source(const cxxprobe::problem::ProblemConfig&
                                          const std::vector<std::string>& extra_flags = {},
                                          bool with_shared = true) {
     cxxprobe::compile::Request req;
-    req.sources = {source};
+    const auto candidate = detail::candidate_files(source);
+    req.sources = candidate.units;
     for (const auto& extra : resolved.extra_sources) {
         if (!with_shared && std::ranges::contains(resolved.shared_sources, extra)) {
             continue;
@@ -228,6 +240,8 @@ cxxprobe::compile::Result compile_source(const cxxprobe::problem::ProblemConfig&
     req.std_flag = resolved.std_flag;
     req.flags = resolved.flags;
     req.extra_flags = extra_flags;
+    detail::prepend_candidate_includes(req.extra_flags, candidate, source,
+                                       config.problem_dir / config.attachments.dir);
     for (const auto& dir : resolved.include_dirs) {
         req.extra_flags.push_back("-I" + (config.problem_dir / dir).string());
     }
@@ -587,8 +601,8 @@ JudgeReport run_problem(const cxxprobe::problem::ProblemConfig& config,
     // the submission ends up compiling cleanly.
     if (config.symbolic.enabled) {
         try {
-            cxxprobe::symbolic::Report sym =
-                cxxprobe::symbolic::run(config.symbolic, submission_path);
+            cxxprobe::symbolic::Report sym = cxxprobe::symbolic::run(
+                config.symbolic, detail::candidate_files(submission_path).files);
             report.symbolic.status = sym.passed ? Status::Pass : Status::Fail;
             report.symbolic.checks = std::move(sym.outcomes);
         } catch (const std::exception&) {

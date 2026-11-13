@@ -4,6 +4,7 @@
 #include <format>
 #include <stdexcept>
 
+#include "candidate_files.hpp"
 #include "cxxprobe/compile.hpp"
 #include "embedded_gtest/gtest_paths.hpp"
 
@@ -86,17 +87,32 @@ const PartSource& source_for(const std::vector<PartSource>& sources, const std::
 // Returns false only when the part ends up without a usable object.
 bool build_part(const cxxprobe::project::ProjectConfig& project, const Toolchain& tool,
                 const LinkOptions& options, const PartSource& chosen, std::size_t index,
-                IntegrationPart& part, ProjectLink& out, TempFiles& temps) {
+                const fs::path& public_dir, IntegrationPart& part, ProjectLink& out,
+                TempFiles& temps) {
     part.origin = chosen.origin;
     if (!chosen.source) {
         return true;
     }
     const auto main_name = std::format("cxxprobe_part_{}_main", index);
-    const auto object = temps.add("cxxprobe-part", ".o");
     part.source = chosen.source->string();
-    const auto built = compile_object(tool, options, *chosen.source, main_name, object);
-    if (built.ok) {
-        out.objects.push_back({.owner = part.label, .object = object});
+    const auto candidate = candidate_files(*chosen.source);
+    Toolchain candidate_tool = tool;
+    prepend_candidate_includes(candidate_tool.include_flags, candidate, *chosen.source, public_dir);
+    std::vector<OwnedObject> built_objects;
+    cxxprobe::compile::Result built;
+    bool all_built = true;
+    for (const auto& unit : candidate.units) {
+        const auto object = temps.add("cxxprobe-part", ".o");
+        built = compile_object(candidate_tool, options, unit,
+                               unit == fs::canonical(*chosen.source) ? main_name : "", object);
+        if (!built.ok) {
+            all_built = false;
+            break;
+        }
+        built_objects.push_back({.owner = part.label, .object = object});
+    }
+    if (all_built) {
+        out.objects.insert(out.objects.end(), built_objects.begin(), built_objects.end());
         return true;
     }
     part.compiled = false;
@@ -197,7 +213,8 @@ ProjectLink link_project(const cxxprobe::project::ProjectConfig& project,
         IntegrationPart part{.label = declared.label, .slug = config.slug};
         const auto resolved = cxxprobe::problem::resolve_compiler(config.compiler, defaults);
         const auto tool = part_toolchain(resolved, config.problem_dir);
-        if (!build_part(project, tool, options, chosen, i, part, out, temps) ||
+        if (!build_part(project, tool, options, chosen, i,
+                        config.problem_dir / config.attachments.dir, part, out, temps) ||
             !build_own_extras(tool, options, resolved, declared.label, out, temps)) {
             out.failed.push_back(declared.label);
         }
