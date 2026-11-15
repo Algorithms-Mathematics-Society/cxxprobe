@@ -26,6 +26,7 @@ private:
     std::string slug_;
     std::string dir_override_;
     std::vector<std::string> submission_pairs_;
+    bool candidate_bundle_{false};
     std::vector<std::string> fallback_pairs_;
     std::string input_;
     std::string profile_dir_;

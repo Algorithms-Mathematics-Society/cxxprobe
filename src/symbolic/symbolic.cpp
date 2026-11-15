@@ -193,22 +193,40 @@ CheckOutcome evaluate(const cxxprobe::problem::SymbolicCheck& check,
 
 Report run(const cxxprobe::problem::SymbolicConfig& config,
            const std::filesystem::path& source_file) {
-    std::ifstream ifs{source_file, std::ios::binary};
-    if (!ifs) {
-        throw std::runtime_error{std::format("cannot open source file: {}", source_file.string())};
+    return run(config, std::vector<std::filesystem::path>{source_file});
+}
+
+Report run(const cxxprobe::problem::SymbolicConfig& config,
+           const std::vector<std::filesystem::path>& source_files) {
+    std::vector<std::string> stripped_files;
+    stripped_files.reserve(source_files.size());
+    for (const auto& path : source_files) {
+        std::ifstream ifs{path, std::ios::binary};
+        if (!ifs) {
+            throw std::runtime_error{std::format("cannot open source file: {}", path.string())};
+        }
+        const std::string source{std::istreambuf_iterator<char>{ifs}, {}};
+        stripped_files.push_back(strip_comments_and_literals(source));
     }
-    std::string source{std::istreambuf_iterator<char>{ifs}, {}};
-    std::string stripped = strip_comments_and_literals(source);
 
     Report report;
     report.passed = true;
+    auto across_files = [&](const auto& check, bool expect_present) {
+        CheckOutcome outcome = evaluate(check, "", expect_present);
+        outcome.matched = false;
+        for (const auto& stripped : stripped_files) {
+            outcome.matched = outcome.matched || evaluate(check, stripped, expect_present).matched;
+        }
+        outcome.satisfied = outcome.matched == expect_present;
+        return outcome;
+    };
     for (const auto& check : config.must_include) {
-        CheckOutcome outcome = evaluate(check, stripped, true);
+        CheckOutcome outcome = across_files(check, true);
         report.passed = report.passed && outcome.satisfied;
         report.outcomes.push_back(std::move(outcome));
     }
     for (const auto& check : config.must_not_include) {
-        CheckOutcome outcome = evaluate(check, stripped, false);
+        CheckOutcome outcome = across_files(check, false);
         report.passed = report.passed && outcome.satisfied;
         report.outcomes.push_back(std::move(outcome));
     }

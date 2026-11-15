@@ -31,6 +31,7 @@ private:
     bool json_output_{false};
     bool quiet_{false};
     bool no_color_{false};
+    bool candidate_bundle_{false};
 
     // test project
     std::string project_name_;

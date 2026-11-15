@@ -42,5 +42,7 @@ struct Report {
 // Throws std::runtime_error on unreadable file or invalid regex pattern.
 Report run(const cxxprobe::problem::SymbolicConfig& config,
            const std::filesystem::path& source_file);
+Report run(const cxxprobe::problem::SymbolicConfig& config,
+           const std::vector<std::filesystem::path>& source_files);
 
 }  // namespace cxxprobe::symbolic

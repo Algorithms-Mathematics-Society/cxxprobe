@@ -30,6 +30,7 @@ private:
     std::string output_path_;
     std::string custom_cases_path_;
     bool json_output_{false};
+    bool candidate_bundle_{false};
 };
 
 }  // namespace cxxprobe::cli
