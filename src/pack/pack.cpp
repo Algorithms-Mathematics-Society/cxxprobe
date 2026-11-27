@@ -130,15 +130,22 @@ Json problem_entry(const cxxprobe::problem::ProblemConfig& config,
 
 bool under(const std::string& file, const std::string& dir) { return file.starts_with(dir + "/"); }
 
-// project.yaml plus the shared, integration and declared part subtrees, and
-// nothing else under the project. Symlinks never enter a pack, so anything a
-// part needs to compile must be a regular file here or the pack is refused.
+// project.yaml plus the shared, integration, benchmark and declared part
+// subtrees, and nothing else under the project. Symlinks never enter a pack, so
+// anything a part needs to compile must be a regular file here or the pack is
+// refused.
+//
+// The benchmark subtree travels too. A job supplies its own benchmark *input*,
+// but the entry is a source file in the project, so a pack without it declares
+// a `benchmark:` section whose entry cannot be found: the worker then refuses
+// every benchmark with "has no benchmark entry" and nothing in the pack says
+// why.
 std::vector<std::string> project_files(const cxxprobe::project::ProjectConfig& project) {
     std::vector<std::string> kept;
     for (auto& file : cxxprobe::problem::detail::package_files(project.project_dir)) {
         const bool declared =
             file == "project.yaml" || under(file, project.shared.dir) ||
-            under(file, project.integration.dir) ||
+            under(file, project.integration.dir) || under(file, project.benchmark.dir) ||
             std::ranges::any_of(project.parts, [&](const auto& p) { return under(file, p.dir); });
         if (declared) {
             kept.push_back(std::move(file));
